@@ -35,6 +35,35 @@ func (u *UpdateInfo) HasNewVersion(major, minor, patch bool) bool {
 	return latest.GreaterThan(current)
 }
 
+// UpdateLevel returns the semantic version increment level between CurrentTag and LatestTag.
+// Possible values are "major", "minor", "patch" or empty string when undetermined.
+func (u *UpdateInfo) UpdateLevel() string {
+	if u.CurrentTag == "" || u.LatestTag == "" {
+		return ""
+	}
+
+	current, err := semver.NewVersion(u.CurrentTag)
+	if err != nil {
+		return ""
+	}
+
+	latest, err := semver.NewVersion(u.LatestTag)
+	if err != nil {
+		return ""
+	}
+
+	if latest.Major() > current.Major() {
+		return "major"
+	}
+	if latest.Minor() > current.Minor() {
+		return "minor"
+	}
+	if latest.Patch() > current.Patch() {
+		return "patch"
+	}
+	return ""
+}
+
 func (u *UpdateInfo) Backup() error {
 	input, err := os.ReadFile(u.FilePath)
 	if err != nil {

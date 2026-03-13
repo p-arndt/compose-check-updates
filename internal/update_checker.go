@@ -2,7 +2,6 @@ package internal
 
 import (
 	"bufio"
-	"fmt"
 	"log/slog"
 	"os"
 	"regexp"
@@ -33,13 +32,13 @@ func (u *UpdateChecker) Check(major, minor, patch bool) ([]UpdateInfo, error) {
 	for i, updateInfo := range updateInfos {
 		version, err := semver.NewVersion(updateInfo.CurrentTag)
 		if err != nil {
-			slog.Warn(fmt.Sprintf("Skipping (invalid semver) \t Image: %s \t Path: %s", updateInfo.ImageName, updateInfo.FilePath))
+			slog.Warn("Skipping (invalid semver)", "image", updateInfo.ImageName, "path", updateInfo.FilePath)
 			continue
 		}
 
 		tags, err := u.registry.FetchImageTags(updateInfo.ImageName)
 		if err != nil {
-			slog.Error(fmt.Sprintf("Skipping (failed fetching tags) \t Image: %s \t Path: %s", updateInfo.ImageName, updateInfo.FilePath))
+			slog.Error("Skipping (failed fetching tags)", "image", updateInfo.ImageName, "path", updateInfo.FilePath)
 			continue
 		}
 
