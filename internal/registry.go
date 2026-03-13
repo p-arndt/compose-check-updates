@@ -1,9 +1,14 @@
 package internal
 
 import (
-	"encoding/json"
-	"net/http"
-	"strings"
+	"context"
+	"fmt"
+	"log/slog"
+	"os"
+
+	"github.com/regclient/regclient"
+	"github.com/regclient/regclient/config"
+	"github.com/regclient/regclient/types/ref"
 )
 
 type IRegistry interface {
@@ -11,69 +16,64 @@ type IRegistry interface {
 }
 
 type Registry struct {
-	url string
+	rc *regclient.RegClient
 }
 
-func NewRegistry(url string) *Registry {
-	if url == "" {
-		url = "https://registry.hub.docker.com/v2/repositories/"
+func NewRegistry(registryURL string) *Registry {
+	// Create a logger that discards output by default
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+
+	opts := []regclient.Opt{
+		regclient.WithSlog(logger),
 	}
-	return &Registry{url: url}
+
+	// If a custom registry URL is provided (for testing), configure it
+	if registryURL != "" {
+		// For test servers, we configure a custom host
+		// The URL format is typically host:port (from httptest.Server)
+		// We need to configure this host to use HTTP (not HTTPS)
+		opts = append(opts, regclient.WithConfigHost(config.Host{
+			Name:     registryURL,
+			Hostname: registryURL,
+			TLS:      config.TLSDisabled,
+		}))
+	} else {
+		// Default: use Docker Hub with credentials
+		opts = append(opts,
+			regclient.WithDockerCreds(),
+			regclient.WithDockerCerts(),
+			regclient.WithConfigHost(config.Host{
+				Name:     config.DockerRegistry,
+				Hostname: config.DockerRegistryDNS,
+			}),
+		)
+	}
+
+	rc := regclient.New(opts...)
+	return &Registry{rc: rc}
 }
 
 func (r *Registry) FetchImageTags(image string) ([]string, error) {
-	var tags []string
-	url := r.getImageURL(image)
+	ctx := context.Background()
 
-	for {
-		resp, err := http.Get(url)
-		if err != nil {
-			return nil, err
-		}
-		defer resp.Body.Close()
+	// Parse the image reference
+	// regclient handles Docker Hub official images (e.g., "nginx" -> "docker.io/library/nginx")
+	rRef, err := ref.New(image)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse image reference %q: %w", image, err)
+	}
 
-		type Tag struct {
-			Name string `json:"name"`
-		}
+	// Fetch tag list using regclient
+	tl, err := r.rc.TagList(ctx, rRef)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list tags for %q: %w", image, err)
+	}
 
-		var tagsResponse struct {
-			Count   int    `json:"count"`
-			Results []Tag  `json:"results"`
-			Next    string `json:"next"`
-		}
-
-		if err := json.NewDecoder(resp.Body).Decode(&tagsResponse); err != nil {
-			return nil, err
-		}
-
-		for _, tag := range tagsResponse.Results {
-			tags = append(tags, tag.Name)
-		}
-
-		if tagsResponse.Next == "" {
-			break
-		}
-
-		url = tagsResponse.Next
+	// Extract tags from the response
+	tags, err := tl.GetTags()
+	if err != nil {
+		return nil, fmt.Errorf("failed to extract tags for %q: %w", image, err)
 	}
 
 	return tags, nil
-}
-
-func (r *Registry) isOfficialImage(image string) bool {
-	return strings.Count(image, "/") == 0
-}
-
-func (r *Registry) getImageURL(image string) string {
-	// Remove tags from image name
-	image = strings.Split(image, ":")[0]
-	baseUrl := r.url
-	if !strings.HasSuffix(baseUrl, "/") {
-		baseUrl += "/"
-	}
-	if r.isOfficialImage(image) {
-		baseUrl += "library/"
-	}
-	baseUrl += image + "/tags?page_size=100"
-	return baseUrl
 }

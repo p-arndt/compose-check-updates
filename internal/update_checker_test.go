@@ -1,9 +1,12 @@
 package internal
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -97,19 +100,31 @@ image: library/ubuntu
 				tt.expected[i].FilePath = file.Name()
 			}
 
-			// Create an UpdateChecker instance
+			// Create an UpdateChecker instance with mock server
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				w.WriteHeader(http.StatusOK)
-				w.Write([]byte(`{"count": 2, "results": [
-					{"name": "1.18.0"},
-					{"name": "1.18.1"},
-					{"name": "1.19.0"},
-					{"name": "1.20.0"}
-				],"next": null}`))
+				// Handle Docker Hub API style requests
+				if strings.Contains(r.URL.Path, "/v2/repositories/") {
+					w.WriteHeader(http.StatusOK)
+					w.Write([]byte(`{"count": 4, "results": [
+						{"name": "1.18.0"},
+						{"name": "1.18.1"},
+						{"name": "1.19.0"},
+						{"name": "1.20.0"}
+					],"next": null}`))
+					return
+				}
+				// Handle OCI registry v2 API style requests
+				if strings.Contains(r.URL.Path, "/tags/list") {
+					w.WriteHeader(http.StatusOK)
+					w.Write([]byte(`{"name":"library/ubuntu","tags":["1.18.0","1.18.1","1.19.0","1.20.0"]}`))
+					return
+				}
+				w.WriteHeader(http.StatusNotFound)
 			}))
 			defer server.Close()
 
-			registry := NewRegistry(server.URL)
+			serverURL, _ := url.Parse(server.URL)
+			registry := NewRegistry(serverURL.Host)
 			updateChecker := NewUpdateChecker(file.Name(), registry)
 
 			// Call createUpdateInfos
@@ -123,6 +138,20 @@ image: library/ubuntu
 }
 
 func TestUpdateCheckerCheck(t *testing.T) {
+	// Create an UpdateChecker instance with mock server
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Handle OCI registry v2 API style requests
+		if strings.Contains(r.URL.Path, "/tags/list") {
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(`{"name":"library/myimage","tags":["1.18.0","1.18.1","1.19.0","1.20.0"]}`))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	serverURL, _ := url.Parse(server.URL)
+
 	tests := []struct {
 		name     string
 		fileData string
@@ -130,15 +159,15 @@ func TestUpdateCheckerCheck(t *testing.T) {
 	}{
 		{
 			name: "Single image",
-			fileData: `
-image: library/myimage:1.19.0
-`,
+			fileData: fmt.Sprintf(`
+image: %s/library/myimage:1.19.0
+`, serverURL.Host),
 
 			expected: []UpdateInfo{
 				{
-					RawLine:       "image: library/myimage:1.19.0",
-					FullImageName: "library/myimage:1.19.0",
-					ImageName:     "library/myimage",
+					RawLine:       fmt.Sprintf("image: %s/library/myimage:1.19.0", serverURL.Host),
+					FullImageName: fmt.Sprintf("%s/library/myimage:1.19.0", serverURL.Host),
+					ImageName:     fmt.Sprintf("%s/library/myimage", serverURL.Host),
 					CurrentTag:    "1.19.0",
 					LatestTag:     "1.20.0",
 				},
@@ -162,19 +191,7 @@ image: library/myimage:1.19.0
 				tt.expected[i].FilePath = file.Name()
 			}
 
-			// Create an UpdateChecker instance
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				w.WriteHeader(http.StatusOK)
-				w.Write([]byte(`{"count": 2, "results": [
-					{"name": "1.18.0"},
-					{"name": "1.18.1"},
-					{"name": "1.19.0"},
-					{"name": "1.20.0"}
-				],"next": null}`))
-			}))
-			defer server.Close()
-
-			registry := NewRegistry(server.URL)
+			registry := NewRegistry(serverURL.Host)
 			updateChecker := NewUpdateChecker(file.Name(), registry)
 
 			// Call Check

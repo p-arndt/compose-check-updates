@@ -1,7 +1,6 @@
 package modes
 
 import (
-	"fmt"
 	"log/slog"
 	"sync"
 
@@ -17,23 +16,23 @@ func Default(updateInfos []internal.UpdateInfo, ccuFlags internal.CCUFlags) {
 			if i.HasNewVersion(ccuFlags.Major, ccuFlags.Minor, ccuFlags.Patch) {
 				if !ccuFlags.Update && !ccuFlags.Restart {
 					// If no flags are provided, just print the new version
-					slog.Info(fmt.Sprintf("New version for %s: %s -> %s", i.ImageName, i.CurrentTag, i.LatestTag))
+					slog.Info("New version", "image", i.ImageName, "current", i.CurrentTag, "latest", i.LatestTag, "file", i.FilePath, "update_level", i.UpdateLevel())
 				}
 
 				if ccuFlags.Update {
 					if err := i.Update(); err != nil {
-						slog.Error(fmt.Sprintf("error updating file: %v", err))
+						slog.Error("error updating file", "error", err)
 						return
 					}
-					slog.Info(fmt.Sprintf("File [%s] | Image %s has new version %s", i.FilePath, i.ImageName, i.LatestTag))
+					slog.Info("Updated file", "file", i.FilePath, "image", i.ImageName, "latest", i.LatestTag)
 				}
 
 				if ccuFlags.Restart {
 					if err := i.Restart(); err != nil {
-						slog.Error(fmt.Sprintf("error restarting service: %v", err))
+						slog.Error("error restarting service", "error", err)
 						return
 					}
-					slog.Info(fmt.Sprintf("Compose file [%s] restarted", i.FilePath))
+					slog.Info("Compose file restarted", "file", i.FilePath)
 				}
 			}
 		}(i)

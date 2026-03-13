@@ -51,6 +51,83 @@ func TestFindLatestVersion(t *testing.T) {
 			},
 		},
 		{
+			name: "minor update available with non-strict tags",
+			testData: TestFindLatestVersionStruct{
+				Current:  "1.0.0",
+				Tags:     []string{"1.1", "1.2"},
+				Major:    false,
+				Minor:    true,
+				Patch:    false,
+				Expected: "1.2",
+			},
+		},
+		{
+			name: "minor update with partial semver (minor only)",
+			testData: TestFindLatestVersionStruct{
+				Current:  "1.0",
+				Tags:     []string{"1.0", "1.1", "1.2", "2.0"},
+				Major:    false,
+				Minor:    true,
+				Patch:    false,
+				Expected: "1.2",
+			},
+		},
+		{
+			name: "major update with partial semver (minor only)",
+			testData: TestFindLatestVersionStruct{
+				Current:  "1.0",
+				Tags:     []string{"1.0", "1.1", "1.2", "2.0"},
+				Major:    true,
+				Minor:    false,
+				Patch:    false,
+				Expected: "2.0",
+			},
+		},
+		{
+			name: "mixed partial and valid semver",
+			testData: TestFindLatestVersionStruct{
+				Current:  "1.0.0",
+				Tags:     []string{"1.0", "1.0.0", "1.1", "1.1.0", "1.1.1"},
+				Major:    false,
+				Minor:    true,
+				Patch:    false,
+				Expected: "1.1.1",
+			},
+		},
+		{
+			name: "current semver with v prefix",
+			testData: TestFindLatestVersionStruct{
+				Current:  "v1.0.0",
+				Tags:     []string{"1.0.1", "1.1.0"},
+				Major:    false,
+				Minor:    false,
+				Patch:    true,
+				Expected: "1.0.1",
+			},
+		},
+		{
+			name: "current with v prefix and v-prefixed tags",
+			testData: TestFindLatestVersionStruct{
+				Current:  "v1.0.0",
+				Tags:     []string{"v1.0.1", "v1.1.0"},
+				Major:    false,
+				Minor:    false,
+				Patch:    true,
+				Expected: "v1.0.1",
+			},
+		},
+		{
+			name: "patch update with v-prefixed tags",
+			testData: TestFindLatestVersionStruct{
+				Current:  "1.0.0",
+				Tags:     []string{"v1.0.1", "v1.1.0"},
+				Major:    false,
+				Minor:    false,
+				Patch:    true,
+				Expected: "v1.0.1",
+			},
+		},
+		{
 			name: "major update available",
 			testData: TestFindLatestVersionStruct{
 				Current:  "1.0.0",
@@ -117,6 +194,17 @@ func TestFindLatestVersion(t *testing.T) {
 			},
 		},
 		{
+			name: "stable current skips prerelease-only candidates",
+			testData: TestFindLatestVersionStruct{
+				Current:  "2.9.3",
+				Tags:     []string{"v3.7.0-ea.1-windowsservercore-ltsc2022", "v2.9.3"},
+				Major:    true,
+				Minor:    false,
+				Patch:    false,
+				Expected: "",
+			},
+		},
+		{
 			name: "minor update with prerelease",
 			testData: TestFindLatestVersionStruct{
 				Current:  "1.0.0",
@@ -153,7 +241,10 @@ func TestFindLatestVersion(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			current, err := semver.NewVersion(tt.testData.Current)
+			normalizedCurrent, ok := normalizeSemver(tt.testData.Current)
+			assert.True(t, ok, "invalid current version")
+
+			current, err := semver.NewVersion(normalizedCurrent)
 			assert.NoError(t, err, "invalid current version")
 
 			result := FindLatestVersion(current, tt.testData.Tags, tt.testData.Major, tt.testData.Minor, tt.testData.Patch)

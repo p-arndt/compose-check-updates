@@ -1,0 +1,5 @@
+version: '3.9'
+services:
+  # This should be skipped due to no tag
+  frontend:
+    image: library/ubuntu
