@@ -13,6 +13,8 @@ func TestGetComposeFilePaths(t *testing.T) {
 		"../tests/folder1/compose.yaml",
 		"../tests/folder2/docker-compose.yml",
 		"../tests/folder2/docker-compose.yaml",
+		"../tests/sample1/docker-compose.yml",
+		"../tests/sample2/compose.yml",
 	}
 
 	result, err := GetComposeFilePaths("../tests")
