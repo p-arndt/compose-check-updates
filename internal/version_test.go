@@ -194,6 +194,17 @@ func TestFindLatestVersion(t *testing.T) {
 			},
 		},
 		{
+			name: "stable current skips prerelease-only candidates",
+			testData: TestFindLatestVersionStruct{
+				Current:  "2.9.3",
+				Tags:     []string{"v3.7.0-ea.1-windowsservercore-ltsc2022", "v2.9.3"},
+				Major:    true,
+				Minor:    false,
+				Patch:    false,
+				Expected: "",
+			},
+		},
+		{
 			name: "minor update with prerelease",
 			testData: TestFindLatestVersionStruct{
 				Current:  "1.0.0",

@@ -57,8 +57,13 @@ func FindLatestVersion(current *semver.Version, tags []string, major, minor, pat
 			continue
 		}
 
-		// If current is a prerelease, only accept candidates with the same prerelease suffix
-		if current.Prerelease() != "" {
+		// If current is a stable release, skip prerelease candidates.
+		// If current is a prerelease, only accept candidates with the same prerelease suffix.
+		if current.Prerelease() == "" {
+			if v.Prerelease() != "" {
+				continue
+			}
+		} else {
 			if v.Prerelease() != current.Prerelease() {
 				continue
 			}
