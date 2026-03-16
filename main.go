@@ -10,7 +10,7 @@ import (
 	"github.com/padi2312/compose-check-updates/internal/modes"
 )
 
-var version = "0.4.0"
+var version = "0.4.1"
 
 func main() {
 	// Set colorized logger
