@@ -19,7 +19,7 @@ func main() {
 
 	ccuFlags := internal.Parse(version)
 	root := ccuFlags.Directory
-	composeFilePaths, err := internal.GetComposeFilePaths(root)
+	composeFilePaths, err := internal.GetComposeFilePaths(root, ccuFlags.Exclude)
 	if err != nil {
 		slog.Error("Error getting compose file paths", "error", err)
 		os.Exit(1)
