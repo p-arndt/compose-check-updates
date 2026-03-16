@@ -3,6 +3,7 @@ package internal
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"testing"
 )
@@ -134,5 +135,36 @@ func TestGetComposeFilePathsWithExclude(t *testing.T) {
 	}
 	if len(result) != 3 {
 		t.Errorf("GetComposeFilePathsWithRelativeExclude() = %v, want 3 files", len(result))
+	}
+}
+
+func TestGetComposeFilePathsIgnoresPermissionDenied(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Skipping permission denied test on Windows")
+	}
+
+	tmpDir := t.TempDir()
+
+	subdir := filepath.Join(tmpDir, "restricted")
+	if err := os.MkdirAll(subdir, 0755); err != nil {
+		t.Fatalf("Failed to create subdir: %v", err)
+	}
+
+	// Create a compose file that should be found when permissions are normal
+	if err := os.WriteFile(filepath.Join(tmpDir, "docker-compose.yml"), []byte("version: '3'"), 0644); err != nil {
+		t.Fatalf("Failed to create file: %v", err)
+	}
+
+	// Restrict access to the subdir, simulating a permission denied error while walking
+	if err := os.Chmod(subdir, 0000); err != nil {
+		t.Fatalf("Failed to chmod restricted dir: %v", err)
+	}
+	defer func() {
+		_ = os.Chmod(subdir, 0755)
+	}()
+
+	_, err := GetComposeFilePaths(tmpDir, []string{})
+	if err != nil {
+		t.Fatalf("GetComposeFilePaths() should ignore permission errors, got %v", err)
 	}
 }

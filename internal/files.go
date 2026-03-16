@@ -16,6 +16,13 @@ func GetComposeFilePaths(root string, exclude []string) ([]string, error) {
 
 	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
+			// Ignore permission errors (e.g. when scanning system directories)
+			if os.IsPermission(err) {
+				if info != nil && info.IsDir() {
+					return filepath.SkipDir
+				}
+				return nil
+			}
 			return err
 		}
 
