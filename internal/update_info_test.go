@@ -2,6 +2,7 @@ package internal
 
 import (
 	"os"
+	"sync"
 	"testing"
 )
 
@@ -32,6 +33,40 @@ func TestHasNewVersion(t *testing.T) {
 				t.Errorf("HasNewVersion() = %v, want %v", got, tt.expected)
 			}
 		})
+	}
+}
+
+// TestUpdateConcurrent guards against images of the same compose file
+// overwriting each other's rewrite, which is how they are updated in practice.
+func TestUpdateConcurrent(t *testing.T) {
+	path := writeComposeFile(t, "image: myapp:1.0.0\nimage: other:2.0.0\nimage: third:3.0.0")
+
+	infos := []UpdateInfo{
+		{FilePath: path, RawLine: "image: myapp:1.0.0", CurrentTag: "1.0.0", LatestTag: "1.1.0"},
+		{FilePath: path, RawLine: "image: other:2.0.0", CurrentTag: "2.0.0", LatestTag: "2.1.0"},
+		{FilePath: path, RawLine: "image: third:3.0.0", CurrentTag: "3.0.0", LatestTag: "3.1.0"},
+	}
+
+	var wg sync.WaitGroup
+	for _, info := range infos {
+		wg.Add(1)
+		go func(info UpdateInfo) {
+			defer wg.Done()
+			if err := info.Update(); err != nil {
+				t.Errorf("Update() error = %v", err)
+			}
+		}(info)
+	}
+	wg.Wait()
+
+	updated, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	expected := "image: myapp:1.1.0\nimage: other:2.1.0\nimage: third:3.1.0"
+	if string(updated) != expected {
+		t.Errorf("Update() = %q, want %q", string(updated), expected)
 	}
 }
 
