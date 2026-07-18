@@ -253,6 +253,83 @@ func TestFindLatestVersion(t *testing.T) {
 	}
 }
 
+func TestFindLatestPerLevel(t *testing.T) {
+	tests := []struct {
+		name                            string
+		current                         string
+		tags                            []string
+		wantPatch, wantMinor, wantMajor string
+	}{
+		{
+			name:      "one candidate per level",
+			current:   "v2.9.3",
+			tags:      []string{"2.9.4", "2.10.1", "2.11.3", "3.0.0", "3.7.8"},
+			wantPatch: "2.9.4", wantMinor: "2.11.3", wantMajor: "3.7.8",
+		},
+		{
+			name:    "no upgrade at all",
+			current: "1.0.0",
+			tags:    []string{"0.9.9", "1.0.0"},
+		},
+		{
+			name:      "only a patch exists",
+			current:   "1.2.3",
+			tags:      []string{"1.2.4", "1.2.5"},
+			wantPatch: "1.2.5",
+		},
+		{
+			name:      "only a major exists",
+			current:   "1.2.3",
+			tags:      []string{"2.0.0"},
+			wantMajor: "2.0.0",
+		},
+		{
+			name:      "stable current skips prereleases",
+			current:   "2.9.3",
+			tags:      []string{"2.9.4-rc.1", "2.9.4", "3.0.0-beta", "v3.7.0-ea.1-windowsservercore-ltsc2022"},
+			wantPatch: "2.9.4",
+		},
+		{
+			name:      "prerelease current only matches the same suffix",
+			current:   "1.0.0-beta",
+			tags:      []string{"1.0.1-alpha", "1.0.1-beta", "1.1.0-beta", "2.0.0-alpha", "1.1.0"},
+			wantPatch: "1.0.1-beta", wantMinor: "1.1.0-beta",
+		},
+		{
+			name:      "non-strict tags keep their original form",
+			current:   "1.0",
+			tags:      []string{"1.0", "1.0.1", "1.1", "1.2", "2.0"},
+			wantPatch: "1.0.1", wantMinor: "1.2", wantMajor: "2.0",
+		},
+		{
+			name:      "v prefix is preserved",
+			current:   "v1.0.0",
+			tags:      []string{"v1.0.1", "v1.1.0", "v2.0.0"},
+			wantPatch: "v1.0.1", wantMinor: "v1.1.0", wantMajor: "v2.0.0",
+		},
+		{
+			name:      "unparsable tags are ignored",
+			current:   "1.0.0",
+			tags:      []string{"latest", "stable", "main", "1.0.1"},
+			wantPatch: "1.0.1",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			normalized, ok := normalizeSemver(tt.current)
+			assert.True(t, ok, "invalid current version")
+			current, err := semver.NewVersion(normalized)
+			assert.NoError(t, err)
+
+			patch, minor, major := FindLatestPerLevel(current, tt.tags)
+			assert.Equal(t, tt.wantPatch, patch, "patch")
+			assert.Equal(t, tt.wantMinor, minor, "minor")
+			assert.Equal(t, tt.wantMajor, major, "major")
+		})
+	}
+}
+
 func TestSuffixMismatch(t *testing.T) {
 	test := TestFindLatestVersionStruct{
 		Current:  "1.0.0-beta",

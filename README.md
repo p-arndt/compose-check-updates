@@ -22,6 +22,7 @@ Easily update Docker Compose image tags to their latest versions.
     - [Linux](#linux)
 - [Usage](#usage)
 - [Flags](#flags)
+- [Interactive mode](#interactive-mode)
 - [How does it work?](#how-does-it-work)
   - [Images without semver tags](#images-without-semver-tags)
 - [Troubleshooting](#troubleshooting)
@@ -100,20 +101,77 @@ You can also control the update behavior by using the flags described below.
 ## Flags
 
 > [!IMPORTANT]
-> When using `-i` for interactive mode other arguments (except `-d` for directory) will be ignored.
+> When using `-i` for interactive mode other arguments (except `-d` for directory and `-exclude`) will be ignored. See [Interactive mode](#interactive-mode).
 
 | Flag       | Description                                                    | Default                 |
 | ---------- | -------------------------------------------------------------- | ----------------------- |
 | `-h`       | Show help message                                              | `false`                 |
 | `-u`       | Update the Docker Compose files with the new image tags        | `false`                 |
 | `-r`       | Restart the services after updating the Docker Compose files   | `false`                 |
-| `-i`       | Interactively choose which images to update                    | `false`                 |
+| `-i`       | Launch the full-screen TUI to pick which images to update      | `false`                 |
 | `-d`       | Specify the directory to scan for Docker Compose files         | `.` (current directory) |
 | `-f`       | Full update mode, checks updates to latest semver version      | `false`                 |
 | `-major`   | Only suggest major version updates                             | `false`                 |
 | `-minor`   | Only suggest minor version updates                             | `false`                 |
 | `-patch`   | Only suggest patch version updates                             | `true`                  |
 | `-exclude` | Exclude specific services from being updated (comma-separated) | `none`                  |
+
+## Interactive mode
+
+```bash
+ccu -i
+```
+
+This opens a full-screen terminal UI. Updates are grouped by the Compose file they
+belong to and colour-coded by update level (major, minor, patch, digest), while a
+progress bar shows how far the scan got — results appear as the registries answer,
+so you can start selecting before the scan has finished.
+
+| Key                  | Action                                              |
+| -------------------- | --------------------------------------------------- |
+| `↑`/`↓` or `k`/`j`   | Move the selection                                  |
+| `space`              | Toggle the selected update                          |
+| `a`                  | Select all updates                                  |
+| `n`                  | Select none                                         |
+| `f`                  | Cycle the display filter (which rows are shown)     |
+| `t`                  | Cycle the target level for **all** rows             |
+| `T`/`→` or `←`       | Cycle the target level for the **highlighted** row  |
+| `d` or `tab`         | Toggle the detail pane                              |
+| `enter`              | Apply the selected updates                          |
+| `y` / `n`            | Answer the restart prompt                           |
+| `?`                  | Show help                                           |
+| `q`                  | Quit                                                |
+
+### Filter vs. target
+
+These are two different things, and the legend at the bottom names both:
+
+- **`show`** (`f`) only decides which rows are *visible*. It never changes a version.
+- **`target`** (`t`, `T`) decides which version `enter` actually *writes*.
+
+The target defaults to `major`, so out of the box `ccu -i` offers the highest
+available version, as it always has. Set it to `minor` or `patch` when you would
+rather not jump a major release: an image on `traefik:v2.9.3` that is offered
+`3.7.8` will re-point to the latest `2.11.x` at target `minor`, or `2.9.4` at
+target `patch`.
+
+Rows are re-pointed individually with `T`, which only cycles the levels that
+image actually has — the `(+2)` after a version tells you two other levels are
+available. The badge always shows the level of the version currently selected.
+An image with nothing at the current target is shown as `[-] … no patch update`
+and cannot be selected, so `enter` can never write a version you did not pick.
+
+After applying, `ccu` asks once whether the affected Compose files should be
+restarted with `docker compose up -d`.
+
+> [!NOTE]
+> The TUI always resolves and shows **all** update levels, regardless of `-patch`,
+> `-minor`, `-major` or `-f` — use the in-UI filter (`f`) to narrow the list and
+> the target (`t`) to choose which version gets written. Those flags still govern
+> the non-interactive mode.
+
+Interactive mode needs a real terminal. When stdout is piped or redirected, `ccu`
+exits with an error message pointing you at the non-interactive mode.
 
 ## How does it work?
 

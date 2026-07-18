@@ -8,20 +8,17 @@ import (
 	"github.com/Masterminds/semver/v3"
 )
 
-func FindLatestVersion(current *semver.Version, tags []string, major, minor, patch bool) string {
-	if major {
-		minor = true
-		patch = true
-	}
-	if minor {
-		patch = true
-	}
+// versionTag pairs a parsed version with the tag it was parsed from, so the
+// tag can be returned in its original form (e.g. keeping a "v" prefix).
+type versionTag struct {
+	Version *semver.Version
+	Tag     string
+}
 
-	type VersionTag struct {
-		Version *semver.Version
-		Tag     string
-	}
-	var versionTags []VersionTag
+// candidateVersions parses every tag that looks like a version and returns them
+// sorted newest first.
+func candidateVersions(tags []string) []versionTag {
+	var versionTags []versionTag
 
 	// Collect valid semantic versions (accept tags prefixed with 'v' and allow "non-strict" semver like "1.1")
 	for _, tag := range tags {
@@ -35,38 +32,85 @@ func FindLatestVersion(current *semver.Version, tags []string, major, minor, pat
 		if err != nil {
 			continue
 		}
-		versionTags = append(versionTags, VersionTag{Version: v, Tag: tag})
+		versionTags = append(versionTags, versionTag{Version: v, Tag: tag})
 	}
 
-	if len(versionTags) == 0 {
-		return ""
-	}
-
-	// Sort versions in descending order
-	// This is necessary to find the latest version
 	sort.Slice(versionTags, func(i, j int) bool {
 		return versionTags[i].Version.GreaterThan(versionTags[j].Version)
 	})
+
+	return versionTags
+}
+
+// isUpgradeCandidate reports whether v is a newer release of the same release
+// line as current: a stable current never moves onto a prerelease, and a
+// prerelease current only moves within its own prerelease suffix.
+func isUpgradeCandidate(v, current *semver.Version) bool {
+	if !v.GreaterThan(current) {
+		return false
+	}
+	if current.Prerelease() == "" {
+		return v.Prerelease() == ""
+	}
+	return v.Prerelease() == current.Prerelease()
+}
+
+// FindLatestPerLevel returns the newest tag available at each upgrade level
+// relative to current. Any return value is "" when no upgrade exists at that
+// level. patchTag stays within the current major.minor; minorTag stays within
+// the current major; majorTag crosses to a higher major.
+func FindLatestPerLevel(current *semver.Version, tags []string) (patchTag, minorTag, majorTag string) {
+	// Sorted newest first, so the first match at a level is that level's best.
+	for _, vt := range candidateVersions(tags) {
+		v := vt.Version
+		if !isUpgradeCandidate(v, current) {
+			continue
+		}
+
+		switch {
+		case v.Major() > current.Major():
+			if majorTag == "" {
+				majorTag = vt.Tag
+			}
+		case v.Minor() > current.Minor():
+			if minorTag == "" {
+				minorTag = vt.Tag
+			}
+		case v.Patch() > current.Patch():
+			if patchTag == "" {
+				patchTag = vt.Tag
+			}
+		}
+
+		if patchTag != "" && minorTag != "" && majorTag != "" {
+			break
+		}
+	}
+
+	return patchTag, minorTag, majorTag
+}
+
+func FindLatestVersion(current *semver.Version, tags []string, major, minor, patch bool) string {
+	if major {
+		minor = true
+		patch = true
+	}
+	if minor {
+		patch = true
+	}
+
+	versionTags := candidateVersions(tags)
+	if len(versionTags) == 0 {
+		return ""
+	}
 
 	for _, vt := range versionTags {
 		v := vt.Version
 		tag := vt.Tag
 
-		// Skip versions not newer than current
-		if !v.GreaterThan(current) {
+		// Skips versions not newer than current, and enforces the prerelease rules.
+		if !isUpgradeCandidate(v, current) {
 			continue
-		}
-
-		// If current is a stable release, skip prerelease candidates.
-		// If current is a prerelease, only accept candidates with the same prerelease suffix.
-		if current.Prerelease() == "" {
-			if v.Prerelease() != "" {
-				continue
-			}
-		} else {
-			if v.Prerelease() != current.Prerelease() {
-				continue
-			}
 		}
 
 		accept := false

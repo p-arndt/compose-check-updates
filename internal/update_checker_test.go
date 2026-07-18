@@ -170,6 +170,7 @@ image: %s/library/myimage:1.19.0
 					ImageName:     fmt.Sprintf("%s/library/myimage", serverURL.Host),
 					CurrentTag:    "1.19.0",
 					LatestTag:     "1.20.0",
+					MinorTag:      "1.20.0",
 				},
 			},
 		},
