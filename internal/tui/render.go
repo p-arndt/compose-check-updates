@@ -257,6 +257,85 @@ func (t Theme) Detail(u internal.UpdateInfo, level string, width int) string {
 	return strings.Join(lines, "\n")
 }
 
+// IssueEntry renders one captured scan issue as the lines it needs: the message
+// first, then one line per attribute, so the image and file a warning is about
+// are readable instead of being the part an ellipsis eats. Returns a slice
+// rather than a joined string because the pane scrolls by line.
+func (t Theme) IssueEntry(index int, msg string, attrs []string, cursor bool, width int) []string {
+	w := clampWidth(width)
+
+	marker := "  "
+	if cursor {
+		marker = "▸ "
+	}
+	const attrIndent = "    "
+
+	msgStyle := lipgloss.NewStyle().Foreground(t.Error)
+	if cursor {
+		msgStyle = msgStyle.Bold(true)
+	}
+	markStyle := lipgloss.NewStyle().Foreground(t.Accent).Bold(true)
+	attrStyle := lipgloss.NewStyle().Foreground(t.Dim)
+
+	var out []string
+	for i, l := range wrapPlain(fmt.Sprintf("%d. %s", index, msg), w-len([]rune(marker))) {
+		prefix := marker
+		if i > 0 {
+			prefix = "  "
+		}
+		out = append(out, fit(markStyle.Render(prefix)+msgStyle.Render(l), w))
+	}
+	for _, a := range attrs {
+		for _, l := range wrapPlain(a, w-len([]rune(attrIndent))) {
+			out = append(out, fit(attrIndent+attrStyle.Render(l), w))
+		}
+	}
+
+	if cursor {
+		for i := range out {
+			out[i] = lipgloss.NewStyle().Background(t.Highlight).Render(out[i])
+		}
+	}
+	return out
+}
+
+// wrapPlain breaks unstyled text into lines of at most w runes, preferring word
+// boundaries and cutting words that are longer than the whole width. Apply it
+// before styling, for the same reason truncatePlain must be.
+func wrapPlain(s string, w int) []string {
+	if w < 1 {
+		w = 1
+	}
+
+	var out []string
+	line := ""
+	flush := func() {
+		out = append(out, line)
+		line = ""
+	}
+	for _, word := range strings.Fields(s) {
+		switch {
+		case line == "":
+			line = word
+		case len([]rune(line))+1+len([]rune(word)) <= w:
+			line += " " + word
+		default:
+			flush()
+			line = word
+		}
+		// A word wider than the pane still has to go somewhere.
+		for len([]rune(line)) > w {
+			r := []rune(line)
+			out = append(out, string(r[:w]))
+			line = string(r[w:])
+		}
+	}
+	if line != "" || len(out) == 0 {
+		flush()
+	}
+	return out
+}
+
 // Legend is the colour key and the state line for the two independent settings
 // the list has. They are labelled rather than merely styled because they are
 // easy to confuse: "show" only hides rows, "target" decides which version
@@ -319,21 +398,30 @@ func (t Theme) Help(bindings []key.Binding, width int) string {
 	keyStyle := lipgloss.NewStyle().Foreground(t.Accent).Bold(true)
 	descStyle := lipgloss.NewStyle().Foreground(t.Dim)
 	sep := descStyle.Render("  ")
+	render := func(h [2]string) string { return keyStyle.Render(h[0]) + descStyle.Render(" "+h[1]) }
+	cost := func(h [2]string) int { return len([]rune(h[0])) + 1 + len([]rune(h[1])) }
+
+	if len(hints) == 0 {
+		return ""
+	}
+
+	// The caller puts the way out last, so the final hint is budgeted first and
+	// the rest fill what remains: a narrow terminal drops middle hints rather
+	// than the one key telling the user how to leave.
+	last := hints[len(hints)-1]
+	reserved := cost(last)
 
 	var parts []string
-	used := 0
-	for _, h := range hints {
-		plain := h[0] + " " + h[1]
-		cost := len([]rune(plain))
-		if len(parts) > 0 {
-			cost += 2
-		}
-		if used+cost > w {
+	used := reserved
+	for _, h := range hints[:len(hints)-1] {
+		c := cost(h) + 2
+		if used+c > w {
 			break
 		}
-		used += cost
-		parts = append(parts, keyStyle.Render(h[0])+descStyle.Render(" "+h[1]))
+		used += c
+		parts = append(parts, render(h))
 	}
+	parts = append(parts, render(last))
 	return fit(strings.Join(parts, sep), w)
 }
 

@@ -149,11 +149,21 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if m.phase != phaseScanning && m.phase != phaseBrowsing {
 		return m, nil
 	}
+	delta := 0
 	switch msg.Button {
 	case tea.MouseButtonWheelUp:
-		m.moveCursor(-1)
+		delta = -1
 	case tea.MouseButtonWheelDown:
-		m.moveCursor(1)
+		delta = 1
+	}
+	if delta == 0 {
+		return m, nil
+	}
+	// The wheel scrolls whichever pane is on screen.
+	if m.showIssues {
+		m.moveIssueCursor(delta)
+	} else {
+		m.moveCursor(delta)
 	}
 	return m, nil
 }
@@ -161,6 +171,12 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.phase == phaseRestartPrompt {
 		return m.handleRestartKey(msg)
+	}
+
+	// The issues pane owns the keyboard while it is open, which is also what
+	// lets esc mean "back to the list" there and "quit" everywhere else.
+	if m.showIssues {
+		return m.handleIssuesKey(msg)
 	}
 
 	if key.Matches(msg, m.keys.Quit) {
@@ -234,11 +250,52 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.Detail):
 		m.showDetail = !m.showDetail
 		m.syncScroll()
+	case key.Matches(msg, m.keys.Issues):
+		// Nothing to browse is a no-op with an explanation, not an empty pane
+		// the user then has to find their way out of.
+		if len(m.scanErrs) == 0 {
+			m.setStatus(StatusInfo, "no issues were logged during the scan")
+			break
+		}
+		m.showIssues = true
+		m.issueCursor = 0
+		m.issueOffset = 0
+		m.syncIssueScroll()
 	case key.Matches(msg, m.keys.Help):
 		m.showHelp = !m.showHelp
 		m.syncScroll()
 	case key.Matches(msg, m.keys.Apply):
 		return m.handleApply()
+	}
+	return m, nil
+}
+
+// handleIssuesKey drives the issues pane. It reads only navigation, the two
+// ways out, and quit: every list key would act on a list nobody can see.
+func (m Model) handleIssuesKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch {
+	case key.Matches(msg, m.keys.IssuesClose), key.Matches(msg, m.keys.Issues):
+		m.showIssues = false
+		m.syncScroll()
+	case key.Matches(msg, m.keys.Quit):
+		m.cancel()
+		m.phase = phaseDone
+		return m, tea.Quit
+	case key.Matches(msg, m.keys.Up):
+		m.moveIssueCursor(-1)
+	case key.Matches(msg, m.keys.Down):
+		m.moveIssueCursor(1)
+	case key.Matches(msg, m.keys.PageUp):
+		m.moveIssueCursor(-m.listHeight())
+	case key.Matches(msg, m.keys.PageDown):
+		m.moveIssueCursor(m.listHeight())
+	case key.Matches(msg, m.keys.Home):
+		m.moveIssueCursor(-len(m.scanErrs))
+	case key.Matches(msg, m.keys.End):
+		m.moveIssueCursor(len(m.scanErrs))
+	case key.Matches(msg, m.keys.Help):
+		m.showHelp = !m.showHelp
+		m.syncIssueScroll()
 	}
 	return m, nil
 }

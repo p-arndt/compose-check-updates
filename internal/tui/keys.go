@@ -20,6 +20,11 @@ type KeyMap struct {
 	ToggleGroup key.Binding
 	CollapseAll key.Binding
 	ExpandAll   key.Binding
+	// Issues opens the pane listing every skipped image and unreadable file.
+	// IssuesClose is read only while that pane is open, which is the one reason
+	// it may share esc with Quit.
+	Issues      key.Binding
+	IssuesClose key.Binding
 	Filter      key.Binding
 	Target      key.Binding
 	RowNext     key.Binding
@@ -48,6 +53,9 @@ func DefaultKeyMap() KeyMap {
 		CollapseAll: key.NewBinding(key.WithKeys("C"), key.WithHelp("C", "collapse all")),
 		ExpandAll:   key.NewBinding(key.WithKeys("E"), key.WithHelp("E", "expand all")),
 
+		Issues:      key.NewBinding(key.WithKeys("i"), key.WithHelp("i", "issues")),
+		IssuesClose: key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "back to list")),
+
 		Filter:  key.NewBinding(key.WithKeys("f"), key.WithHelp("f", "filter")),
 		Target:  key.NewBinding(key.WithKeys("t"), key.WithHelp("t", "target level")),
 		RowNext: key.NewBinding(key.WithKeys("T", "right", "l"), key.WithHelp("T/→", "row target")),
@@ -67,18 +75,18 @@ func (k KeyMap) Bindings() []key.Binding {
 		k.Up, k.Down, k.PageUp, k.PageDown, k.Home, k.End,
 		k.Toggle, k.SelectAll, k.SelectNone,
 		k.ToggleGroup, k.CollapseAll, k.ExpandAll,
-		k.Filter, k.Target, k.RowNext, k.Detail, k.Apply, k.Help, k.Quit,
+		k.Filter, k.Target, k.RowNext, k.Detail, k.Issues, k.Apply, k.Help, k.Quit,
 	}
 }
 
 func (k KeyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.Up, k.Down, k.Toggle, k.ToggleGroup, k.Filter, k.Target, k.RowNext, k.Apply, k.Help, k.Quit}
+	return []key.Binding{k.Up, k.Down, k.Toggle, k.ToggleGroup, k.Filter, k.Target, k.RowNext, k.Issues, k.Apply, k.Help, k.Quit}
 }
 
 func (k KeyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.Up, k.Down, k.PageUp, k.PageDown, k.Home, k.End},
-		{k.Toggle, k.SelectAll, k.SelectNone, k.Filter, k.Detail},
+		{k.Toggle, k.SelectAll, k.SelectNone, k.Filter, k.Detail, k.Issues},
 		{k.ToggleGroup, k.CollapseAll, k.ExpandAll},
 		{k.Target, k.RowNext, k.RowPrev},
 		{k.Apply, k.Help, k.Quit},
@@ -93,7 +101,13 @@ func (k KeyMap) FullHelp() [][]key.Binding {
 // Applying is deliberately absent — enter works, but offering it mid-scan
 // invites committing a half-finished list.
 func (k KeyMap) ScanHints() []key.Binding {
-	return []key.Binding{k.Up, k.Down, k.Toggle, k.ToggleGroup, k.Filter, k.Help, k.Quit}
+	return []key.Binding{k.Up, k.Down, k.Toggle, k.ToggleGroup, k.Filter, k.Issues, k.Help, k.Quit}
+}
+
+// IssueHints are the keys the issues pane reads. It leads with the way out,
+// because a pane covering the list has to say how to leave it.
+func (k KeyMap) IssueHints() []key.Binding {
+	return []key.Binding{k.IssuesClose, k.Issues, k.Up, k.Down, k.PageUp, k.PageDown, k.Home, k.End, k.Quit}
 }
 
 // BrowseHints are the full working set, once the scan has settled.

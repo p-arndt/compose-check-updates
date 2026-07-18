@@ -72,6 +72,13 @@ type Model struct {
 	showDetail bool
 	showHelp   bool
 
+	// The issues pane browses scanErrs in full. It takes over the middle of the
+	// screen and keeps its own cursor, so returning to the list lands the user
+	// exactly where they left it.
+	showIssues  bool
+	issueCursor int
+	issueOffset int
+
 	width  int
 	height int
 
@@ -428,6 +435,67 @@ func (m Model) selectedCount() int {
 func (m *Model) setStatus(kind StatusKind, text string) {
 	m.statusKind = kind
 	m.statusText = text
+}
+
+// moveIssueCursor walks the issues pane by whole issues, not by wrapped lines,
+// so a long entry is never something the user has to scroll through blind.
+func (m *Model) moveIssueCursor(delta int) {
+	if len(m.scanErrs) == 0 {
+		m.issueCursor, m.issueOffset = 0, 0
+		return
+	}
+	m.issueCursor += delta
+	if m.issueCursor < 0 {
+		m.issueCursor = 0
+	}
+	if m.issueCursor >= len(m.scanErrs) {
+		m.issueCursor = len(m.scanErrs) - 1
+	}
+	m.syncIssueScroll()
+}
+
+// syncIssueScroll keeps the highlighted issue on screen, pinning its first line
+// to the top when the entry alone is taller than the pane.
+func (m *Model) syncIssueScroll() {
+	if len(m.scanErrs) == 0 {
+		m.issueCursor, m.issueOffset = 0, 0
+		return
+	}
+	if m.issueCursor < 0 {
+		m.issueCursor = 0
+	}
+	if m.issueCursor >= len(m.scanErrs) {
+		m.issueCursor = len(m.scanErrs) - 1
+	}
+
+	lines, starts := m.issueLines()
+	h := m.listHeight()
+	if len(lines) <= h {
+		m.issueOffset = 0
+		return
+	}
+
+	top := starts[m.issueCursor]
+	bottom := len(lines)
+	if m.issueCursor+1 < len(starts) {
+		bottom = starts[m.issueCursor+1]
+	}
+
+	if top < m.issueOffset {
+		m.issueOffset = top
+	}
+	if bottom > m.issueOffset+h {
+		m.issueOffset = bottom - h
+	}
+	if m.issueOffset > top {
+		m.issueOffset = top
+	}
+	if m.issueOffset > len(lines)-h {
+		m.issueOffset = len(lines) - h
+	}
+	if m.issueOffset < 0 {
+		m.issueOffset = 0
+	}
 }
 
 // displayIndex maps a visible-row index to its line in the rendered list, or -1

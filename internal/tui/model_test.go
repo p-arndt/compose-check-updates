@@ -2,6 +2,7 @@ package tui
 
 import (
 	"errors"
+	"fmt"
 	"log/slog"
 	"strings"
 	"sync"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -378,8 +380,11 @@ func TestCapturedLogsSurfaceInTheStatusLine(t *testing.T) {
 	m = feed(t, m, logPollMsg{})
 
 	require.Len(t, m.scanErrs, 1)
-	assert.Contains(t, m.statusLine(), "Skipping (failed fetching tags)")
+	// The scanning line has no room for the message itself, so it points at the
+	// key that shows every one of them instead.
 	assert.Contains(t, m.statusLine(), "1 issue(s)")
+	assert.Contains(t, m.statusLine(), "press i")
+	assert.Contains(t, plainText(m.issuesView()), "Skipping (failed fetching tags)")
 
 	// Draining twice must not duplicate it.
 	m = feed(t, m, logPollMsg{})
@@ -543,6 +548,68 @@ func TestRowTargetIsANoopForDigestOnlyRows(t *testing.T) {
 	assert.Equal(t, "latest", m.rows[0].Update.LatestTag)
 }
 
+// frameHeight counts rendered rows. blockHeight trims trailing blanks, which is
+// exactly what must NOT be ignored here: a frame one line off scrolls the alt
+// screen and the UI shakes on every keypress.
+func frameHeight(s string) int { return len(strings.Split(s, "\n")) }
+
+func TestFrameIsExactlyTerminalHeight(t *testing.T) {
+	issue := scanEventMsg{ev: scanner.Event{
+		Kind: scanner.EventError, Path: "x",
+		Err: errors.New("a deliberately long failure message that has to wrap somewhere on a narrow terminal"),
+	}}
+
+	for _, rows := range []int{0, 1, 3, 50} {
+		base := newTestModel()
+		for i := 0; i < rows; i++ {
+			base = feed(t, base, updateEvent(
+				string(rune('a'+i%5))+"/compose.yml",
+				"img"+string(rune('a'+i%26)), "1.0", "2.0", "major"))
+		}
+		base = feed(t, base, issue, issue, issue)
+
+		for _, h := range []int{0, 1, 5, 8, 9, 12, 24, 40, 100} {
+			for _, w := range []int{20, 40, 80, 200} {
+				for _, mode := range []string{"plain", "detail", "help", "detail+help", "issues", "issues+help"} {
+					m := base
+					m.width, m.height = w, h
+					m.showDetail = strings.Contains(mode, "detail")
+					m.showHelp = strings.Contains(mode, "help")
+					m.showIssues = strings.Contains(mode, "issues")
+					m.syncScroll()
+					m.syncIssueScroll()
+
+					v := m.View()
+					assert.Equal(t, m.viewHeight(), frameHeight(v),
+						"rows=%d h=%d w=%d mode=%s", rows, h, w, mode)
+					if h >= minViewHeight {
+						assert.Equal(t, h, frameHeight(v), "rows=%d h=%d w=%d mode=%s", rows, h, w, mode)
+					}
+					for _, l := range strings.Split(v, "\n") {
+						require.LessOrEqual(t, lipgloss.Width(l), clampWidth(w),
+							"a line wider than the terminal wraps and breaks the height")
+					}
+				}
+			}
+		}
+	}
+}
+
+func TestFooterIsPinnedToTheLastRow(t *testing.T) {
+	m := newTestModel()
+	m = feed(t, m, updateEvent("a/compose.yml", "caddy", "2.7", "2.8", "minor"))
+	m.width, m.height = 200, 40 // far taller than the two-entry list needs
+
+	lines := strings.Split(m.View(), "\n")
+	require.Len(t, lines, 40)
+
+	// The hints are the final row, the legend the one above it, and the space
+	// between them and the list is padding rather than dead space at the bottom.
+	assert.Contains(t, plainText(lines[39]), "q quit")
+	assert.Contains(t, plainText(lines[38]), "target")
+	assert.Equal(t, "", strings.TrimSpace(plainText(lines[30])))
+}
+
 // Two bindings answering the same key in the same phase means one of them
 // silently never fires, which is exactly the bug adding fold keys could cause.
 func TestNoKeyIsBoundTwiceInTheBrowsingPhase(t *testing.T) {
@@ -553,7 +620,8 @@ func TestNoKeyIsBoundTwiceInTheBrowsingPhase(t *testing.T) {
 		"selectAll": {k.SelectAll}, "selectNone": {k.SelectNone},
 		"toggleGroup": {k.ToggleGroup}, "collapseAll": {k.CollapseAll}, "expandAll": {k.ExpandAll},
 		"filter": {k.Filter}, "target": {k.Target}, "rowNext": {k.RowNext}, "rowPrev": {k.RowPrev},
-		"detail": {k.Detail}, "apply": {k.Apply}, "help": {k.Help}, "quit": {k.Quit},
+		"detail": {k.Detail}, "issues": {k.Issues},
+		"apply": {k.Apply}, "help": {k.Help}, "quit": {k.Quit},
 	}
 
 	owner := map[string]string{}
@@ -567,10 +635,15 @@ func TestNoKeyIsBoundTwiceInTheBrowsingPhase(t *testing.T) {
 		}
 	}
 
-	// The fold keys in particular must have landed on free keys.
+	// The fold and issues keys in particular must have landed on free keys.
 	assert.Equal(t, []string{"z"}, k.ToggleGroup.Keys())
 	assert.Equal(t, []string{"C"}, k.CollapseAll.Keys())
 	assert.Equal(t, []string{"E"}, k.ExpandAll.Keys())
+	assert.Equal(t, []string{"i"}, k.Issues.Keys())
+
+	// IssuesClose is read only while the issues pane is open, where the browsing
+	// keys above are not — the one reason it may share esc with Quit.
+	assert.Equal(t, []string{"esc"}, k.IssuesClose.Keys())
 
 	// Yes/No live in the restart phase only, where none of the above are read —
 	// which is the one reason `n` may also mean SelectNone while browsing.
@@ -629,6 +702,154 @@ func TestHintFooterIsContextualPerPhase(t *testing.T) {
 	assert.Contains(t, v, "n no")
 	assert.NotContains(t, v, "space toggle")
 	assert.NotContains(t, v, "enter apply")
+}
+
+// issueEvent is a scanner failure for one file.
+func issueEvent(path, msg string) scanEventMsg {
+	return scanEventMsg{ev: scanner.Event{Kind: scanner.EventError, Path: path, Err: errors.New(msg)}}
+}
+
+// The whole point: the status line shows one issue, the pane shows all of them.
+func TestIssuesViewListsEveryIssue(t *testing.T) {
+	m := newTestModel()
+	m = feed(t, m,
+		issueEvent("a", "broken yaml in a"),
+		issueEvent("b", "broken yaml in b"),
+		issueEvent("c", "broken yaml in c"),
+	)
+	m.width, m.height = 100, 30
+	require.Len(t, m.scanErrs, 3)
+
+	assert.Contains(t, plainText(m.statusLine()), "3 issue(s)")
+
+	m = feed(t, m, keyMsg("i"))
+	require.True(t, m.showIssues)
+
+	pane := plainText(m.issuesView())
+	for i, want := range []string{"broken yaml in a", "broken yaml in b", "broken yaml in c"} {
+		assert.Contains(t, pane, want)
+		assert.Contains(t, pane, fmt.Sprintf("%d. ", i+1), "entries are numbered so 3 of 3 is visible")
+	}
+	assert.Contains(t, plainText(m.View()), "broken yaml in c")
+}
+
+// Captured slog records carry the image and path as attributes; a pane that
+// only showed the message would be no better than the truncated status line.
+func TestIssuesViewShowsRecordAttributes(t *testing.T) {
+	c := newLogCapture(slog.LevelWarn)
+	m := NewModel(scanner.Options{}).WithLogCapture(c)
+	m.width, m.height = 100, 30
+
+	slog.New(c).Warn("Skipping (failed fetching tags)",
+		"Image", "127.0.0.1:5000/myrepo/myapp", "Path", "tests/docker-compose.yml")
+	m = feed(t, m, logPollMsg{}, keyMsg("i"))
+	require.True(t, m.showIssues)
+
+	pane := plainText(m.issuesView())
+	assert.Contains(t, pane, "Skipping (failed fetching tags)")
+	assert.Contains(t, pane, "Image=127.0.0.1:5000/myrepo/myapp")
+	assert.Contains(t, pane, "Path=tests/docker-compose.yml")
+}
+
+func TestIssuesViewTogglesAndSwapsTheFooter(t *testing.T) {
+	m := newTestModel()
+	m = feed(t, m, updateEvent("a/compose.yml", "caddy", "2.7", "2.8", "minor"), issueEvent("a", "broken yaml"))
+	m.width, m.height = 200, 24
+
+	assert.Equal(t, m.keys.BrowseHints(), m.hintBindings())
+
+	m = feed(t, m, keyMsg("i"))
+	require.True(t, m.showIssues)
+	assert.Equal(t, m.keys.IssueHints(), m.hintBindings())
+	v := plainText(m.View())
+	assert.Contains(t, v, "esc back to list", "the way out must be on screen")
+	assert.NotContains(t, v, "enter apply", "list keys the pane ignores must not be advertised")
+
+	// esc goes back rather than quitting, and the list is where it was.
+	m = feed(t, m, tea.KeyMsg{Type: tea.KeyEsc})
+	assert.False(t, m.showIssues)
+	assert.NotEqual(t, phaseDone, m.phase)
+	assert.Equal(t, m.keys.BrowseHints(), m.hintBindings())
+	assert.Contains(t, plainText(m.View()), "caddy")
+
+	// `i` toggles it closed too.
+	m = feed(t, m, keyMsg("i"))
+	require.True(t, m.showIssues)
+	m = feed(t, m, keyMsg("i"))
+	assert.False(t, m.showIssues)
+
+	// q still quits from inside the pane.
+	q := feed(t, m, keyMsg("i"), keyMsg("q"))
+	assert.Equal(t, phaseDone, q.phase)
+}
+
+func TestIssuesKeyIsANoopWithoutIssues(t *testing.T) {
+	m := newTestModel()
+	m = feed(t, m, updateEvent("a/compose.yml", "caddy", "2.7", "2.8", "minor"))
+	m.width, m.height = 100, 24
+
+	m = feed(t, m, keyMsg("i"))
+	assert.False(t, m.showIssues, "an empty pane the user has to escape is worse than nothing")
+	assert.Contains(t, m.statusText, "no issues")
+	assert.Contains(t, plainText(m.View()), "caddy")
+
+	// And the pane itself still renders an empty state if it is ever forced open.
+	m.showIssues = true
+	assert.NotEmpty(t, m.issuesView())
+	assert.Equal(t, m.viewHeight(), frameHeight(m.View()))
+}
+
+func TestIssuesPaneScrollsAndClampsTheCursor(t *testing.T) {
+	m := newTestModel()
+	for i := 0; i < 40; i++ {
+		m = feed(t, m, issueEvent("f", fmt.Sprintf("issue number %d with a fairly long message attached to it", i)))
+	}
+	m.width, m.height = 60, 16
+	m = feed(t, m, keyMsg("i"))
+	require.True(t, m.showIssues)
+
+	lines, starts := m.issueLines()
+	require.Greater(t, len(lines), m.listHeight(), "the pane must actually need scrolling")
+
+	for i := 0; i < 60; i++ {
+		m = feed(t, m, keyMsg("j"))
+		require.GreaterOrEqual(t, m.issueCursor, 0)
+		require.Less(t, m.issueCursor, len(m.scanErrs))
+		require.GreaterOrEqual(t, m.issueOffset, 0)
+		require.LessOrEqual(t, len(strings.Split(m.issuesView(), "\n")), m.listHeight())
+		require.Equal(t, m.viewHeight(), frameHeight(m.View()))
+	}
+	assert.Equal(t, len(m.scanErrs)-1, m.issueCursor)
+
+	for i := 0; i < 60; i++ {
+		m = feed(t, m, keyMsg("k"))
+		require.GreaterOrEqual(t, m.issueCursor, 0)
+		require.Equal(t, m.viewHeight(), frameHeight(m.View()))
+	}
+	assert.Equal(t, 0, m.issueCursor)
+	assert.Equal(t, 0, m.issueOffset)
+
+	m = feed(t, m, tea.KeyMsg{Type: tea.KeyEnd})
+	assert.Equal(t, len(m.scanErrs)-1, m.issueCursor)
+	// The last entry must actually be on screen, not scrolled past.
+	last := starts[len(starts)-1]
+	assert.LessOrEqual(t, m.issueOffset, last)
+	assert.Less(t, last, m.issueOffset+m.listHeight())
+
+	m = feed(t, m, tea.KeyMsg{Type: tea.KeyHome})
+	assert.Equal(t, 0, m.issueCursor)
+	assert.Equal(t, 0, m.issueOffset)
+}
+
+func TestWrapPlainNeverExceedsWidth(t *testing.T) {
+	long := "Skipping (failed fetching tags) (Image=127.0.0.1:5000/a/very/long/repository/name/that/never/ends, Path=x)"
+	for _, w := range []int{-1, 0, 1, 3, 10, 40} {
+		for _, l := range wrapPlain(long, w) {
+			require.LessOrEqual(t, len([]rune(l)), max(w, 1), "width %d", w)
+		}
+	}
+	assert.Equal(t, []string{""}, wrapPlain("   ", 10), "blank input still yields one line")
+	assert.Equal(t, []string{"a b", "c"}, wrapPlain("a b c", 3))
 }
 
 func TestRestartPromptAnswers(t *testing.T) {
