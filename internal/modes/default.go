@@ -16,7 +16,11 @@ func Default(updateInfos []internal.UpdateInfo, ccuFlags internal.CCUFlags) {
 			if i.HasNewVersion(ccuFlags.Major, ccuFlags.Minor, ccuFlags.Patch) {
 				if !ccuFlags.Update && !ccuFlags.Restart {
 					// If no flags are provided, just print the new version
-					slog.Info("New version", "image", i.ImageName, "current", i.CurrentTag, "latest", i.LatestTag, "file", i.FilePath, "update_level", i.UpdateLevel())
+					attrs := []any{"image", i.ImageName, "current", i.CurrentTag, "latest", i.LatestTag, "file", i.FilePath, "update_level", i.UpdateLevel()}
+					if i.IsDigestUpdate() {
+						attrs = append(attrs, "current_digest", i.CurrentDigest, "latest_digest", i.LatestDigest)
+					}
+					slog.Info("New version", attrs...)
 				}
 
 				if ccuFlags.Update {

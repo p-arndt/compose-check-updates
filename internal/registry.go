@@ -13,6 +13,7 @@ import (
 
 type IRegistry interface {
 	FetchImageTags(image string) ([]string, error)
+	FetchImageDigest(image string) (string, error)
 }
 
 type Registry struct {
@@ -76,4 +77,23 @@ func (r *Registry) FetchImageTags(image string) ([]string, error) {
 	}
 
 	return tags, nil
+}
+
+// FetchImageDigest resolves the manifest digest an image reference currently
+// points to. Only the manifest headers are requested, so this stays cheap
+// enough to probe several tags of the same image.
+func (r *Registry) FetchImageDigest(image string) (string, error) {
+	ctx := context.Background()
+
+	rRef, err := ref.New(image)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse image reference %q: %w", image, err)
+	}
+
+	m, err := r.rc.ManifestHead(ctx, rRef)
+	if err != nil {
+		return "", fmt.Errorf("failed to fetch manifest for %q: %w", image, err)
+	}
+
+	return m.GetDescriptor().Digest.String(), nil
 }

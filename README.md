@@ -23,6 +23,7 @@ Easily update Docker Compose image tags to their latest versions.
 - [Usage](#usage)
 - [Flags](#flags)
 - [How does it work?](#how-does-it-work)
+  - [Images without semver tags](#images-without-semver-tags)
 - [Troubleshooting](#troubleshooting)
   - [Image tags with only x.y versions](#image-tags-with-only-xy-versions)
   - [No new versions found but there are newer versions available](#no-new-versions-found-but-there-are-newer-versions-available)
@@ -122,6 +123,30 @@ If newer versions are found, `compose-check-updates` will suggest the updated im
 
 > [!NOTE]
 > All subdirectories are scanned recursively for Docker Compose files.
+
+### Images without semver tags
+
+Not every image publishes semantic versions. Some are pinned by digest, others tag
+every build with the commit it was built from (for example `ghcr.io/vert-sh/vert`,
+which publishes `sha-e1c83ba` style tags). For those, `ccu` compares the image
+manifest digest instead of the version number:
+
+| In your Compose file                     | What `ccu` does                                                            |
+| ---------------------------------------- | -------------------------------------------------------------------------- |
+| `image: vert:sha-438f91a`                | Moves the tag to the one currently matching `latest`, e.g. `sha-e1c83ba`   |
+| `image: vert@sha256:abc…`                | Rewrites the digest to the one `latest` now resolves to                     |
+| `image: vert:1.2.3@sha256:abc…`          | Bumps the tag **and** the digest together, so they stay consistent          |
+| `image: vert:latest`                     | Skipped — a floating tag already resolves to the newest image               |
+
+These updates are reported with the update level `digest`. Since a digest change
+has no major/minor/patch level, it is always reported and is not affected by the
+`-major`, `-minor` and `-patch` flags.
+
+> [!NOTE]
+> Finding which tag carries the newest digest requires querying tags individually,
+> so the first check of such an image is noticeably slower than a semver lookup.
+> At most 250 tags of the same naming scheme are inspected; `ccu` warns when an
+> image has more tags than that.
 
 ## Troubleshooting
 
