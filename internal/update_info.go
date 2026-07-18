@@ -287,30 +287,34 @@ func (u *UpdateInfo) Update() error {
 	return nil
 }
 
-func (u *UpdateInfo) Restart() error {
-	dockerComposeCommand := "docker-compose"
-	_, err := exec.LookPath(dockerComposeCommand)
-	if err != nil {
-		dockerComposeCommand = "docker compose"
-		_, err = exec.LookPath(dockerComposeCommand)
-		if err != nil {
-			return err
+// composeCommand returns the argv prefix for the compose CLI available on this
+// host, preferring the `docker compose` plugin over the legacy `docker-compose`
+// binary.
+func composeCommand() ([]string, error) {
+	if _, err := exec.LookPath("docker"); err == nil {
+		// `docker` exists, but the compose plugin may not be installed.
+		if err := exec.Command("docker", "compose", "version").Run(); err == nil {
+			return []string{"docker", "compose"}, nil
 		}
 	}
 
-	var cmd *exec.Cmd
-	if dockerComposeCommand == "docker-compose" {
-		cmd = exec.Command("docker-compose", "-f", u.FilePath, "up", "-d")
-	} else {
-		cmd = exec.Command("docker", "compose", "-f", u.FilePath, "up", "-d")
+	if _, err := exec.LookPath("docker-compose"); err == nil {
+		return []string{"docker-compose"}, nil
 	}
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
 
-	err = cmd.Run()
+	return nil, fmt.Errorf("neither `docker compose` nor `docker-compose` is available in $PATH")
+}
+
+func (u *UpdateInfo) Restart() error {
+	compose, err := composeCommand()
 	if err != nil {
 		return err
 	}
 
-	return nil
+	args := append(append([]string{}, compose[1:]...), "-f", u.FilePath, "up", "-d")
+	cmd := exec.Command(compose[0], args...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	return cmd.Run()
 }
