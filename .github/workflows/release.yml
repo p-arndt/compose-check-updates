@@ -125,11 +125,12 @@ jobs:
 
           mkdir -p dist
           # Explicit target list rather than a GOOS×GOARCH cross-product:
-          # darwin has no 386 or arm (GOARM) port, so a naive product would
-          # produce build failures for combinations Go doesn't support.
+          # darwin has no 386 or arm (GOARM) port, and windows/arm was removed
+          # in Go 1.24, so a naive product would produce build failures for
+          # combinations Go doesn't support.
           for target in \
             linux/amd64 linux/arm linux/arm64 linux/386 \
-            windows/amd64 windows/arm windows/arm64 windows/386 \
+            windows/amd64 windows/arm64 windows/386 \
             darwin/amd64 darwin/arm64
           do
             GOOS="${target%/*}"; GOARCH="${target#*/}"
