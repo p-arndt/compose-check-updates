@@ -71,19 +71,25 @@ func TestHeadersAreEntriesAndCollapseHidesOnlyRows(t *testing.T) {
 	assert.Len(t, m.rows, 4)
 }
 
+// space and enter are the same key as far as the list is concerned, so the same
+// table drives both rather than a near-copy of this test drifting out of sync.
 func TestSpaceOnHeaderFoldsAndOnRowSelects(t *testing.T) {
-	m := twoGroups(t)
+	for _, k := range []string{" ", "enter"} {
+		t.Run(k, func(t *testing.T) {
+			m := twoGroups(t)
 
-	m = feed(t, m, keyMsg(" ")) // on the header: folds
-	assert.True(t, m.collapsed["a/compose.yml"])
-	assert.Equal(t, 0, m.selectedCount(), "space on a header must not select anything")
+			m = feed(t, m, keyMsg(k)) // on the header: folds
+			assert.True(t, m.collapsed["a/compose.yml"])
+			assert.Equal(t, 0, m.selectedCount(), "toggling a header must not select anything")
 
-	m = feed(t, m, keyMsg(" ")) // unfold again
-	require.False(t, m.collapsed["a/compose.yml"])
+			m = feed(t, m, keyMsg(k)) // unfold again
+			require.False(t, m.collapsed["a/compose.yml"])
 
-	m = feed(t, m, keyMsg("j"), keyMsg(" ")) // on a row: selects
-	assert.Equal(t, 1, m.selectedCount())
-	assert.False(t, m.collapsed["a/compose.yml"])
+			m = feed(t, m, keyMsg("j"), keyMsg(k)) // on a row: selects
+			assert.Equal(t, 1, m.selectedCount())
+			assert.False(t, m.collapsed["a/compose.yml"])
+		})
+	}
 }
 
 func TestCollapseStateSurvivesNewRowsAndResorts(t *testing.T) {
@@ -184,10 +190,10 @@ func TestSelectionsInsideACollapsedGroupStillApply(t *testing.T) {
 	assert.Equal(t, "caddy", m.selectedRows()[0].Update.ImageName)
 	assert.True(t, m.selectedRows()[0].Actionable())
 
-	// And still applied: enter queues it even though its group is folded away.
-	next, cmd := m.Update(keyMsg("enter"))
+	// And still applied: A queues it even though its group is folded away.
+	next, cmd := m.Update(keyMsg("A"))
 	m = next.(Model)
-	require.NotNil(t, cmd, "a folded selection must not turn enter into a no-op")
+	require.NotNil(t, cmd, "a folded selection must not turn A into a no-op")
 	assert.Equal(t, phaseApplying, m.phase)
 	assert.Equal(t, 1, m.applyActive)
 

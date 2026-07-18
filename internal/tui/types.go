@@ -60,7 +60,7 @@ func (f Filter) Matches(level string) bool {
 
 // Target is the update level a row's tag is pointed at. It is deliberately
 // distinct from Filter: Filter only decides what is *shown*, Target decides
-// what `enter` actually writes into the compose file. The string values match
+// what the apply keys actually write into the compose file. The values match
 // the vocabulary internal.UpdateInfo.TagForTarget speaks.
 type Target string
 
@@ -115,7 +115,7 @@ type Row struct {
 	// Target is the level this row's LatestTag currently points at. NoTarget is
 	// set when the image has no release at that level at all: the row keeps its
 	// old LatestTag internally but must be presented and treated as having no
-	// update, or `enter` would write a version the user never chose.
+	// update, or applying would write a version the user never chose.
 	Target   Target
 	NoTarget bool
 }

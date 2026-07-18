@@ -31,16 +31,17 @@ func applyCmd(r Row) tea.Cmd {
 	}
 }
 
-// beginApply queues every selected pending row and starts up to
-// applyConcurrency of them. Returns nil when there is nothing to do.
-func (m *Model) beginApply() tea.Cmd {
-	selected := m.selectedRows()
-	if len(selected) == 0 {
+// beginApply queues the given pending rows and starts up to applyConcurrency of
+// them. Returns nil when there is nothing to do. Both apply keys funnel through
+// here so the digest resolve, the concurrency budget and the restart prompt are
+// written once rather than once per entry point.
+func (m *Model) beginApply(rows []Row) tea.Cmd {
+	if len(rows) == 0 {
 		return nil
 	}
 
 	m.applyQueue = m.applyQueue[:0]
-	for _, r := range selected {
+	for _, r := range rows {
 		m.applyQueue = append(m.applyQueue, rowKey(r))
 	}
 	m.phase = phaseApplying

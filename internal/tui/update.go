@@ -205,9 +205,10 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.End):
 		m.moveCursor(len(m.entries))
 	case key.Matches(msg, m.keys.Toggle):
-		// On a file header space folds the group; on a row it keeps its select
-		// meaning. A row with nothing at the current target has no tag to write,
-		// so it cannot be selected at all.
+		// On a file header space/enter folds the group; on a row it keeps its
+		// select meaning. A row with nothing at the current target has no tag to
+		// write, so it cannot be selected at all. Neither key ever writes: that is
+		// what A and u are for.
 		if e, ok := m.currentEntry(); ok && e.kind == entryHeader {
 			m.toggleGroup(e.path)
 			break
@@ -266,6 +267,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.syncScroll()
 	case key.Matches(msg, m.keys.Apply):
 		return m.handleApply()
+	case key.Matches(msg, m.keys.ApplyRow):
+		return m.handleApplyRow()
 	}
 	return m, nil
 }
@@ -301,12 +304,35 @@ func (m Model) handleIssuesKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleApply() (tea.Model, tea.Cmd) {
-	cmd := m.beginApply()
+	cmd := m.beginApply(m.selectedRows())
 	if cmd == nil {
 		m.setStatus(StatusWarn, "nothing selected — press space to select updates")
 		return m, nil
 	}
 	m.cancel() // a still-running scan would keep appending rows mid-apply
+	return m, cmd
+}
+
+// handleApplyRow writes just the row under the cursor. It reads no selection and
+// sets none, so it is the escape hatch for "this one, now" without disturbing a
+// selection built up for A.
+func (m Model) handleApplyRow() (tea.Model, tea.Cmd) {
+	r := m.currentRow()
+	if r == nil {
+		m.setStatus(StatusWarn, "no image under the cursor — press u on an update row")
+		return m, nil
+	}
+	switch {
+	case r.State == RowApplied:
+		m.setStatus(StatusInfo, "this update has already been applied")
+		return m, nil
+	case r.NoTarget:
+		m.setStatus(StatusWarn, fmt.Sprintf("no %s release for this image — press T to retarget it", r.Target.Label()))
+		return m, nil
+	}
+
+	cmd := m.beginApply([]Row{*r})
+	m.cancel()
 	return m, cmd
 }
 

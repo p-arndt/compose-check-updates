@@ -339,7 +339,7 @@ func wrapPlain(s string, w int) []string {
 // Legend is the colour key and the state line for the two independent settings
 // the list has. They are labelled rather than merely styled because they are
 // easy to confuse: "show" only hides rows, "target" decides which version
-// `enter` actually writes.
+// the apply keys actually write.
 func (t Theme) Legend(active Filter, target Target, width int) string {
 	w := clampWidth(width)
 	dim := lipgloss.NewStyle().Foreground(t.Dim)

@@ -245,28 +245,187 @@ func TestAffectedFilesAreDeduplicated(t *testing.T) {
 	assert.Equal(t, "b/compose.yml", files[1].FilePath)
 }
 
-func TestEnterWithNothingSelectedStaysBrowsing(t *testing.T) {
+func TestApplyWithNothingSelectedStaysBrowsing(t *testing.T) {
 	m := newTestModel()
 	m = feed(t, m, updateEvent("a/compose.yml", "caddy", "2.7", "2.8", "minor"))
 
-	m = feed(t, m, keyMsg("enter"))
+	m = feed(t, m, keyMsg("A"))
 
 	assert.Equal(t, phaseBrowsing, m.phase)
 	assert.Equal(t, StatusWarn, m.statusKind)
 	assert.NotEmpty(t, m.statusText)
 }
 
-func TestEnterWithSelectionEntersApplying(t *testing.T) {
+func TestApplyWithSelectionEntersApplying(t *testing.T) {
 	m := newTestModel()
 	m = feed(t, m, updateEvent("a/compose.yml", "caddy", "2.7", "2.8", "minor"))
 	m = feed(t, m, keyMsg("j"), keyMsg(" "))
 
-	next, cmd := m.Update(keyMsg("enter"))
+	next, cmd := m.Update(keyMsg("A"))
 	m = next.(Model)
 
 	assert.Equal(t, phaseApplying, m.phase)
 	assert.NotNil(t, cmd)
 	assert.Equal(t, 1, m.applyActive)
+}
+
+// The safety property the whole rebinding exists for: enter is the key a user
+// hits by reflex, so it must never reach the disk.
+func TestEnterOnlyTogglesAndNeverApplies(t *testing.T) {
+	m := newTestModel()
+	m = feed(t, m, updateEvent("a/compose.yml", "caddy", "2.7", "2.8", "minor"))
+
+	next, cmd := m.Update(keyMsg("j"))
+	m = next.(Model)
+	next, cmd = m.Update(keyMsg("enter"))
+	m = next.(Model)
+
+	assert.Equal(t, 1, m.selectedCount(), "enter still toggles")
+	assert.Equal(t, phaseBrowsing, m.phase, "enter must not start an apply")
+	assert.Nil(t, cmd)
+	assert.Equal(t, 0, m.applyActive)
+	assert.Empty(t, m.applyQueue)
+
+	// Even with a selection already staged, enter only un-toggles it.
+	next, cmd = m.Update(keyMsg("enter"))
+	m = next.(Model)
+	assert.Equal(t, 0, m.selectedCount())
+	assert.Equal(t, phaseBrowsing, m.phase)
+	assert.Nil(t, cmd)
+}
+
+// `a` and `A` are distinct keys; a select-all that also wrote files would be the
+// worst possible confusion of the two.
+func TestLowercaseAOnlySelectsAndNeverApplies(t *testing.T) {
+	m := newTestModel()
+	m = feed(t, m,
+		updateEvent("a/compose.yml", "caddy", "2.7", "2.8", "minor"),
+		updateEvent("a/compose.yml", "postgres", "15", "16", "major"),
+	)
+
+	next, cmd := m.Update(keyMsg("a"))
+	m = next.(Model)
+
+	assert.Equal(t, 2, m.selectedCount())
+	assert.Equal(t, phaseBrowsing, m.phase)
+	assert.Nil(t, cmd)
+	assert.Equal(t, 0, m.applyActive)
+
+	// And `A` in turn selects nothing new — it only commits what `a` staged.
+	next, cmd = m.Update(keyMsg("A"))
+	m = next.(Model)
+	assert.Equal(t, phaseApplying, m.phase)
+	assert.NotNil(t, cmd)
+	assert.Equal(t, 2, m.selectedCount(), "A must not touch the selection")
+}
+
+func TestApplyRowAppliesOnlyTheCursorRowAndLeavesTheSelection(t *testing.T) {
+	m := newTestModel()
+	m = feed(t, m,
+		updateEvent("a/compose.yml", "caddy", "2.7", "2.8", "minor"),
+		updateEvent("a/compose.yml", "postgres", "15", "16", "major"),
+	)
+
+	// Stage a selection on caddy, then apply postgres with the cursor on it.
+	m = feed(t, m, keyMsg("j"), keyMsg(" "))
+	require.Equal(t, 1, m.selectedCount())
+
+	m = feed(t, m, keyMsg("j"))
+	require.Equal(t, "postgres", m.currentRow().Update.ImageName)
+
+	next, cmd := m.Update(keyMsg("u"))
+	m = next.(Model)
+	require.NotNil(t, cmd)
+	assert.Equal(t, phaseApplying, m.phase)
+	assert.Equal(t, 1, m.applyActive, "exactly one row is queued")
+
+	// The staged selection is untouched: u reads the cursor, not the selection.
+	assert.True(t, rowFor(t, m, "caddy").Selected)
+	assert.False(t, rowFor(t, m, "postgres").Selected)
+
+	m = feed(t, m, applyResultMsg{key: rowKey(*rowFor(t, m, "postgres"))})
+	assert.Equal(t, RowApplied, rowFor(t, m, "postgres").State)
+	assert.Equal(t, RowPending, rowFor(t, m, "caddy").State, "the selected row was not written")
+}
+
+func TestApplyRowIsANoopOnHeaderNoTargetAndAppliedRows(t *testing.T) {
+	// On a header: the cursor starts there.
+	m := newTestModel()
+	m = feed(t, m, updateEvent("a/compose.yml", "caddy", "2.7", "2.8", "minor"))
+	require.Nil(t, m.currentRow())
+
+	next, cmd := m.Update(keyMsg("u"))
+	m = next.(Model)
+	assert.Nil(t, cmd)
+	assert.Equal(t, phaseBrowsing, m.phase)
+	assert.NotEmpty(t, m.statusText)
+
+	// On a NoTarget row: nothing to write at the current target.
+	nt := newTestModel()
+	nt = feed(t, nt, levelEvent("postgres", "15", "", "", "16"))
+	nt = feed(t, nt, keyMsg("t"), keyMsg("j")) // → patch, onto the row
+	require.True(t, nt.currentRow().NoTarget)
+
+	next, cmd = nt.Update(keyMsg("u"))
+	nt = next.(Model)
+	assert.Nil(t, cmd)
+	assert.Equal(t, phaseBrowsing, nt.phase)
+	assert.Equal(t, StatusWarn, nt.statusKind)
+
+	// On an already-applied row: re-writing it is a no-op, not a second write.
+	ap := newTestModel()
+	ap = feed(t, ap, updateEvent("a/compose.yml", "caddy", "2.7", "2.8", "minor"))
+	ap = feed(t, ap, keyMsg("j"))
+	ap.rows[0].State = RowApplied
+
+	next, cmd = ap.Update(keyMsg("u"))
+	ap = next.(Model)
+	assert.Nil(t, cmd)
+	assert.Equal(t, phaseBrowsing, ap.phase)
+	assert.Contains(t, ap.statusText, "already")
+}
+
+// Re-pointing a row clears its resolved digest, and Update() then refuses the
+// stale tag/digest pair outright. Both apply keys must therefore resolve first,
+// or digest-pinned rows fail visibly on either path.
+//
+// The image points at a dead local port so the resolve fails offline and fast:
+// what matters is that the row reports a *fetch* failure, which only happens if
+// ResolveDigest ran, and never Update()'s "refusing to update" refusal.
+func TestBothApplyPathsResolveDigestsBeforeWriting(t *testing.T) {
+	for _, k := range []string{"A", "u"} {
+		t.Run(k, func(t *testing.T) {
+			m := newTestModel()
+			ev := updateEvent("a/compose.yml", "127.0.0.1:1/myrepo/myapp", "1.0", "2.0", "major")
+			// A digest resolved for the OLD tag: exactly the state re-pointing leaves.
+			ev.ev.Update.CurrentDigest = "sha256:aaaa"
+			ev.ev.Update.LatestDigest = "sha256:bbbb"
+			m = feed(t, m, ev)
+			m = feed(t, m, keyMsg("j"))
+			if k == "A" {
+				m = feed(t, m, keyMsg(" "))
+			}
+
+			next, cmd := m.Update(keyMsg(k))
+			m = next.(Model)
+			require.NotNil(t, cmd, "the row must actually be queued")
+			assert.Equal(t, phaseApplying, m.phase, "the write runs off the UI thread")
+
+			// The work is deferred into the command rather than done inside Update.
+			// tea.Batch collapses a single command, so unwrap only if it batched.
+			msg := cmd()
+			if batch, ok := msg.(tea.BatchMsg); ok {
+				require.Len(t, batch, 1)
+				msg = batch[0]()
+			}
+
+			res, ok := msg.(applyResultMsg)
+			require.True(t, ok)
+			require.Error(t, res.err)
+			assert.NotContains(t, res.err.Error(), "refusing to update",
+				"a skipped ResolveDigest is what produces this refusal")
+		})
+	}
 }
 
 func TestCursorClampsAndEmptyListIsSafe(t *testing.T) {
@@ -621,7 +780,7 @@ func TestNoKeyIsBoundTwiceInTheBrowsingPhase(t *testing.T) {
 		"toggleGroup": {k.ToggleGroup}, "collapseAll": {k.CollapseAll}, "expandAll": {k.ExpandAll},
 		"filter": {k.Filter}, "target": {k.Target}, "rowNext": {k.RowNext}, "rowPrev": {k.RowPrev},
 		"detail": {k.Detail}, "issues": {k.Issues},
-		"apply": {k.Apply}, "help": {k.Help}, "quit": {k.Quit},
+		"apply": {k.Apply}, "applyRow": {k.ApplyRow}, "help": {k.Help}, "quit": {k.Quit},
 	}
 
 	owner := map[string]string{}
@@ -640,6 +799,14 @@ func TestNoKeyIsBoundTwiceInTheBrowsingPhase(t *testing.T) {
 	assert.Equal(t, []string{"C"}, k.CollapseAll.Keys())
 	assert.Equal(t, []string{"E"}, k.ExpandAll.Keys())
 	assert.Equal(t, []string{"i"}, k.Issues.Keys())
+
+	// The two write keys are the whole point of the rebinding: enter toggles and
+	// nothing else, and `a`/`A` are separate keys with separate meanings.
+	assert.Equal(t, []string{" ", "enter"}, k.Toggle.Keys())
+	assert.Equal(t, []string{"A"}, k.Apply.Keys())
+	assert.Equal(t, []string{"u"}, k.ApplyRow.Keys())
+	assert.Equal(t, []string{"a"}, k.SelectAll.Keys())
+	assert.NotContains(t, k.Apply.Keys(), "enter", "enter must never write to disk")
 
 	// IssuesClose is read only while the issues pane is open, where the browsing
 	// keys above are not — the one reason it may share esc with Quit.
@@ -660,9 +827,10 @@ func TestKeyHintFooterIsAlwaysVisible(t *testing.T) {
 	require.False(t, m.showHelp, "the footer must not depend on ?")
 
 	v := plainText(m.View())
-	assert.Contains(t, v, "space toggle")
+	assert.Contains(t, v, "space/enter toggle")
 	assert.Contains(t, v, "z fold group")
-	assert.Contains(t, v, "enter apply")
+	assert.Contains(t, v, "A apply selected")
+	assert.Contains(t, v, "u apply row")
 	assert.Contains(t, v, "? help")
 
 	// ? expands the one-liner into the grouped listing rather than revealing it.
@@ -700,8 +868,8 @@ func TestHintFooterIsContextualPerPhase(t *testing.T) {
 	v := plainText(m.View())
 	assert.Contains(t, v, "y yes")
 	assert.Contains(t, v, "n no")
-	assert.NotContains(t, v, "space toggle")
-	assert.NotContains(t, v, "enter apply")
+	assert.NotContains(t, v, "space/enter toggle")
+	assert.NotContains(t, v, "A apply selected")
 }
 
 // issueEvent is a scanner failure for one file.
@@ -763,7 +931,7 @@ func TestIssuesViewTogglesAndSwapsTheFooter(t *testing.T) {
 	assert.Equal(t, m.keys.IssueHints(), m.hintBindings())
 	v := plainText(m.View())
 	assert.Contains(t, v, "esc back to list", "the way out must be on screen")
-	assert.NotContains(t, v, "enter apply", "list keys the pane ignores must not be advertised")
+	assert.NotContains(t, v, "A apply selected", "list keys the pane ignores must not be advertised")
 
 	// esc goes back rather than quitting, and the list is where it was.
 	m = feed(t, m, tea.KeyMsg{Type: tea.KeyEsc})

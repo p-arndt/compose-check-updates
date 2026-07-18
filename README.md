@@ -130,24 +130,30 @@ so you can start selecting before the scan has finished.
 | Key                  | Action                                              |
 | -------------------- | --------------------------------------------------- |
 | `↑`/`↓` or `k`/`j`   | Move the selection                                  |
-| `space`              | Toggle the selected update                          |
+| `space` or `enter`   | Toggle — select a row, or fold/unfold a file group  |
 | `a`                  | Select all updates                                  |
 | `n`                  | Select none                                         |
+| `z`                  | Fold/unfold the group under the cursor              |
+| `C` / `E`            | Collapse all / expand all groups                    |
 | `f`                  | Cycle the display filter (which rows are shown)     |
 | `t`                  | Cycle the target level for **all** rows             |
 | `T`/`→` or `←`       | Cycle the target level for the **highlighted** row  |
 | `d` or `tab`         | Toggle the detail pane                              |
-| `enter`              | Apply the selected updates                          |
+| `i`                  | Show the issues logged during the scan              |
+| `A`                  | Apply the **selected** updates                      |
+| `u`                  | Apply **only the highlighted row**                  |
 | `y` / `n`            | Answer the restart prompt                           |
 | `?`                  | Show help                                           |
 | `q`                  | Quit                                                |
+
+`space`/`enter` never write anything — applying is always an explicit `A` or `u`.
 
 ### Filter vs. target
 
 These are two different things, and the legend at the bottom names both:
 
 - **`show`** (`f`) only decides which rows are *visible*. It never changes a version.
-- **`target`** (`t`, `T`) decides which version `enter` actually *writes*.
+- **`target`** (`t`, `T`) decides which version `A` and `u` actually *write*.
 
 The target defaults to `major`, so out of the box `ccu -i` offers the highest
 available version, as it always has. Set it to `minor` or `patch` when you would
@@ -159,7 +165,7 @@ Rows are re-pointed individually with `T`, which only cycles the levels that
 image actually has — the `(+2)` after a version tells you two other levels are
 available. The badge always shows the level of the version currently selected.
 An image with nothing at the current target is shown as `[-] … no patch update`
-and cannot be selected, so `enter` can never write a version you did not pick.
+and cannot be selected or applied, so `ccu` can never write a version you did not pick.
 
 After applying, `ccu` asks once whether the affected Compose files should be
 restarted with `docker compose up -d`.
