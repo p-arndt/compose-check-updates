@@ -4,6 +4,8 @@ import (
 	"os"
 	"sync"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestHasNewVersion(t *testing.T) {
@@ -34,6 +36,172 @@ func TestHasNewVersion(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestTagForTarget(t *testing.T) {
+	tests := []struct {
+		name   string
+		info   UpdateInfo
+		target string
+		want   string
+	}{
+		{"major picks the major tag", UpdateInfo{PatchTag: "2.9.4", MinorTag: "2.11.3", MajorTag: "3.7.8"}, "major", "3.7.8"},
+		{"minor stays in the major", UpdateInfo{PatchTag: "2.9.4", MinorTag: "2.11.3", MajorTag: "3.7.8"}, "minor", "2.11.3"},
+		{"patch stays in the minor", UpdateInfo{PatchTag: "2.9.4", MinorTag: "2.11.3", MajorTag: "3.7.8"}, "patch", "2.9.4"},
+		{"major falls back to minor", UpdateInfo{PatchTag: "2.9.4", MinorTag: "2.11.3"}, "major", "2.11.3"},
+		{"major falls back to patch", UpdateInfo{PatchTag: "2.9.4"}, "major", "2.9.4"},
+		{"minor falls back to patch", UpdateInfo{PatchTag: "2.9.4"}, "minor", "2.9.4"},
+		{"patch never falls up", UpdateInfo{MinorTag: "2.11.3", MajorTag: "3.7.8"}, "patch", ""},
+		{"minor never falls up", UpdateInfo{MajorTag: "3.7.8"}, "minor", ""},
+		{"nothing available", UpdateInfo{}, "major", ""},
+		{"unknown target", UpdateInfo{PatchTag: "2.9.4"}, "digest", ""},
+		{
+			"digest-only update returns the latest tag",
+			UpdateInfo{LatestTag: "abc123", CurrentDigest: "sha256:old", LatestDigest: "sha256:new"},
+			"major", "abc123",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, tt.info.TagForTarget(tt.target))
+		})
+	}
+}
+
+func TestAvailableTargets(t *testing.T) {
+	tests := []struct {
+		name string
+		info UpdateInfo
+		want []string
+	}{
+		{"all levels in order", UpdateInfo{PatchTag: "2.9.4", MinorTag: "2.11.3", MajorTag: "3.7.8"}, []string{"patch", "minor", "major"}},
+		{"missing levels are dropped", UpdateInfo{MajorTag: "3.7.8"}, []string{"major"}},
+		{"identical tags are not offered twice", UpdateInfo{MinorTag: "2.11.3", MajorTag: "2.11.3"}, []string{"minor"}},
+		{"nothing available", UpdateInfo{}, nil},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, tt.info.AvailableTargets())
+		})
+	}
+}
+
+func TestSelectTarget(t *testing.T) {
+	t.Run("changes the tag", func(t *testing.T) {
+		u := UpdateInfo{LatestTag: "3.7.8", PatchTag: "2.9.4", MinorTag: "2.11.3", MajorTag: "3.7.8"}
+		assert.True(t, u.SelectTarget("patch"))
+		assert.Equal(t, "2.9.4", u.LatestTag)
+	})
+
+	t.Run("reports no change when already selected", func(t *testing.T) {
+		u := UpdateInfo{LatestTag: "3.7.8", MajorTag: "3.7.8"}
+		assert.False(t, u.SelectTarget("major"))
+		assert.Equal(t, "3.7.8", u.LatestTag)
+	})
+
+	t.Run("keeps the selection when the level is empty", func(t *testing.T) {
+		u := UpdateInfo{LatestTag: "3.7.8", MajorTag: "3.7.8"}
+		assert.False(t, u.SelectTarget("patch"))
+		assert.Equal(t, "3.7.8", u.LatestTag)
+	})
+
+	t.Run("clears a digest resolved for another tag", func(t *testing.T) {
+		u := UpdateInfo{
+			LatestTag:     "3.7.8",
+			PatchTag:      "2.9.4",
+			MajorTag:      "3.7.8",
+			CurrentDigest: "sha256:old",
+			LatestDigest:  "sha256:major",
+			digestFor:     "3.7.8",
+		}
+
+		assert.True(t, u.SelectTarget("patch"))
+		assert.Equal(t, "2.9.4", u.LatestTag)
+		assert.Empty(t, u.LatestDigest, "digest of the major release must not survive")
+	})
+
+	t.Run("keeps a digest that still matches", func(t *testing.T) {
+		u := UpdateInfo{
+			LatestTag:     "3.7.8",
+			MajorTag:      "3.7.8",
+			CurrentDigest: "sha256:old",
+			LatestDigest:  "sha256:major",
+			digestFor:     "3.7.8",
+		}
+
+		assert.False(t, u.SelectTarget("major"))
+		assert.Equal(t, "sha256:major", u.LatestDigest)
+	})
+}
+
+// TestUpdateRefusesDigestMismatch covers the case the guard exists for: a target
+// switch left the digest behind, and writing it would pin the wrong image.
+func TestUpdateRefusesDigestMismatch(t *testing.T) {
+	line := "image: myapp:1.0.0@sha256:old"
+
+	t.Run("missing digest", func(t *testing.T) {
+		path := writeComposeFile(t, line)
+		u := UpdateInfo{
+			FilePath: path, RawLine: line,
+			CurrentTag: "1.0.0", LatestTag: "2.0.0",
+			CurrentDigest: "sha256:old",
+		}
+
+		assert.Error(t, u.Update())
+
+		content, err := os.ReadFile(path)
+		assert.NoError(t, err)
+		assert.Equal(t, line, string(content))
+	})
+
+	t.Run("stale digest", func(t *testing.T) {
+		path := writeComposeFile(t, line)
+		u := UpdateInfo{
+			FilePath: path, RawLine: line,
+			CurrentTag: "1.0.0", LatestTag: "2.0.0",
+			CurrentDigest: "sha256:old", LatestDigest: "sha256:for-1-1-0",
+			digestFor: "1.1.0",
+		}
+
+		assert.Error(t, u.Update())
+
+		content, err := os.ReadFile(path)
+		assert.NoError(t, err)
+		assert.Equal(t, line, string(content))
+	})
+
+	t.Run("matching digest is written", func(t *testing.T) {
+		path := writeComposeFile(t, line)
+		u := UpdateInfo{
+			FilePath: path, RawLine: line,
+			CurrentTag: "1.0.0", LatestTag: "2.0.0",
+			CurrentDigest: "sha256:old", LatestDigest: "sha256:new",
+			digestFor: "2.0.0",
+		}
+
+		assert.NoError(t, u.Update())
+
+		content, err := os.ReadFile(path)
+		assert.NoError(t, err)
+		assert.Equal(t, "image: myapp:2.0.0@sha256:new", string(content))
+	})
+}
+
+// TestResolveDigestNoop guards the cheap exits: references without a digest have
+// nothing to rewrite, so no registry call may happen.
+func TestResolveDigestNoop(t *testing.T) {
+	u := UpdateInfo{LatestTag: "2.0.0"}
+	assert.NoError(t, u.ResolveDigest(nil))
+	assert.Empty(t, u.LatestDigest)
+
+	resolved := UpdateInfo{
+		LatestTag: "2.0.0", CurrentDigest: "sha256:old",
+		LatestDigest: "sha256:new", digestFor: "2.0.0",
+	}
+	assert.NoError(t, resolved.ResolveDigest(nil))
+	assert.Equal(t, "sha256:new", resolved.LatestDigest)
 }
 
 // TestUpdateConcurrent guards against images of the same compose file

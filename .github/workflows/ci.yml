@@ -1,0 +1,47 @@
+name: CI
+permissions:
+  contents: read
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    # Windows is in the matrix on purpose: ccu walks the filesystem for compose
+    # files and renders a TUI, both of which have path- and terminal-handling
+    # behaviour a Linux-only CI would never exercise.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+
+    # Third-party actions are pinned to full commit SHAs rather than tags: tags
+    # are mutable, so a repointed tag would silently change what runs here.
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Setup Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          # Reads the Go version straight from go.mod so it never drifts.
+          go-version-file: go.mod
+          cache: true
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        # ./... covers the fixture-driven suite under tests/ as well.
+        run: go test ./...
+
+      - name: Build
+        run: go build ./...

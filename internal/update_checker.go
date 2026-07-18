@@ -48,6 +48,10 @@ func (u *UpdateChecker) Check(major, minor, patch bool) ([]UpdateInfo, error) {
 			continue
 		}
 
+		// Every level is resolved so an interactive caller can offer a choice of
+		// target; LatestTag stays the highest tag the requested flags allow.
+		info.PatchTag, info.MinorTag, info.MajorTag = FindLatestPerLevel(version, tags)
+
 		latestVersion := FindLatestVersion(version, tags, major, minor, patch)
 		if latestVersion == "" {
 			continue
@@ -65,6 +69,7 @@ func (u *UpdateChecker) Check(major, minor, patch bool) ([]UpdateInfo, error) {
 				continue
 			}
 			info.LatestDigest = latestDigest
+			info.digestFor = latestVersion
 		}
 	}
 
@@ -111,6 +116,7 @@ func (u *UpdateChecker) checkDigest(info *UpdateInfo) {
 		return
 	}
 	info.LatestDigest = latestDigest
+	info.digestFor = info.LatestTag
 
 	// A pinned digest is rewritten in place and the tag, if any, stays as it is.
 	if pinnedByDigest {
@@ -138,6 +144,7 @@ func (u *UpdateChecker) checkDigest(info *UpdateInfo) {
 		return
 	}
 	info.LatestTag = latestTag
+	info.digestFor = latestTag
 }
 
 func (u *UpdateChecker) createUpdateInfos() ([]UpdateInfo, error) {
