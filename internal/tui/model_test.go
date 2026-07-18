@@ -3,9 +3,11 @@ package tui
 import (
 	"errors"
 	"log/slog"
+	"strings"
 	"sync"
 	"testing"
 
+	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -109,14 +111,15 @@ func TestCursorStaysOnSameRowWhenRowInsertedAbove(t *testing.T) {
 		updateEvent("c/compose.yml", "nginx", "1.24", "1.25", "minor"),
 	)
 
-	m = feed(t, m, keyMsg("j")) // cursor on nginx
+	// Entries are [hdr b, redis, hdr c, nginx] — headers are navigable lines too.
+	m = feed(t, m, keyMsg("j"), keyMsg("j"), keyMsg("j")) // cursor on nginx
 	require.Equal(t, "nginx", m.currentRow().Update.ImageName)
 
 	// A row sorting above the cursor arrives mid-scan.
 	m = feed(t, m, updateEvent("a/compose.yml", "postgres", "15", "16", "major"))
 
 	assert.Equal(t, "nginx", m.currentRow().Update.ImageName)
-	assert.Equal(t, 2, m.cursor)
+	assert.Equal(t, 5, m.cursor)
 }
 
 func TestFilterCyclingChangesVisibleRows(t *testing.T) {
@@ -170,6 +173,7 @@ func TestToggleAndSelectNone(t *testing.T) {
 		updateEvent("a/compose.yml", "postgres", "15", "16", "major"),
 	)
 
+	m = feed(t, m, keyMsg("j")) // off the file header, onto the first row
 	m = feed(t, m, keyMsg(" "))
 	assert.Equal(t, 1, m.selectedCount())
 	m = feed(t, m, keyMsg(" "))
@@ -253,7 +257,7 @@ func TestEnterWithNothingSelectedStaysBrowsing(t *testing.T) {
 func TestEnterWithSelectionEntersApplying(t *testing.T) {
 	m := newTestModel()
 	m = feed(t, m, updateEvent("a/compose.yml", "caddy", "2.7", "2.8", "minor"))
-	m = feed(t, m, keyMsg(" "))
+	m = feed(t, m, keyMsg("j"), keyMsg(" "))
 
 	next, cmd := m.Update(keyMsg("enter"))
 	m = next.(Model)
@@ -279,14 +283,14 @@ func TestCursorClampsAndEmptyListIsSafe(t *testing.T) {
 	m = feed(t, m, keyMsg("k"), keyMsg("k"))
 	assert.Equal(t, 0, m.cursor)
 
-	m = feed(t, m, keyMsg("j"), keyMsg("j"), keyMsg("j"))
-	assert.Equal(t, len(m.visible)-1, m.cursor)
+	m = feed(t, m, keyMsg("j"), keyMsg("j"), keyMsg("j"), keyMsg("j"))
+	assert.Equal(t, len(m.entries)-1, m.cursor)
 
 	m = feed(t, m, tea.KeyMsg{Type: tea.KeyHome})
 	assert.Equal(t, 0, m.cursor)
 
 	m = feed(t, m, tea.KeyMsg{Type: tea.KeyEnd})
-	assert.Equal(t, len(m.visible)-1, m.cursor)
+	assert.Equal(t, len(m.entries)-1, m.cursor)
 }
 
 func TestScanErrorsAreCollectedAndCounted(t *testing.T) {
@@ -469,7 +473,8 @@ func TestToggleCannotSelectARowWithNoTarget(t *testing.T) {
 	m = feed(t, m, levelEvent("postgres", "15", "", "", "16"))
 	m = feed(t, m, keyMsg("t")) // → patch, nothing available
 
-	m = feed(t, m, keyMsg(" "))
+	m = feed(t, m, keyMsg("j"), keyMsg(" "))
+	require.NotNil(t, m.currentRow())
 	assert.Equal(t, 0, m.selectedCount())
 }
 
@@ -483,7 +488,7 @@ func TestRowTargetCyclingStaysWithinAvailableTargets(t *testing.T) {
 	// Cursor is on redis? Rows sort by image name: redis after traefik.
 	require.Equal(t, "redis", m.rows[0].Update.ImageName)
 
-	m = feed(t, m, keyMsg("j")) // onto traefik
+	m = feed(t, m, keyMsg("j"), keyMsg("j")) // past the file header, onto traefik
 	require.Equal(t, "traefik", m.currentRow().Update.ImageName)
 	avail := m.currentRow().Update.AvailableTargets()
 	require.Equal(t, []string{"patch", "major"}, avail)
@@ -517,7 +522,7 @@ func TestRowTargetCyclingRecoversARowWithNoGlobalTarget(t *testing.T) {
 
 	// Per-image control is the point of the feature: the row can be pointed back
 	// at the only level it actually has.
-	m = feed(t, m, keyMsg("T"))
+	m = feed(t, m, keyMsg("j"), keyMsg("T"))
 	assert.False(t, m.rows[0].NoTarget)
 	assert.Equal(t, TargetMajor, m.rows[0].Target)
 	assert.Equal(t, "16", m.rows[0].Update.LatestTag)
@@ -532,10 +537,98 @@ func TestRowTargetIsANoopForDigestOnlyRows(t *testing.T) {
 	m = feed(t, m, ev)
 
 	// No levels to choose between: the row must survive both keys unchanged.
-	m = feed(t, m, keyMsg("t"), keyMsg("T"))
+	m = feed(t, m, keyMsg("j"), keyMsg("t"), keyMsg("T"))
 	assert.False(t, m.rows[0].NoTarget)
 	assert.Equal(t, "digest", m.rows[0].Level)
 	assert.Equal(t, "latest", m.rows[0].Update.LatestTag)
+}
+
+// Two bindings answering the same key in the same phase means one of them
+// silently never fires, which is exactly the bug adding fold keys could cause.
+func TestNoKeyIsBoundTwiceInTheBrowsingPhase(t *testing.T) {
+	k := DefaultKeyMap()
+	named := map[string][]key.Binding{
+		"up": {k.Up}, "down": {k.Down}, "pgup": {k.PageUp}, "pgdown": {k.PageDown},
+		"home": {k.Home}, "end": {k.End}, "toggle": {k.Toggle},
+		"selectAll": {k.SelectAll}, "selectNone": {k.SelectNone},
+		"toggleGroup": {k.ToggleGroup}, "collapseAll": {k.CollapseAll}, "expandAll": {k.ExpandAll},
+		"filter": {k.Filter}, "target": {k.Target}, "rowNext": {k.RowNext}, "rowPrev": {k.RowPrev},
+		"detail": {k.Detail}, "apply": {k.Apply}, "help": {k.Help}, "quit": {k.Quit},
+	}
+
+	owner := map[string]string{}
+	for name, bs := range named {
+		for _, b := range bs {
+			for _, s := range b.Keys() {
+				prev, taken := owner[s]
+				assert.False(t, taken, "key %q is bound to both %s and %s", s, prev, name)
+				owner[s] = name
+			}
+		}
+	}
+
+	// The fold keys in particular must have landed on free keys.
+	assert.Equal(t, []string{"z"}, k.ToggleGroup.Keys())
+	assert.Equal(t, []string{"C"}, k.CollapseAll.Keys())
+	assert.Equal(t, []string{"E"}, k.ExpandAll.Keys())
+
+	// Yes/No live in the restart phase only, where none of the above are read —
+	// which is the one reason `n` may also mean SelectNone while browsing.
+	assert.Equal(t, []string{"n"}, k.No.Keys())
+	assert.Equal(t, []string{"y"}, k.Yes.Keys())
+}
+
+// The hint footer is the only thing telling a first-time user the keys exist,
+// so it must be on screen without pressing anything.
+func TestKeyHintFooterIsAlwaysVisible(t *testing.T) {
+	m := newTestModel()
+	m = feed(t, m, updateEvent("a/compose.yml", "caddy", "2.7", "2.8", "minor"))
+	m.width, m.height = 200, 24
+	require.False(t, m.showHelp, "the footer must not depend on ?")
+
+	v := plainText(m.View())
+	assert.Contains(t, v, "space toggle")
+	assert.Contains(t, v, "z fold group")
+	assert.Contains(t, v, "enter apply")
+	assert.Contains(t, v, "? help")
+
+	// ? expands the one-liner into the grouped listing rather than revealing it.
+	exp := feed(t, m, keyMsg("?"))
+	require.True(t, exp.showHelp)
+	ev := plainText(exp.View())
+	assert.Contains(t, ev, "C collapse all")
+	assert.Contains(t, ev, "E expand all")
+	assert.Greater(t, exp.blockHeight(exp.expandedHelp()), 1, "the expanded help is multi-line")
+
+	// Both forms are budgeted for: the list never spills past its window.
+	for _, mm := range []Model{m, exp} {
+		assert.LessOrEqual(t, len(strings.Split(mm.listView(), "\n")), mm.listHeight())
+		assert.LessOrEqual(t, mm.blockHeight(mm.View()), mm.height)
+	}
+}
+
+func TestHintFooterIsContextualPerPhase(t *testing.T) {
+	m := newTestModel()
+	m = feed(t, m, updateEvent("a/compose.yml", "caddy", "2.7", "2.8", "minor"))
+	m.width = 200
+
+	assert.Equal(t, m.keys.BrowseHints(), m.hintBindings())
+
+	m.phase = phaseScanning
+	assert.Equal(t, m.keys.ScanHints(), m.hintBindings())
+
+	m.phase = phaseApplying
+	assert.Equal(t, m.keys.ApplyHints(), m.hintBindings())
+
+	// The restart question accepts y/n only; advertising the list keys there
+	// would name keys the phase throws away.
+	m.phase = phaseRestartPrompt
+	assert.Equal(t, m.keys.RestartHints(), m.hintBindings())
+	v := plainText(m.View())
+	assert.Contains(t, v, "y yes")
+	assert.Contains(t, v, "n no")
+	assert.NotContains(t, v, "space toggle")
+	assert.NotContains(t, v, "enter apply")
 }
 
 func TestRestartPromptAnswers(t *testing.T) {

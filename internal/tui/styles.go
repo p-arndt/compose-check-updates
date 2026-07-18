@@ -20,14 +20,14 @@ func DefaultTheme() Theme {
 		Major:     lipgloss.Color("203"), // soft red — louder shades vibrate on light terminals
 		Minor:     lipgloss.Color("179"), // amber, readable on white unlike bright yellow
 		Patch:     lipgloss.Color("71"),  // muted green
-		Digest:    lipgloss.Color("75"),  // sky blue
+		Digest:    lipgloss.Color("141"), // violet — deliberately off the blue axis so the badge cannot be read as chrome
 		Text:      lipgloss.Color("252"),
 		Dim:       lipgloss.Color("244"), // mid grey: the one value that survives both polarities
-		Accent:    lipgloss.Color("141"),
+		Accent:    lipgloss.Color("75"),  // light blue: carries the dark title text with plenty of contrast
 		Success:   lipgloss.Color("71"),
 		Warn:      lipgloss.Color("179"),
 		Error:     lipgloss.Color("203"),
-		Highlight: lipgloss.Color("238"),
+		Highlight: lipgloss.Color("24"), // dark desaturated blue: reads as the cursor row, never as the title bar
 	}
 }
 

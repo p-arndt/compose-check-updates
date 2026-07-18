@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/charmbracelet/bubbles/spinner"
 
@@ -45,10 +46,15 @@ type Model struct {
 	events <-chan scanner.Event
 
 	rows    []Row
-	visible []int // indices into rows that pass the current filter
-	cursor  int   // index into visible
-	offset  int   // first display line rendered, for scrolling
+	visible []int   // indices into rows that pass the current filter
+	entries []entry // the rendered lines: file headers plus the rows they show
+	cursor  int     // index into entries — headers are navigable too
+	offset  int     // first display line rendered, for scrolling
 	filter  Filter
+	// collapsed folds a compose file's group away. It is keyed by path rather
+	// than by index so it survives the re-sorts a streaming scan causes, and it
+	// is display-only: a folded row keeps its selection and is still applied.
+	collapsed map[string]bool
 	// target is the level every row is pointed at unless the user has moved that
 	// row individually. Filter hides rows; target changes what gets written.
 	target Target
@@ -94,14 +100,15 @@ func NewModel(opts scanner.Options) Model {
 	sp.Spinner = spinner.Dot
 
 	return Model{
-		opts:    opts,
-		theme:   theme,
-		keys:    DefaultKeyMap(),
-		phase:   phaseScanning,
-		spinner: sp,
-		ctx:     ctx,
-		cancel:  cancel,
-		filter:  FilterAll,
+		opts:      opts,
+		theme:     theme,
+		keys:      DefaultKeyMap(),
+		phase:     phaseScanning,
+		spinner:   sp,
+		ctx:       ctx,
+		cancel:    cancel,
+		filter:    FilterAll,
+		collapsed: make(map[string]bool),
 		// Major preserves the behaviour of every earlier release: the highest
 		// available version is what a fresh session offers.
 		target: TargetMajor,
@@ -148,19 +155,42 @@ func (m *Model) addRow(r Row) {
 	m.rebuild(key)
 }
 
-// cursorKey is the identity of the row under the cursor, or "" when the list is
-// empty.
-func (m Model) cursorKey() string {
-	r := m.currentRow()
-	if r == nil {
-		return ""
+// headerKeyPrefix marks a file header's cursor identity. A rowKey always starts
+// with a file path, so this byte cannot collide with one.
+const headerKeyPrefix = "\x01"
+
+// entryKey is the identity of one list line across re-sorts: its path for a
+// header, its row key for a row.
+func (m Model) entryKey(e entry) string {
+	if e.kind == entryHeader {
+		return headerKeyPrefix + e.path
 	}
-	return rowKey(*r)
+	return rowKey(m.rows[e.row])
 }
 
-// rebuild recomputes the visible set and puts the cursor back on the row it was
-// on before, so inserting or filtering never moves the selection to a different
-// image under the user's hands.
+// keyGroup is the compose file an entry key belongs to. It lets rebuild fall
+// back to a group's header when the row the cursor was on has been folded away.
+func keyGroup(key string) string {
+	if strings.HasPrefix(key, headerKeyPrefix) {
+		return key[len(headerKeyPrefix):]
+	}
+	path, _, _ := strings.Cut(key, "\x00")
+	return path
+}
+
+// cursorKey is the identity of the entry under the cursor, or "" when the list
+// is empty.
+func (m Model) cursorKey() string {
+	e, ok := m.currentEntry()
+	if !ok {
+		return ""
+	}
+	return m.entryKey(e)
+}
+
+// rebuild recomputes the visible set and the rendered entries, then puts the
+// cursor back on what it was on before, so inserting or filtering never moves
+// the selection to a different image under the user's hands.
 func (m *Model) rebuild(keepKey string) {
 	m.visible = m.visible[:0]
 	for i, r := range m.rows {
@@ -169,20 +199,46 @@ func (m *Model) rebuild(keepKey string) {
 		}
 	}
 
+	// One header per compose file, then that file's rows unless it is folded.
+	// Collapsed groups keep their header, so their content is never silently
+	// gone from the list.
+	m.entries = m.entries[:0]
+	last := ""
+	for vi, ri := range m.visible {
+		p := m.rows[ri].FilePath()
+		if vi == 0 || p != last {
+			last = p
+			m.entries = append(m.entries, entry{kind: entryHeader, path: p, row: -1})
+		}
+		if !m.collapsed[p] {
+			m.entries = append(m.entries, entry{kind: entryRow, path: p, row: ri})
+		}
+	}
+
 	if keepKey != "" {
-		for vi, ri := range m.visible {
-			if rowKey(m.rows[ri]) == keepKey {
-				m.cursor = vi
+		group, fallback := keyGroup(keepKey), -1
+		for i, e := range m.entries {
+			if m.entryKey(e) == keepKey {
+				m.cursor = i
 				m.clampCursor()
 				return
 			}
+			if e.kind == entryHeader && e.path == group {
+				fallback = i
+			}
+		}
+		// The entry is gone — folded away, or filtered out. Landing on its group
+		// header keeps the cursor where the user was looking instead of on
+		// whatever row the old index now happens to point at.
+		if fallback >= 0 {
+			m.cursor = fallback
 		}
 	}
 	m.clampCursor()
 }
 
 func (m *Model) clampCursor() {
-	if len(m.visible) == 0 {
+	if len(m.entries) == 0 {
 		m.cursor = 0
 		m.offset = 0
 		return
@@ -190,16 +246,64 @@ func (m *Model) clampCursor() {
 	if m.cursor < 0 {
 		m.cursor = 0
 	}
-	if m.cursor >= len(m.visible) {
-		m.cursor = len(m.visible) - 1
+	if m.cursor >= len(m.entries) {
+		m.cursor = len(m.entries) - 1
 	}
 }
 
+// currentEntry is the list line under the cursor.
+func (m Model) currentEntry() (entry, bool) {
+	if m.cursor < 0 || m.cursor >= len(m.entries) {
+		return entry{}, false
+	}
+	return m.entries[m.cursor], true
+}
+
+// currentRow is the highlighted row, or nil when the cursor sits on a file
+// header — which is what makes every per-row key a no-op there.
 func (m Model) currentRow() *Row {
-	if m.cursor < 0 || m.cursor >= len(m.visible) {
+	e, ok := m.currentEntry()
+	if !ok || e.kind != entryRow {
 		return nil
 	}
-	return &m.rows[m.visible[m.cursor]]
+	return &m.rows[e.row]
+}
+
+// cursorGroup is the compose file the cursor is in, whether it sits on the
+// header or on a row inside the group.
+func (m Model) cursorGroup() string {
+	e, ok := m.currentEntry()
+	if !ok {
+		return ""
+	}
+	return e.path
+}
+
+// toggleGroup folds or unfolds one compose file. Rebuilding on the current
+// cursor key is what moves the cursor up onto the header when the row it was
+// sitting on has just been folded away.
+func (m *Model) toggleGroup(path string) {
+	if path == "" {
+		return
+	}
+	if m.collapsed == nil {
+		m.collapsed = make(map[string]bool)
+	}
+	m.collapsed[path] = !m.collapsed[path]
+	m.rebuild(m.cursorKey())
+	m.syncScroll()
+}
+
+// setAllCollapsed folds or unfolds every group at once.
+func (m *Model) setAllCollapsed(v bool) {
+	if m.collapsed == nil {
+		m.collapsed = make(map[string]bool)
+	}
+	for _, r := range m.rows {
+		m.collapsed[r.FilePath()] = v
+	}
+	m.rebuild(m.cursorKey())
+	m.syncScroll()
 }
 
 func (m *Model) rowByKey(key string) *Row {
@@ -212,7 +316,7 @@ func (m *Model) rowByKey(key string) *Row {
 }
 
 func (m *Model) moveCursor(delta int) {
-	if len(m.visible) == 0 {
+	if len(m.entries) == 0 {
 		return
 	}
 	m.cursor += delta
@@ -326,43 +430,48 @@ func (m *Model) setStatus(kind StatusKind, text string) {
 	m.statusText = text
 }
 
-// displayIndex maps a visible-row index to its line in the rendered list, which
-// also contains one header line per compose file.
+// displayIndex maps a visible-row index to its line in the rendered list, or -1
+// when the row's group is collapsed and it is not on screen at all.
 func (m Model) displayIndex(vi int) int {
-	headers := 0
-	last := ""
-	for i := 0; i <= vi && i < len(m.visible); i++ {
-		p := m.rows[m.visible[i]].FilePath()
-		if p != last {
-			headers++
-			last = p
+	if vi < 0 || vi >= len(m.visible) {
+		return -1
+	}
+	ri := m.visible[vi]
+	for i, e := range m.entries {
+		if e.kind == entryRow && e.row == ri {
+			return i
 		}
 	}
-	return vi + headers
+	return -1
 }
 
-func (m Model) displayCount() int {
-	if len(m.visible) == 0 {
-		return 0
-	}
-	return m.displayIndex(len(m.visible)-1) + 1
-}
+// displayCount is how many lines the list renders. Since headers became entries
+// this is simply their count — no header arithmetic on top of the row count.
+func (m Model) displayCount() int { return len(m.entries) }
 
 // syncScroll nudges the window just far enough to keep the cursor on screen,
 // rather than recentring, so paging feels like a terminal pager.
 func (m *Model) syncScroll() {
 	h := m.listHeight()
-	total := m.displayCount()
+	total := len(m.entries)
 
 	if total <= h {
 		m.offset = 0
 		return
 	}
 
-	// The file header above the cursor row should stay visible together with it.
-	ci := m.displayIndex(m.cursor)
+	ci := m.cursor
+	if ci < 0 {
+		ci = 0
+	}
+	if ci >= total {
+		ci = total - 1
+	}
+
+	// The file header above the cursor row should stay visible together with it,
+	// so a row never appears detached from the file it belongs to.
 	top := ci
-	if m.startsGroup(m.cursor) {
+	if ci > 0 && m.entries[ci].kind == entryRow && m.entries[ci-1].kind == entryHeader {
 		top = ci - 1
 	}
 
@@ -378,13 +487,4 @@ func (m *Model) syncScroll() {
 	if m.offset < 0 {
 		m.offset = 0
 	}
-}
-
-// startsGroup reports whether the visible row at vi is the first of its compose
-// file, i.e. whether a file header is drawn directly above it.
-func (m Model) startsGroup(vi int) bool {
-	if vi <= 0 || vi >= len(m.visible) {
-		return vi == 0 && len(m.visible) > 0
-	}
-	return m.rows[m.visible[vi]].FilePath() != m.rows[m.visible[vi-1]].FilePath()
 }

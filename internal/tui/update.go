@@ -185,16 +185,31 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.PageDown):
 		m.moveCursor(m.listHeight())
 	case key.Matches(msg, m.keys.Home):
-		m.moveCursor(-len(m.visible))
+		m.moveCursor(-len(m.entries))
 	case key.Matches(msg, m.keys.End):
-		m.moveCursor(len(m.visible))
+		m.moveCursor(len(m.entries))
 	case key.Matches(msg, m.keys.Toggle):
-		// A row with nothing at the current target has no tag to write, so it
-		// cannot be selected at all.
+		// On a file header space folds the group; on a row it keeps its select
+		// meaning. A row with nothing at the current target has no tag to write,
+		// so it cannot be selected at all.
+		if e, ok := m.currentEntry(); ok && e.kind == entryHeader {
+			m.toggleGroup(e.path)
+			break
+		}
 		if r := m.currentRow(); r != nil && r.Actionable() {
 			r.Selected = !r.Selected
 		}
+	case key.Matches(msg, m.keys.ToggleGroup):
+		m.toggleGroup(m.cursorGroup())
+	case key.Matches(msg, m.keys.CollapseAll):
+		m.setAllCollapsed(true)
+	case key.Matches(msg, m.keys.ExpandAll):
+		m.setAllCollapsed(false)
 	case key.Matches(msg, m.keys.SelectAll):
+		// Deliberately collapse-blind: folding is a display operation, so `a`
+		// selects every row the *filter* shows, folded or not. Each collapsed
+		// header reports "(N updates, M selected)", which is what keeps the
+		// outcome visible rather than surprising.
 		for _, ri := range m.visible {
 			if m.rows[ri].Actionable() {
 				m.rows[ri].Selected = true

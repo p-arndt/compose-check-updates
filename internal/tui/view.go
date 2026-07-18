@@ -3,11 +3,13 @@ package tui
 import (
 	"fmt"
 	"strings"
+
+	"github.com/charmbracelet/bubbles/key"
 )
 
 // chromeLines is what the list never gets: title, status, a blank line above
-// and below the list, and the legend.
-const chromeLines = 5
+// and below the list, the legend, and the always-on key hint footer.
+const chromeLines = 6
 
 func (m Model) View() string {
 	if m.phase == phaseDone && m.err != nil {
@@ -32,12 +34,46 @@ func (m Model) View() string {
 	}
 
 	b.WriteString(m.theme.Legend(m.filter, m.target, m.width))
+
+	// The hint line is unconditional: keys nobody can see are keys nobody uses.
+	// `?` then expands it into the grouped listing rather than revealing it.
+	b.WriteByte('\n')
 	if m.showHelp {
-		b.WriteByte('\n')
-		b.WriteString(m.theme.Help(m.keys.Bindings(), m.width))
+		b.WriteString(m.expandedHelp())
+	} else {
+		b.WriteString(m.theme.Help(m.hintBindings(), m.width))
 	}
 
 	return b.String()
+}
+
+// hintBindings is the footer's key set for the current phase. Showing the
+// browsing keys during the restart question would advertise keys that phase
+// throws away.
+func (m Model) hintBindings() []key.Binding {
+	switch m.phase {
+	case phaseScanning:
+		return m.keys.ScanHints()
+	case phaseApplying:
+		return m.keys.ApplyHints()
+	case phaseRestartPrompt, phaseRestarting:
+		return m.keys.RestartHints()
+	default:
+		return m.keys.BrowseHints()
+	}
+}
+
+// expandedHelp is the `?` view: FullHelp's groups, one line each, so related
+// keys stay together instead of wrapping into one undifferentiated run.
+func (m Model) expandedHelp() string {
+	groups := m.keys.FullHelp()
+	lines := make([]string, 0, len(groups))
+	for _, g := range groups {
+		if line := m.theme.Help(g, m.width); line != "" {
+			lines = append(lines, line)
+		}
+	}
+	return strings.Join(lines, "\n")
 }
 
 func (m Model) statusLine() string {
@@ -78,7 +114,9 @@ func (m Model) listHeight() int {
 		h -= m.blockHeight(m.detailView())
 	}
 	if m.showHelp {
-		h -= m.blockHeight(m.theme.Help(m.keys.Bindings(), m.width))
+		// chromeLines already reserves the one hint line the footer always has;
+		// the expanded listing only costs the extra rows on top of it.
+		h -= m.blockHeight(m.expandedHelp()) - 1
 	}
 	if h < 1 {
 		return 1
@@ -102,41 +140,34 @@ func (m Model) blockHeight(s string) int {
 }
 
 func (m Model) listView() string {
-	if len(m.visible) == 0 {
+	if len(m.entries) == 0 {
 		return m.theme.Empty(m.emptyText(), m.width)
 	}
 
 	h := m.listHeight()
 	offset := m.offset
-	if total := m.displayCount(); offset > total-h {
+	if total := len(m.entries); offset > total-h {
 		offset = total - h
 	}
 	if offset < 0 {
 		offset = 0
 	}
+	end := offset + h
+	if end > len(m.entries) {
+		end = len(m.entries)
+	}
 
-	// Only the lines inside the window are rendered, so a list far longer than
-	// the terminal costs no more to draw than a short one.
-	var lines []string
-	di := 0
-	lastPath := ""
-	for vi, ri := range m.visible {
-		row := m.rows[ri]
-		if row.FilePath() != lastPath {
-			lastPath = row.FilePath()
-			if di >= offset && di < offset+h {
-				shown, total := m.fileCounts(lastPath)
-				lines = append(lines, m.theme.FileHeader(lastPath, shown, total, m.width))
-			}
-			di++
+	// Entries are already one line each, so the window is a plain slice: only
+	// what is on screen is rendered, and a list far longer than the terminal
+	// costs no more to draw than a short one.
+	lines := make([]string, 0, end-offset)
+	for i := offset; i < end; i++ {
+		e := m.entries[i]
+		if e.kind == entryHeader {
+			lines = append(lines, m.theme.GroupHeader(m.groupInfo(e.path, i == m.cursor), m.width))
+			continue
 		}
-		if di >= offset && di < offset+h {
-			lines = append(lines, m.theme.RowLine(row, vi == m.cursor, m.width))
-		}
-		di++
-		if di >= offset+h {
-			break
-		}
+		lines = append(lines, m.theme.RowLine(m.rows[e.row], i == m.cursor, m.width))
 	}
 
 	return strings.Join(lines, "\n")
@@ -154,19 +185,4 @@ func (m Model) emptyText() string {
 	}
 	return fmt.Sprintf("No %s updates at target %s (f changes the filter, t the target)",
 		m.filter.Label(), m.target.Label())
-}
-
-// fileCounts reports how many of a file's rows pass the filter and how many it
-// has in total, for the "shown/total" hint in the header.
-func (m Model) fileCounts(path string) (shown, total int) {
-	for _, r := range m.rows {
-		if r.FilePath() != path {
-			continue
-		}
-		total++
-		if m.filter.Matches(r.Level) {
-			shown++
-		}
-	}
-	return shown, total
 }

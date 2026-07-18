@@ -139,6 +139,24 @@ func (r Row) otherTargets() int {
 	return n - 1
 }
 
+// entryKind distinguishes the two things a list line — and therefore the cursor
+// — can be since file groups became collapsible.
+type entryKind int
+
+const (
+	entryHeader entryKind = iota
+	entryRow
+)
+
+// entry is one rendered line of the list. Headers are entries in their own
+// right so the cursor can land on a group and fold it, which also makes the
+// rendered line index and the cursor index the same number.
+type entry struct {
+	kind entryKind
+	path string // compose file — set for headers and rows alike
+	row  int    // index into Model.rows; -1 on a header
+}
+
 // StatusKind classifies a transient status line rendered under the title.
 type StatusKind int
 
