@@ -22,6 +22,7 @@ Easily update Docker Compose image tags to their latest versions.
     - [Linux](#linux)
 - [Usage](#usage)
 - [Flags](#flags)
+- [Keeping ccu up to date](#keeping-ccu-up-to-date)
 - [Interactive mode](#interactive-mode)
 - [How does it work?](#how-does-it-work)
   - [Images without semver tags](#images-without-semver-tags)
@@ -103,18 +104,46 @@ You can also control the update behavior by using the flags described below.
 > [!IMPORTANT]
 > When using `-i` for interactive mode other arguments (except `-d` for directory and `-exclude`) will be ignored. See [Interactive mode](#interactive-mode).
 
-| Flag       | Description                                                    | Default                 |
-| ---------- | -------------------------------------------------------------- | ----------------------- |
-| `-h`       | Show help message                                              | `false`                 |
-| `-u`       | Update the Docker Compose files with the new image tags        | `false`                 |
-| `-r`       | Restart the services after updating the Docker Compose files   | `false`                 |
-| `-i`       | Launch the full-screen TUI to pick which images to update      | `false`                 |
-| `-d`       | Specify the directory to scan for Docker Compose files         | `.` (current directory) |
-| `-f`       | Full update mode, checks updates to latest semver version      | `false`                 |
-| `-major`   | Only suggest major version updates                             | `false`                 |
-| `-minor`   | Only suggest minor version updates                             | `false`                 |
-| `-patch`   | Only suggest patch version updates                             | `true`                  |
-| `-exclude` | Exclude specific services from being updated (comma-separated) | `none`                  |
+| Flag            | Description                                                                | Default                 |
+| --------------- | -------------------------------------------------------------------------- | ----------------------- |
+| `-h`            | Show help message                                                          | `false`                 |
+| `-u`            | Update the Docker Compose files with the new image tags                    | `false`                 |
+| `-r`            | Restart the services after updating the Docker Compose files               | `false`                 |
+| `-i`            | Launch the full-screen TUI to pick which images to update                  | `false`                 |
+| `-d`            | Specify the directory to scan for Docker Compose files                     | `.` (current directory) |
+| `-f`            | Full update mode, checks updates to latest semver version                  | `false`                 |
+| `-major`        | Only suggest major version updates                                         | `false`                 |
+| `-minor`        | Only suggest minor version updates                                         | `false`                 |
+| `-patch`        | Only suggest patch version updates                                         | `true`                  |
+| `-exclude`      | Exclude specific services from being updated (comma-separated)             | `none`                  |
+| `-self-update`  | Download and install the latest version of `ccu`                           | `false`                 |
+| `-check-update` | Check whether a newer version of `ccu` is available, without installing it | `false`                 |
+
+## Keeping ccu up to date
+
+`ccu` can update itself:
+
+```bash
+ccu -self-update
+```
+
+It downloads the latest release, verifies it, and replaces the running binary in
+place. To only find out whether something newer exists, without installing
+anything:
+
+```bash
+ccu -check-update
+```
+
+Independently of those flags, a normal (non-interactive) run checks **at most
+once every 24 hours** whether a newer release exists and, if so, prints a single
+line to stderr — stdout stays clean, so piping `ccu`'s report somewhere is
+unaffected. The check never installs anything on its own; upgrading is always an
+explicit `ccu -self-update`.
+
+The timestamp of the last check is kept in `<user config dir>/ccu/update-check.json`
+(`%AppData%\ccu\update-check.json` on Windows, `~/.config/ccu/update-check.json`
+on Linux). Set `CCU_NO_UPDATE_CHECK=1` to disable the check entirely.
 
 ## Interactive mode
 
@@ -127,24 +156,24 @@ belong to and colour-coded by update level (major, minor, patch, digest), while 
 progress bar shows how far the scan got — results appear as the registries answer,
 so you can start selecting before the scan has finished.
 
-| Key                  | Action                                              |
-| -------------------- | --------------------------------------------------- |
-| `↑`/`↓` or `k`/`j`   | Move the selection                                  |
-| `space` or `enter`   | Toggle — select a row, or fold/unfold a file group  |
-| `a`                  | Select all updates                                  |
-| `n`                  | Select none                                         |
-| `z`                  | Fold/unfold the group under the cursor              |
-| `C` / `E`            | Collapse all / expand all groups                    |
-| `f`                  | Cycle the display filter (which rows are shown)     |
-| `t`                  | Cycle the target level for **all** rows             |
-| `T`/`→` or `←`       | Cycle the target level for the **highlighted** row  |
-| `d` or `tab`         | Toggle the detail pane                              |
-| `i`                  | Show the issues logged during the scan              |
-| `A`                  | Apply the **selected** updates                      |
-| `u`                  | Apply **only the highlighted row**                  |
-| `y` / `n`            | Answer the restart prompt                           |
-| `?`                  | Show help                                           |
-| `q`                  | Quit                                                |
+| Key                | Action                                             |
+| ------------------ | -------------------------------------------------- |
+| `↑`/`↓` or `k`/`j` | Move the selection                                 |
+| `space` or `enter` | Toggle — select a row, or fold/unfold a file group |
+| `a`                | Select all updates                                 |
+| `n`                | Select none                                        |
+| `z`                | Fold/unfold the group under the cursor             |
+| `C` / `E`          | Collapse all / expand all groups                   |
+| `f`                | Cycle the display filter (which rows are shown)    |
+| `t`                | Cycle the target level for **all** rows            |
+| `T`/`→` or `←`     | Cycle the target level for the **highlighted** row |
+| `d` or `tab`       | Toggle the detail pane                             |
+| `i`                | Show the issues logged during the scan             |
+| `A`                | Apply the **selected** updates                     |
+| `u`                | Apply **only the highlighted row**                 |
+| `y` / `n`          | Answer the restart prompt                          |
+| `?`                | Show help                                          |
+| `q`                | Quit                                               |
 
 `space`/`enter` never write anything — applying is always an explicit `A` or `u`.
 
@@ -152,8 +181,8 @@ so you can start selecting before the scan has finished.
 
 These are two different things, and the legend at the bottom names both:
 
-- **`show`** (`f`) only decides which rows are *visible*. It never changes a version.
-- **`target`** (`t`, `T`) decides which version `A` and `u` actually *write*.
+- **`show`** (`f`) only decides which rows are _visible_. It never changes a version.
+- **`target`** (`t`, `T`) decides which version `A` and `u` actually _write_.
 
 The target defaults to `major`, so out of the box `ccu -i` offers the highest
 available version, as it always has. Set it to `minor` or `patch` when you would
@@ -195,12 +224,12 @@ every build with the commit it was built from (for example `ghcr.io/vert-sh/vert
 which publishes `sha-e1c83ba` style tags). For those, `ccu` compares the image
 manifest digest instead of the version number:
 
-| In your Compose file                     | What `ccu` does                                                            |
-| ---------------------------------------- | -------------------------------------------------------------------------- |
-| `image: vert:sha-438f91a`                | Moves the tag to the one currently matching `latest`, e.g. `sha-e1c83ba`   |
-| `image: vert@sha256:abc…`                | Rewrites the digest to the one `latest` now resolves to                     |
-| `image: vert:1.2.3@sha256:abc…`          | Bumps the tag **and** the digest together, so they stay consistent          |
-| `image: vert:latest`                     | Skipped — a floating tag already resolves to the newest image               |
+| In your Compose file            | What `ccu` does                                                          |
+| ------------------------------- | ------------------------------------------------------------------------ |
+| `image: vert:sha-438f91a`       | Moves the tag to the one currently matching `latest`, e.g. `sha-e1c83ba` |
+| `image: vert@sha256:abc…`       | Rewrites the digest to the one `latest` now resolves to                  |
+| `image: vert:1.2.3@sha256:abc…` | Bumps the tag **and** the digest together, so they stay consistent       |
+| `image: vert:latest`            | Skipped — a floating tag already resolves to the newest image            |
 
 These updates are reported with the update level `digest`. Since a digest change
 has no major/minor/patch level, it is always reported and is not affected by the

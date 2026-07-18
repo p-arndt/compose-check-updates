@@ -17,6 +17,8 @@ type CCUFlags struct {
 	Minor       bool     // Update to the latest minor version
 	Patch       bool     // Update to the latest patch version
 	Version     bool     // Version of ccu
+	SelfUpdate  bool     // Download and install the latest version of ccu
+	CheckUpdate bool     // Check whether a newer version of ccu is available, without installing it
 	Exclude     []string // Directories to exclude from search
 	ExcludeStr  string   // Comma-separated list of directories to exclude from search (flag only)
 }
@@ -34,6 +36,10 @@ func Parse(version string) CCUFlags {
 	flag.BoolVar(&args.Minor, "minor", false, "Update to the latest minor version")
 	flag.BoolVar(&args.Patch, "patch", true, "Update to the latest patch version")
 	flag.BoolVar(&args.Version, "v", false, "Show version information")
+	// Unlike -v and -h below, these two are not handled here: they talk to the
+	// network and can fail, and Parse has no way to report that.
+	flag.BoolVar(&args.SelfUpdate, "self-update", false, "Download and install the latest version of ccu")
+	flag.BoolVar(&args.CheckUpdate, "check-update", false, "Check whether a newer version of ccu is available, without installing it")
 	flag.StringVar(&args.ExcludeStr, "exclude", "", "Comma-separated list of directories to exclude from search")
 
 	flag.Parse()
