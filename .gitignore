@@ -10,3 +10,12 @@
 
 # Output of the go coverage tool, specifically when used with LiteIDE
 *.out
+
+# Local dev build produced by `just build` / `just build-release`
+ccu.exe
+ccu
+
+# Release/build artifacts (dist/ is what the release workflow assembles)
+dist/
+build/
+stage/
