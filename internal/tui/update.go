@@ -205,10 +205,11 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.End):
 		m.moveCursor(len(m.entries))
 	case key.Matches(msg, m.keys.Toggle):
-		// On a file header space/enter folds the group; on a row it keeps its
-		// select meaning. A row with nothing at the current target has no tag to
-		// write, so it cannot be selected at all. Neither key ever writes: that is
-		// what A and u are for.
+		// On any header — directory or file — space/enter folds that node; on a row
+		// it keeps its select meaning. e.path is the node key at whatever depth the
+		// header sits, so this needs no special case per level. A row with nothing
+		// at the current target has no tag to write, so it cannot be selected at
+		// all. Neither key ever writes: that is what A and u are for.
 		if e, ok := m.currentEntry(); ok && e.kind == entryHeader {
 			m.toggleGroup(e.path)
 			break
@@ -218,24 +219,22 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case key.Matches(msg, m.keys.ToggleGroup):
 		m.toggleGroup(m.cursorGroup())
+	case key.Matches(msg, m.keys.Collapse):
+		m.collapseOrParent()
+	case key.Matches(msg, m.keys.Expand):
+		m.expandOrChild()
 	case key.Matches(msg, m.keys.CollapseAll):
 		m.setAllCollapsed(true)
 	case key.Matches(msg, m.keys.ExpandAll):
 		m.setAllCollapsed(false)
+	case key.Matches(msg, m.keys.SelectAllGlobal):
+		m.setScopeSelected(-1, true)
+	case key.Matches(msg, m.keys.SelectNoneGlobal):
+		m.setScopeSelected(-1, false)
 	case key.Matches(msg, m.keys.SelectAll):
-		// Deliberately collapse-blind: folding is a display operation, so `a`
-		// selects every row the *filter* shows, folded or not. Each collapsed
-		// header reports "(N updates, M selected)", which is what keeps the
-		// outcome visible rather than surprising.
-		for _, ri := range m.visible {
-			if m.rows[ri].Actionable() {
-				m.rows[ri].Selected = true
-			}
-		}
+		m.setScopeSelected(m.cursorNode(), true)
 	case key.Matches(msg, m.keys.SelectNone):
-		for i := range m.rows {
-			m.rows[i].Selected = false
-		}
+		m.setScopeSelected(m.cursorNode(), false)
 	case key.Matches(msg, m.keys.Filter):
 		m.filter = m.filter.Next()
 		m.rebuild(m.cursorKey())
@@ -271,6 +270,86 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleApplyRow()
 	}
 	return m, nil
+}
+
+// setScopeSelected drives a/n, which pass the cursor's node, and ctrl+a/ctrl+n,
+// which pass -1 for the whole list — on a tree several directories wide the
+// subtree keys cannot reach every row, so the global pair has to exist.
+// Within its scope it stays deliberately collapse-blind: folding is a display
+// operation, so both keys act on every row the *filter* keeps under the node,
+// folded or not. Each collapsed header reports "(N updates, M selected)", which
+// is what keeps the outcome visible rather than surprising. The status line
+// names the scope because it is no longer obviously global — four rows changing
+// somewhere off screen has to be explained, not just done. An empty or fully
+// filtered list has no node to scope to, and there falls back to the old sweep.
+//
+// The two directions are deliberately not symmetric about the filter. Selecting
+// only ever adds rows the filter is showing, so `a` cannot arm an update the
+// user has narrowed away. Deselecting sweeps the scope regardless of the filter,
+// because the one thing this pair must never do is leave a row selected that no
+// header can report: `n` has to mean the selection here is gone, not gone except
+// for what you filtered out.
+func (m *Model) setScopeSelected(node int, v bool) {
+	verb := "deselected"
+	if v {
+		verb = "selected"
+	}
+
+	scope := ""
+	idxs := m.visible
+	if node >= 0 {
+		scope = m.nodes[node].label
+		idxs = m.subtreeRows(node)
+	}
+	if !v {
+		idxs = m.scopeRowsUnfiltered(node)
+	}
+
+	n := 0
+	for _, ri := range idxs {
+		r := &m.rows[ri]
+		// Only actionable rows can be selected, but anything already selected can
+		// be cleared — otherwise a row that lost its target would stay stuck on.
+		if (v && !r.Actionable()) || r.Selected == v {
+			continue
+		}
+		r.Selected = v
+		n++
+	}
+
+	if scope == "" {
+		m.setStatus(StatusInfo, fmt.Sprintf("%s %d update(s)", verb, n))
+		return
+	}
+	m.setStatus(StatusInfo, fmt.Sprintf("%s %d update(s) under %s", verb, n, scope))
+}
+
+// scopeRowsUnfiltered is subtreeRows without the filter: every row belonging to
+// a compose file under the node, whether the current filter shows it or not.
+// Only deselection uses it, and only so that clearing a scope really clears it.
+// A node index below zero means there is no tree to scope to, and the scope is
+// then every row there is.
+func (m Model) scopeRowsUnfiltered(node int) []int {
+	if node < 0 {
+		idxs := make([]int, len(m.rows))
+		for i := range m.rows {
+			idxs[i] = i
+		}
+		return idxs
+	}
+
+	files := make(map[string]bool, len(m.subtreeFiles(node)))
+	for _, p := range m.subtreeFiles(node) {
+		files[p] = true
+	}
+
+	idxs := make([]int, 0, len(m.rows))
+	for i, r := range m.rows {
+		if files[r.FilePath()] {
+			idxs = append(idxs, i)
+		}
+	}
+	return idxs
 }
 
 // handleIssuesKey drives the issues pane. It reads only navigation, the two

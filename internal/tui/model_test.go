@@ -667,9 +667,10 @@ func TestRowTargetCyclingStaysWithinAvailableTargets(t *testing.T) {
 	assert.Equal(t, "3.7.8", m.currentRow().Update.LatestTag)
 	assert.Equal(t, "major", m.currentRow().Level)
 
-	// Backwards, too — and never onto a level the image does not have.
+	// Backwards, too — and never onto a level the image does not have. The
+	// backwards key is B, not ←: the arrows now walk the directory tree.
 	for i := 0; i < 5; i++ {
-		m = feed(t, m, tea.KeyMsg{Type: tea.KeyLeft})
+		m = feed(t, m, keyMsg("B"))
 		require.Contains(t, avail, string(m.currentRow().Target))
 		require.False(t, m.currentRow().NoTarget)
 	}
@@ -778,6 +779,7 @@ func TestNoKeyIsBoundTwiceInTheBrowsingPhase(t *testing.T) {
 		"home": {k.Home}, "end": {k.End}, "toggle": {k.Toggle},
 		"selectAll": {k.SelectAll}, "selectNone": {k.SelectNone},
 		"toggleGroup": {k.ToggleGroup}, "collapseAll": {k.CollapseAll}, "expandAll": {k.ExpandAll},
+		"collapse": {k.Collapse}, "expand": {k.Expand},
 		"filter": {k.Filter}, "target": {k.Target}, "rowNext": {k.RowNext}, "rowPrev": {k.RowPrev},
 		"detail": {k.Detail}, "issues": {k.Issues},
 		"apply": {k.Apply}, "applyRow": {k.ApplyRow}, "help": {k.Help}, "quit": {k.Quit},
@@ -799,6 +801,14 @@ func TestNoKeyIsBoundTwiceInTheBrowsingPhase(t *testing.T) {
 	assert.Equal(t, []string{"C"}, k.CollapseAll.Keys())
 	assert.Equal(t, []string{"E"}, k.ExpandAll.Keys())
 	assert.Equal(t, []string{"i"}, k.Issues.Keys())
+
+	// ←/h and →/l walk the tree, so the per-row target keys had to move off them:
+	// a directory tree with no horizontal navigation would be the odd one out
+	// among every file browser the user already knows.
+	assert.Equal(t, []string{"left", "h"}, k.Collapse.Keys())
+	assert.Equal(t, []string{"right", "l"}, k.Expand.Keys())
+	assert.NotContains(t, k.RowNext.Keys(), "right")
+	assert.NotContains(t, k.RowPrev.Keys(), "left")
 
 	// The two write keys are the whole point of the rebinding: enter toggles and
 	// nothing else, and `a`/`A` are separate keys with separate meanings.
@@ -828,7 +838,10 @@ func TestKeyHintFooterIsAlwaysVisible(t *testing.T) {
 
 	v := plainText(m.View())
 	assert.Contains(t, v, "space/enter toggle")
-	assert.Contains(t, v, "z fold group")
+	// The tree is only usable if the keys that walk it are on screen; ←/h and →/l
+	// are what the footer leads with now that the list has depth.
+	assert.Contains(t, v, "collapse/parent")
+	assert.Contains(t, v, "expand/child")
 	assert.Contains(t, v, "A apply selected")
 	assert.Contains(t, v, "u apply row")
 	assert.Contains(t, v, "? help")
@@ -839,6 +852,7 @@ func TestKeyHintFooterIsAlwaysVisible(t *testing.T) {
 	ev := plainText(exp.View())
 	assert.Contains(t, ev, "C collapse all")
 	assert.Contains(t, ev, "E expand all")
+	assert.Contains(t, ev, "z fold node", "z still folds; only the footer dropped it")
 	assert.Greater(t, exp.blockHeight(exp.expandedHelp()), 1, "the expanded help is multi-line")
 
 	// Both forms are budgeted for: the list never spills past its window.

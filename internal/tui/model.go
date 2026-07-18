@@ -47,13 +47,22 @@ type Model struct {
 
 	rows    []Row
 	visible []int   // indices into rows that pass the current filter
-	entries []entry // the rendered lines: file headers plus the rows they show
+	entries []entry // the rendered lines: tree headers plus the rows they show
 	cursor  int     // index into entries — headers are navigable too
 	offset  int     // first display line rendered, for scrolling
 	filter  Filter
-	// collapsed folds a compose file's group away. It is keyed by path rather
-	// than by index so it survives the re-sorts a streaming scan causes, and it
-	// is display-only: a folded row keeps its selection and is still applied.
+	// nodes is the directory tree the headers are drawn from, rebuilt alongside
+	// entries because a filter change can remove whole directories from it.
+	nodes []node
+	// nodeByKey and nodeByFile index nodes for the two lookups the list does on
+	// every keystroke: by node key (headers) and by raw compose file path (rows,
+	// which carry the scanner's path rather than the normalised key).
+	nodeByKey  map[string]int
+	nodeByFile map[string]int
+	// collapsed folds a level of the tree away. It is keyed by node key — any
+	// path prefix, not only a file — rather than by index so it survives the
+	// re-sorts a streaming scan causes, and it is display-only: a folded row
+	// keeps its selection and is still applied.
 	collapsed map[string]bool
 	// target is the level every row is pointed at unless the user has moved that
 	// row individually. Filter hides rows; target changes what gets written.
@@ -162,11 +171,11 @@ func (m *Model) addRow(r Row) {
 	m.rebuild(key)
 }
 
-// headerKeyPrefix marks a file header's cursor identity. A rowKey always starts
+// headerKeyPrefix marks a tree header's cursor identity. A rowKey always starts
 // with a file path, so this byte cannot collide with one.
 const headerKeyPrefix = "\x01"
 
-// entryKey is the identity of one list line across re-sorts: its path for a
+// entryKey is the identity of one list line across re-sorts: its node key for a
 // header, its row key for a row.
 func (m Model) entryKey(e entry) string {
 	if e.kind == entryHeader {
@@ -175,8 +184,9 @@ func (m Model) entryKey(e entry) string {
 	return rowKey(m.rows[e.row])
 }
 
-// keyGroup is the compose file an entry key belongs to. It lets rebuild fall
-// back to a group's header when the row the cursor was on has been folded away.
+// keyGroup is the path an entry key belongs to: the node key for a header, the
+// compose file for a row. It lets rebuild fall back to a header when the line
+// the cursor was on has been folded away.
 func keyGroup(key string) string {
 	if strings.HasPrefix(key, headerKeyPrefix) {
 		return key[len(headerKeyPrefix):]
@@ -206,42 +216,97 @@ func (m *Model) rebuild(keepKey string) {
 		}
 	}
 
-	// One header per compose file, then that file's rows unless it is folded.
-	// Collapsed groups keep their header, so their content is never silently
-	// gone from the list.
-	m.entries = m.entries[:0]
-	last := ""
-	for vi, ri := range m.visible {
-		p := m.rows[ri].FilePath()
-		if vi == 0 || p != last {
-			last = p
-			m.entries = append(m.entries, entry{kind: entryHeader, path: p, row: -1})
+	// The tree is derived purely from the visible rows, so a filter that empties
+	// a directory removes that directory's headers too rather than leaving the
+	// user folds that open onto nothing.
+	paths := make([]string, 0, len(m.visible))
+	seen := make(map[string]bool, len(m.visible))
+	for _, ri := range m.visible {
+		if p := m.rows[ri].FilePath(); !seen[p] {
+			seen[p] = true
+			paths = append(paths, p)
 		}
-		if !m.collapsed[p] {
-			m.entries = append(m.entries, entry{kind: entryRow, path: p, row: ri})
+	}
+	m.nodes, m.nodeByKey, m.nodeByFile = buildTree(paths)
+
+	rowsByNode := make(map[int][]int, len(paths))
+	for _, ri := range m.visible {
+		if n := m.fileNode(m.rows[ri].FilePath()); n >= 0 {
+			rowsByNode[n] = append(rowsByNode[n], ri)
+		}
+	}
+
+	// One header per node in depth-first order, then a file node's rows unless
+	// it is folded. A collapsed node keeps its own header — only its subtree
+	// goes — so its content is never silently gone from the list. Parents always
+	// precede their children, so hiding propagates in this single pass.
+	m.entries = m.entries[:0]
+	hidden := make([]bool, len(m.nodes))
+	for i, n := range m.nodes {
+		if p := n.parent; p >= 0 && (hidden[p] || m.collapsed[m.nodes[p].key]) {
+			hidden[i] = true
+			continue
+		}
+		m.entries = append(m.entries, entry{kind: entryHeader, path: n.key, row: -1, node: i})
+		if n.isFile && !m.collapsed[n.key] {
+			for _, ri := range rowsByNode[i] {
+				m.entries = append(m.entries, entry{kind: entryRow, path: m.rows[ri].FilePath(), row: ri, node: -1})
+			}
 		}
 	}
 
 	if keepKey != "" {
-		group, fallback := keyGroup(keepKey), -1
 		for i, e := range m.entries {
 			if m.entryKey(e) == keepKey {
 				m.cursor = i
 				m.clampCursor()
 				return
 			}
-			if e.kind == entryHeader && e.path == group {
-				fallback = i
-			}
 		}
-		// The entry is gone — folded away, or filtered out. Landing on its group
-		// header keeps the cursor where the user was looking instead of on
-		// whatever row the old index now happens to point at.
-		if fallback >= 0 {
-			m.cursor = fallback
+		// The entry is gone — folded away, or filtered out. Landing on the
+		// nearest header still on screen keeps the cursor where the user was
+		// looking instead of on whatever row the old index now points at.
+		if i := m.ancestorHeader(keyGroup(keepKey)); i >= 0 {
+			m.cursor = i
 		}
 	}
 	m.clampCursor()
+}
+
+// ancestorHeader is the entry index of the deepest header still drawn for a
+// path — the node itself when it survived, otherwise the closest ancestor of
+// it. The prefix search is what makes this work for a path whose node is gone
+// entirely, which is the case a filter change produces.
+func (m Model) ancestorHeader(path string) int {
+	if path == "" {
+		return -1
+	}
+
+	start, ok := m.nodeByFile[path]
+	if !ok {
+		start, ok = m.nodeByKey[path]
+	}
+	if !ok {
+		start = -1
+		key := strings.Join(pathSegments(path), "/")
+		for i, n := range m.nodes {
+			if n.key != key && !strings.HasPrefix(key, n.key+"/") {
+				continue
+			}
+			// Longest match wins: it is the deepest surviving ancestor, and so
+			// the smallest jump away from where the user was.
+			if start < 0 || len(n.key) > len(m.nodes[start].key) {
+				start = i
+			}
+		}
+	}
+
+	for i := start; i >= 0; i = m.nodes[i].parent {
+		if e := m.headerIndex(i); e >= 0 {
+			return e
+		}
+	}
+	return -1
 }
 
 func (m *Model) clampCursor() {
@@ -276,38 +341,40 @@ func (m Model) currentRow() *Row {
 	return &m.rows[e.row]
 }
 
-// cursorGroup is the compose file the cursor is in, whether it sits on the
-// header or on a row inside the group.
+// cursorGroup is the key of the node the cursor is in, whether it sits on that
+// node's header or on a row inside the file it stands for.
 func (m Model) cursorGroup() string {
-	e, ok := m.currentEntry()
-	if !ok {
+	n := m.cursorNode()
+	if n < 0 {
 		return ""
 	}
-	return e.path
+	return m.nodes[n].key
 }
 
-// toggleGroup folds or unfolds one compose file. Rebuilding on the current
-// cursor key is what moves the cursor up onto the header when the row it was
-// sitting on has just been folded away.
-func (m *Model) toggleGroup(path string) {
-	if path == "" {
+// toggleGroup folds or unfolds one node of the tree, at any depth. Rebuilding
+// on the current cursor key is what moves the cursor up onto the header when
+// the row it was sitting on has just been folded away.
+func (m *Model) toggleGroup(key string) {
+	if key == "" {
 		return
 	}
 	if m.collapsed == nil {
 		m.collapsed = make(map[string]bool)
 	}
-	m.collapsed[path] = !m.collapsed[path]
+	m.collapsed[key] = !m.collapsed[key]
 	m.rebuild(m.cursorKey())
 	m.syncScroll()
 }
 
-// setAllCollapsed folds or unfolds every group at once.
+// setAllCollapsed folds or unfolds every node at every depth at once. Directory
+// levels are included, so collapsing all leaves just the roots — which is the
+// whole point of the key on a deep tree.
 func (m *Model) setAllCollapsed(v bool) {
 	if m.collapsed == nil {
 		m.collapsed = make(map[string]bool)
 	}
-	for _, r := range m.rows {
-		m.collapsed[r.FilePath()] = v
+	for _, n := range m.nodes {
+		m.collapsed[n.key] = v
 	}
 	m.rebuild(m.cursorKey())
 	m.syncScroll()

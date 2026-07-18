@@ -203,22 +203,35 @@ func TestSelectionsInsideACollapsedGroupStillApply(t *testing.T) {
 	assert.Equal(t, "a/compose.yml", m.affectedFiles()[0].FilePath)
 }
 
-// `a` is deliberately collapse-blind — it selects every row the filter shows,
-// folded or not — and the header's counts are what make that visible.
+// `a` is scoped to the subtree under the cursor, but within that scope it is
+// deliberately collapse-blind: it selects every row the *filter* shows, folded
+// or not. The header's counts are what make the folded ones visible.
 func TestSelectAllIgnoresCollapseAndHeaderReportsIt(t *testing.T) {
 	m := twoGroups(t)
-	m = feed(t, m, keyMsg("z")) // fold a/compose.yml
+	m = feed(t, m, keyMsg("z")) // fold a/compose.yml, the cursor's group
 	m = feed(t, m, keyMsg("a"))
 
-	assert.Equal(t, 4, m.selectedCount(), "folding must not shrink what `a` selects")
-	assert.Len(t, m.selectedRows(), 4)
+	assert.Equal(t, 2, m.selectedCount(), "folding must not shrink what `a` selects")
+	assert.Len(t, m.selectedRows(), 2)
 
-	g := m.groupInfo("a/compose.yml", false)
+	g := m.groupInfo(nodeIdx(t, m, "a/compose.yml"), false)
 	assert.Equal(t, 2, g.Selected)
 	assert.Contains(t, plainText(m.theme.GroupHeader(g, 80)), "(2 updates, 2 selected)")
 
-	// `n` clears everything, folded groups included.
+	// Both of them are inside the folded group: the fold hid them from the list,
+	// not from `a`.
+	for _, r := range m.selectedRows() {
+		assert.Equal(t, "a/compose.yml", r.FilePath())
+	}
+
+	// The second group is reached by moving to it, and `n` clears the group it is
+	// pointed at — folded rows included.
+	m = feed(t, m, keyMsg("j"), keyMsg("a"))
+	assert.Equal(t, 4, m.selectedCount())
+
 	m = feed(t, m, keyMsg("n"))
+	assert.Equal(t, 2, m.selectedCount(), "`n` clears the cursor's group only")
+	m = feed(t, m, keyMsg("k"), keyMsg("n"))
 	assert.Equal(t, 0, m.selectedCount())
 }
 
@@ -226,36 +239,77 @@ func TestGroupHeaderRendersCountsAndArrow(t *testing.T) {
 	th := DefaultTheme()
 
 	expanded := plainText(th.GroupHeader(GroupInfo{
-		Path: "tests/folder1/compose.yaml", Shown: 2, Total: 2, Selected: 1,
+		Path: "tests/folder1/compose.yaml", Label: "tests/folder1/compose.yaml",
+		Shown: 2, Total: 2, Selected: 1,
 	}, 80))
 	assert.Equal(t, "▾ tests/folder1/compose.yaml  (2 updates, 1 selected)", expanded)
 
 	collapsed := plainText(th.GroupHeader(GroupInfo{
-		Path: "tests/folder1/compose.yaml", Shown: 2, Total: 2, Selected: 1, Collapsed: true,
+		Path: "tests/folder1/compose.yaml", Label: "tests/folder1/compose.yaml",
+		Shown: 2, Total: 2, Selected: 1, Collapsed: true,
 	}, 80))
 	assert.Equal(t, "▸ tests/folder1/compose.yaml  (2 updates, 1 selected)", collapsed)
 
 	// Rows the filter hides are still accounted for, so the header never claims
 	// the file has fewer updates than it does.
 	filtered := plainText(th.GroupHeader(GroupInfo{
-		Path: "a/compose.yml", Shown: 1, Total: 5, Selected: 3, Collapsed: true,
+		Path: "a/compose.yml", Label: "a/compose.yml",
+		Shown: 1, Total: 5, Selected: 3, Collapsed: true,
 	}, 80))
 	assert.Contains(t, filtered, "(1 of 5 updates, 3 selected)")
 
-	single := plainText(th.GroupHeader(GroupInfo{Path: "a.yml", Shown: 1, Total: 1}, 80))
+	single := plainText(th.GroupHeader(GroupInfo{Path: "a.yml", Label: "a.yml", Shown: 1, Total: 1}, 80))
 	assert.Contains(t, single, "(1 update, 0 selected)")
+}
+
+// The header prints only the segment(s) the node owns, indented by its depth —
+// printing the full key at every level is exactly the redundancy the tree
+// replaces.
+func TestGroupHeaderPrintsTheLabelIndentedByDepth(t *testing.T) {
+	th := DefaultTheme()
+
+	root := plainText(th.GroupHeader(GroupInfo{
+		Path: "stacks", Label: "stacks", Depth: 0, IsDir: true, Shown: 3, Total: 3,
+	}, 80))
+	assert.Equal(t, "▾ stacks/  (3 updates, 0 selected)", root)
+
+	child := plainText(th.GroupHeader(GroupInfo{
+		Path: "stacks/blue/compose.yml", Label: "blue/compose.yml", Depth: 1,
+		Shown: 2, Total: 2, Selected: 1,
+	}, 80))
+	assert.Equal(t, "  ▾ blue/compose.yml  (2 updates, 1 selected)", child)
+
+	grand := plainText(th.GroupHeader(GroupInfo{
+		Path: "a/b/c/compose.yml", Label: "c/compose.yml", Depth: 2, Shown: 1, Total: 1,
+	}, 80))
+	assert.Equal(t, "    ▾ c/compose.yml  (1 update, 0 selected)", grand)
+
+	// The key is identity only: it never reaches the screen.
+	assert.NotContains(t, child, "stacks/blue")
 }
 
 func TestGroupHeaderNeverExceedsWidthAndSurvivesTinyTerminals(t *testing.T) {
 	th := DefaultTheme()
-	g := GroupInfo{Path: "some/deeply/nested/path/docker-compose.yml", Shown: 3, Total: 5, Selected: 2}
+	g := GroupInfo{
+		Path:  "some/deeply/nested/path/docker-compose.yml",
+		Label: "some/deeply/nested/path/docker-compose.yml",
+		Shown: 3, Total: 5, Selected: 2,
+	}
 
+	// A deep node's indent eats into a budget that is already tiny, which is the
+	// case a naive implementation overruns.
 	for _, w := range []int{0, 1, 5, 20, 21, 40, 120} {
-		for _, cursor := range []bool{false, true} {
-			g.Cursor = cursor
-			out := th.GroupHeader(g, w)
-			assert.NotContains(t, out, "\n", "headers are one line")
-			assert.LessOrEqual(t, lipgloss.Width(out), clampWidth(w), "width %d", w)
+		for _, depth := range []int{0, 1, 3, 8, 20} {
+			for _, cursor := range []bool{false, true} {
+				g.Depth, g.Cursor = depth, cursor
+				for _, isDir := range []bool{false, true} {
+					g.IsDir = isDir
+					out := th.GroupHeader(g, w)
+					assert.NotContains(t, out, "\n", "headers are one line")
+					assert.LessOrEqual(t, lipgloss.Width(out), clampWidth(w),
+						"width %d depth %d", w, depth)
+				}
+			}
 		}
 	}
 }
@@ -265,7 +319,7 @@ func TestGroupInfoCountsSelectionsHiddenByTheFilter(t *testing.T) {
 	m = feed(t, m, keyMsg("a")) // select everything
 	m = feed(t, m, keyMsg("f")) // filter=major: a/compose.yml shows only postgres
 
-	g := m.groupInfo("a/compose.yml", false)
+	g := m.groupInfo(nodeIdx(t, m, "a/compose.yml"), false)
 	assert.Equal(t, 1, g.Shown)
 	assert.Equal(t, 2, g.Total)
 	assert.Equal(t, 2, g.Selected, "a selection the filter hides must still be reported")

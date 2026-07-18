@@ -14,10 +14,18 @@ type KeyMap struct {
 	Toggle     key.Binding
 	SelectAll  key.Binding
 	SelectNone key.Binding
-	// Fold keys. z/C/E were picked because every obvious alternative is taken:
-	// ←/h and →/l cycle a row's target, t/T set it, and space, a, n, f, d are
-	// already selection, filter and detail.
+	// The Global pair widen SelectAll/SelectNone from the cursor's subtree back
+	// to the whole list, which a is no longer able to reach on its own.
+	SelectAllGlobal  key.Binding
+	SelectNoneGlobal key.Binding
+	// Fold keys. The list is a directory tree now, so ←/h and →/l were taken back
+	// from the row-target cycle and given the meaning every tree in every file
+	// browser already has: collapse-or-go-to-parent, expand-or-step-into-child.
+	// z/C/E stay as the keyboard-only shortcuts, because t/T target, and space, a,
+	// n, f, d are already selection, filter and detail.
 	ToggleGroup key.Binding
+	Collapse    key.Binding
+	Expand      key.Binding
 	CollapseAll key.Binding
 	ExpandAll   key.Binding
 	// Issues opens the pane listing every skipped image and unreadable file.
@@ -43,27 +51,41 @@ type KeyMap struct {
 
 func DefaultKeyMap() KeyMap {
 	return KeyMap{
-		Up:         key.NewBinding(key.WithKeys("up", "k"), key.WithHelp("↑/k", "up")),
-		Down:       key.NewBinding(key.WithKeys("down", "j"), key.WithHelp("↓/j", "down")),
-		PageUp:     key.NewBinding(key.WithKeys("pgup"), key.WithHelp("pgup", "page up")),
-		PageDown:   key.NewBinding(key.WithKeys("pgdown"), key.WithHelp("pgdn", "page down")),
-		Home:       key.NewBinding(key.WithKeys("home"), key.WithHelp("home", "first")),
-		End:        key.NewBinding(key.WithKeys("end"), key.WithHelp("end", "last")),
-		Toggle:     key.NewBinding(key.WithKeys(" ", "enter"), key.WithHelp("space/enter", "toggle")),
-		SelectAll:  key.NewBinding(key.WithKeys("a"), key.WithHelp("a", "select all")),
-		SelectNone: key.NewBinding(key.WithKeys("n"), key.WithHelp("n", "select none")),
+		Up:       key.NewBinding(key.WithKeys("up", "k"), key.WithHelp("↑/k", "up")),
+		Down:     key.NewBinding(key.WithKeys("down", "j"), key.WithHelp("↓/j", "down")),
+		PageUp:   key.NewBinding(key.WithKeys("pgup"), key.WithHelp("pgup", "page up")),
+		PageDown: key.NewBinding(key.WithKeys("pgdown"), key.WithHelp("pgdn", "page down")),
+		Home:     key.NewBinding(key.WithKeys("home"), key.WithHelp("home", "first")),
+		End:      key.NewBinding(key.WithKeys("end"), key.WithHelp("end", "last")),
+		Toggle:   key.NewBinding(key.WithKeys(" ", "enter"), key.WithHelp("space/enter", "toggle")),
+		// a and n act on the cursor's subtree, not the whole list, so their help
+		// text says "here" rather than promising a sweep they no longer do.
+		SelectAll:  key.NewBinding(key.WithKeys("a"), key.WithHelp("a", "select here")),
+		SelectNone: key.NewBinding(key.WithKeys("n"), key.WithHelp("n", "deselect here")),
 
-		ToggleGroup: key.NewBinding(key.WithKeys("z"), key.WithHelp("z", "fold group")),
+		// a and n act on the cursor's subtree, which on a tree several directories
+		// wide means neither can reach the whole list any more. These two restore
+		// that reach; ctrl pairs them with the letters they widen.
+		SelectAllGlobal:  key.NewBinding(key.WithKeys("ctrl+a"), key.WithHelp("ctrl+a", "select all")),
+		SelectNoneGlobal: key.NewBinding(key.WithKeys("ctrl+n"), key.WithHelp("ctrl+n", "deselect all")),
+
+		ToggleGroup: key.NewBinding(key.WithKeys("z"), key.WithHelp("z", "fold node")),
+		Collapse:    key.NewBinding(key.WithKeys("left", "h"), key.WithHelp("←/h", "collapse/parent")),
+		Expand:      key.NewBinding(key.WithKeys("right", "l"), key.WithHelp("→/l", "expand/child")),
 		CollapseAll: key.NewBinding(key.WithKeys("C"), key.WithHelp("C", "collapse all")),
 		ExpandAll:   key.NewBinding(key.WithKeys("E"), key.WithHelp("E", "expand all")),
 
 		Issues:      key.NewBinding(key.WithKeys("i"), key.WithHelp("i", "issues")),
 		IssuesClose: key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "back to list")),
 
-		Filter:  key.NewBinding(key.WithKeys("f"), key.WithHelp("f", "filter")),
-		Target:  key.NewBinding(key.WithKeys("t"), key.WithHelp("t", "target level")),
-		RowNext: key.NewBinding(key.WithKeys("T", "right", "l"), key.WithHelp("T/→", "row target")),
-		RowPrev: key.NewBinding(key.WithKeys("left", "h"), key.WithHelp("←", "row target back")),
+		Filter: key.NewBinding(key.WithKeys("f"), key.WithHelp("f", "filter")),
+		Target: key.NewBinding(key.WithKeys("t"), key.WithHelp("t", "target level")),
+		// The row-target cycle lost ←/h/→/l to the tree. T keeps the forward step
+		// because it is the shifted twin of t; B ("back") is the only free letter
+		// that reads as the reverse of it, and shift+tab is the pair to d/tab for
+		// anyone who reaches for tab-and-back rather than a letter.
+		RowNext: key.NewBinding(key.WithKeys("T"), key.WithHelp("T", "row target next")),
+		RowPrev: key.NewBinding(key.WithKeys("B", "shift+tab"), key.WithHelp("B/shift+tab", "row target back")),
 		Detail:  key.NewBinding(key.WithKeys("d", "tab"), key.WithHelp("d/tab", "detail")),
 
 		// Shift-a pairs with `a` (select all) and stays clear of every taken key;
@@ -82,21 +104,22 @@ func DefaultKeyMap() KeyMap {
 func (k KeyMap) Bindings() []key.Binding {
 	return []key.Binding{
 		k.Up, k.Down, k.PageUp, k.PageDown, k.Home, k.End,
-		k.Toggle, k.SelectAll, k.SelectNone,
-		k.ToggleGroup, k.CollapseAll, k.ExpandAll,
-		k.Filter, k.Target, k.RowNext, k.Detail, k.Issues, k.Apply, k.ApplyRow, k.Help, k.Quit,
+		k.Toggle, k.SelectAll, k.SelectNone, k.SelectAllGlobal, k.SelectNoneGlobal,
+		k.ToggleGroup, k.Collapse, k.Expand, k.CollapseAll, k.ExpandAll,
+		k.Filter, k.Target, k.RowNext, k.RowPrev, k.Detail, k.Issues, k.Apply, k.ApplyRow, k.Help, k.Quit,
 	}
 }
 
 func (k KeyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.Up, k.Down, k.Toggle, k.ToggleGroup, k.Filter, k.Target, k.RowNext, k.Issues, k.Apply, k.ApplyRow, k.Help, k.Quit}
+	return []key.Binding{k.Up, k.Down, k.Toggle, k.Collapse, k.Expand, k.Filter, k.Target, k.RowNext, k.Issues, k.Apply, k.ApplyRow, k.Help, k.Quit}
 }
 
 func (k KeyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.Up, k.Down, k.PageUp, k.PageDown, k.Home, k.End},
-		{k.Toggle, k.SelectAll, k.SelectNone, k.Filter, k.Detail, k.Issues},
-		{k.ToggleGroup, k.CollapseAll, k.ExpandAll},
+		{k.Toggle, k.SelectAll, k.SelectNone, k.SelectAllGlobal, k.SelectNoneGlobal},
+		{k.Filter, k.Detail, k.Issues},
+		{k.ToggleGroup, k.Collapse, k.Expand, k.CollapseAll, k.ExpandAll},
 		{k.Target, k.RowNext, k.RowPrev},
 		{k.Apply, k.ApplyRow, k.Help, k.Quit},
 	}
@@ -110,7 +133,7 @@ func (k KeyMap) FullHelp() [][]key.Binding {
 // Applying is deliberately absent — A and u work, but offering them mid-scan
 // invites committing a half-finished list.
 func (k KeyMap) ScanHints() []key.Binding {
-	return []key.Binding{k.Up, k.Down, k.Toggle, k.ToggleGroup, k.Filter, k.Issues, k.Help, k.Quit}
+	return []key.Binding{k.Up, k.Down, k.Toggle, k.Collapse, k.Expand, k.Filter, k.Issues, k.Help, k.Quit}
 }
 
 // IssueHints are the keys the issues pane reads. It leads with the way out,
@@ -123,11 +146,13 @@ func (k KeyMap) IssueHints() []key.Binding {
 // deliberately not ShortHelp's display order: the footer budgets the last hint
 // first and then fills from the left, so the two keys that actually write —
 // which no longer sit on the obvious `enter` — come early enough to survive a
-// terminal too narrow for the whole set.
+// terminal too narrow for the whole set. The tree keys follow them rather than
+// lead: ←/→ are the two hints a user is likeliest to try unprompted, so they are
+// the cheapest ones to lose to truncation.
 func (k KeyMap) BrowseHints() []key.Binding {
 	return []key.Binding{
 		k.Up, k.Down, k.Toggle, k.Apply, k.ApplyRow,
-		k.ToggleGroup, k.Filter, k.Target, k.RowNext, k.Issues, k.Help, k.Quit,
+		k.Collapse, k.Expand, k.Filter, k.Target, k.RowNext, k.Issues, k.Help, k.Quit,
 	}
 }
 

@@ -222,13 +222,31 @@ func (m Model) listView() string {
 	for i := offset; i < end; i++ {
 		e := m.entries[i]
 		if e.kind == entryHeader {
-			lines = append(lines, m.theme.GroupHeader(m.groupInfo(e.path, i == m.cursor), m.width))
+			lines = append(lines, m.theme.GroupHeader(m.groupInfo(e.node, i == m.cursor), m.width))
 			continue
 		}
-		lines = append(lines, m.theme.RowLine(m.rows[e.row], i == m.cursor, m.width))
+		// A row is indented one level past the compose file that owns it, so an
+		// update sitting three directories deep does not line up with one at the
+		// root. The indent is unstyled and the line is rendered into the width
+		// that is left, which is how the header does it too — the cursor
+		// highlight therefore starts at the text rather than at the margin.
+		indent := strings.Repeat("  ", m.rowDepth(e))
+		lines = append(lines, indent+m.theme.RowLine(m.rows[e.row], i == m.cursor, m.width-len(indent)))
 	}
 
 	return strings.Join(lines, "\n")
+}
+
+// rowDepth is how far a row entry is indented: one level past its compose
+// file's node. A row whose file is missing from the tree — only possible between
+// a filter change and the rebuild that follows — falls back to the one level of
+// indent every row had before the tree existed.
+func (m Model) rowDepth(e entry) int {
+	n := m.fileNode(e.path)
+	if n < 0 {
+		return 1
+	}
+	return m.nodes[n].depth + 1
 }
 
 // issueParts splits a collected issue into its message and its attributes. Only

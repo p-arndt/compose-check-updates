@@ -149,12 +149,16 @@ const (
 )
 
 // entry is one rendered line of the list. Headers are entries in their own
-// right so the cursor can land on a group and fold it, which also makes the
-// rendered line index and the cursor index the same number.
+// right so the cursor can land on a level of the tree and fold it, which also
+// makes the rendered line index and the cursor index the same number.
 type entry struct {
 	kind entryKind
-	path string // compose file — set for headers and rows alike
-	row  int    // index into Model.rows; -1 on a header
+	// path is the node key for a header — any prefix of the tree, not only a
+	// file — and the compose file path for a row. A row keeps the raw path the
+	// scanner reported so it still matches its rowKey and its Row.
+	path string
+	row  int // index into Model.rows; -1 on a header
+	node int // index into Model.nodes; -1 on a row
 }
 
 // StatusKind classifies a transient status line rendered under the title.
