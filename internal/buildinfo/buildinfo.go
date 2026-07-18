@@ -3,9 +3,9 @@
 // The values default to an unstamped "dev" build and are overridden at release
 // time via the Go linker, e.g.
 //
-//	go build -ldflags "-X github.com/padi2312/compose-check-updates/internal/buildinfo.Version=1.2.3 \
-//	                   -X github.com/padi2312/compose-check-updates/internal/buildinfo.Commit=abc1234 \
-//	                   -X github.com/padi2312/compose-check-updates/internal/buildinfo.Date=2026-07-01T12:00:00Z"
+//	go build -ldflags "-X github.com/p-arndt/compose-check-updates/internal/buildinfo.Version=1.2.3 \
+//	                   -X github.com/p-arndt/compose-check-updates/internal/buildinfo.Commit=abc1234 \
+//	                   -X github.com/p-arndt/compose-check-updates/internal/buildinfo.Date=2026-07-01T12:00:00Z"
 //
 // The release pipeline reads the version from the repo-root VERSION file (the
 // single source of truth) and injects it here. See .github/workflows/release.yml

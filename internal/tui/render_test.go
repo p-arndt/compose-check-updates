@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/padi2312/compose-check-updates/internal"
+	"github.com/p-arndt/compose-check-updates/internal"
 )
 
 // ansiEscape strips styling so assertions can talk about what the user sees.

@@ -3,7 +3,7 @@ package tui
 import (
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/padi2312/compose-check-updates/internal"
+	"github.com/p-arndt/compose-check-updates/internal"
 )
 
 // applyResultMsg reports one finished Update() so the row can flip state while

@@ -7,13 +7,13 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/padi2312/compose-check-updates/internal"
-	"github.com/padi2312/compose-check-updates/internal/buildinfo"
-	"github.com/padi2312/compose-check-updates/internal/logger"
-	"github.com/padi2312/compose-check-updates/internal/modes"
-	"github.com/padi2312/compose-check-updates/internal/scanner"
-	"github.com/padi2312/compose-check-updates/internal/tui"
-	"github.com/padi2312/compose-check-updates/internal/update"
+	"github.com/p-arndt/compose-check-updates/internal"
+	"github.com/p-arndt/compose-check-updates/internal/buildinfo"
+	"github.com/p-arndt/compose-check-updates/internal/logger"
+	"github.com/p-arndt/compose-check-updates/internal/modes"
+	"github.com/p-arndt/compose-check-updates/internal/scanner"
+	"github.com/p-arndt/compose-check-updates/internal/tui"
+	"github.com/p-arndt/compose-check-updates/internal/update"
 )
 
 func main() {

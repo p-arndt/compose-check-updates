@@ -34,7 +34,7 @@ Easily update Docker Compose image tags to their latest versions.
 
 ### Quick
 
-1. Download the latest Windows release from the [Releases](https://github.com/Padi2312/compose-check-updates/releases) page.
+1. Download the latest Windows release from the [Releases](https://github.com/p-arndt/compose-check-updates/releases) page.
 2. Run the following command to check current directory for docker compose image updates:
 
 ```bash
@@ -58,14 +58,14 @@ chmod +x ccu-linux-amd64
 
 #### Windows
 
-1. Download the latest Windows release from the [Releases](https://github.com/Padi2312/compose-check-updates/releases) page.
+1. Download the latest Windows release from the [Releases](https://github.com/p-arndt/compose-check-updates/releases) page.
 2. Rename the downloaded file to `ccu.exe` for easier usage.
    1. (Optional) Add the file's directory to your PATH environment variable. So you can run `ccu` from any directory.
 3. Run `ccu.exe -v` from the command prompt to check if the installation was successful.
 
 #### Linux
 
-1. Download the latest Linux release from the [Releases](https://github.com/Padi2312/compose-check-updates/releases) page.
+1. Download the latest Linux release from the [Releases](https://github.com/p-arndt/compose-check-updates/releases) page.
 2. Rename the downloaded file to `ccu` for easier usage.
 3. (Optional) Move the file to `/usr/local/bin` to make it available system-wide or just add it to your PATH.
 4. Make the file executable by running `chmod +x ccu`.

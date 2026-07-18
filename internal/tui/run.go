@@ -12,8 +12,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mattn/go-isatty"
 
-	"github.com/padi2312/compose-check-updates/internal"
-	"github.com/padi2312/compose-check-updates/internal/scanner"
+	"github.com/p-arndt/compose-check-updates/internal"
+	"github.com/p-arndt/compose-check-updates/internal/scanner"
 )
 
 // logCapture is a slog.Handler that keeps records in memory instead of writing

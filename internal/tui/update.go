@@ -8,7 +8,7 @@ import (
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/padi2312/compose-check-updates/internal/scanner"
+	"github.com/p-arndt/compose-check-updates/internal/scanner"
 )
 
 type scanStartedMsg struct{ events <-chan scanner.Event }

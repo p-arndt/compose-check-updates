@@ -8,8 +8,8 @@ import (
 
 	"github.com/charmbracelet/bubbles/spinner"
 
-	"github.com/padi2312/compose-check-updates/internal"
-	"github.com/padi2312/compose-check-updates/internal/scanner"
+	"github.com/p-arndt/compose-check-updates/internal"
+	"github.com/p-arndt/compose-check-updates/internal/scanner"
 )
 
 // phase is the stage of the session. The UI is one program that walks forward

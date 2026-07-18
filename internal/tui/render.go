@@ -7,7 +7,7 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/padi2312/compose-check-updates/internal"
+	"github.com/p-arndt/compose-check-updates/internal"
 )
 
 // None of the renderers below append a trailing newline: the model joins the

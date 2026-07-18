@@ -1,4 +1,4 @@
-module github.com/padi2312/compose-check-updates
+module github.com/p-arndt/compose-check-updates
 
 go 1.26.4
 

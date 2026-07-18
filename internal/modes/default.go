@@ -4,8 +4,8 @@ import (
 	"context"
 	"log/slog"
 
-	"github.com/padi2312/compose-check-updates/internal"
-	"github.com/padi2312/compose-check-updates/internal/scanner"
+	"github.com/p-arndt/compose-check-updates/internal"
+	"github.com/p-arndt/compose-check-updates/internal/scanner"
 )
 
 // Default checks every compose file below opts.Root and reports — or applies —

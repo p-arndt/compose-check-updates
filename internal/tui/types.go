@@ -9,7 +9,7 @@ package tui
 import (
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/padi2312/compose-check-updates/internal"
+	"github.com/p-arndt/compose-check-updates/internal"
 )
 
 // Filter is the set of update levels the list is currently showing. It is a

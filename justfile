@@ -13,7 +13,7 @@
 set windows-shell := ["pwsh.exe", "-NoLogo", "-NoProfile", "-Command"]
 
 # ldflags shared by the release builds: stamp version metadata + strip symbols.
-_LDFLAGS := "-s -w -X github.com/padi2312/compose-check-updates/internal/buildinfo.Version=$(Get-Content VERSION -Raw).Trim() -X github.com/padi2312/compose-check-updates/internal/buildinfo.Commit=$(git rev-parse --short HEAD) -X github.com/padi2312/compose-check-updates/internal/buildinfo.Date=$(Get-Date -AsUTC -Format o)"
+_LDFLAGS := "-s -w -X github.com/p-arndt/compose-check-updates/internal/buildinfo.Version=$(Get-Content VERSION -Raw).Trim() -X github.com/p-arndt/compose-check-updates/internal/buildinfo.Commit=$(git rev-parse --short HEAD) -X github.com/p-arndt/compose-check-updates/internal/buildinfo.Date=$(Get-Date -AsUTC -Format o)"
 
 # Default: show the recipe list.
 default:

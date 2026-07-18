@@ -42,7 +42,7 @@ import (
 // Repo coordinates for the published releases, kept here so every caller points
 // at the same place.
 const (
-	repoOwner = "Padi2312"
+	repoOwner = "p-arndt"
 	repoName  = "compose-check-updates"
 )
 

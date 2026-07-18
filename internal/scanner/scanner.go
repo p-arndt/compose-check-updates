@@ -7,7 +7,7 @@ import (
 	"context"
 	"sync"
 
-	"github.com/padi2312/compose-check-updates/internal"
+	"github.com/p-arndt/compose-check-updates/internal"
 )
 
 const (
