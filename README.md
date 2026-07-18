@@ -116,15 +116,23 @@ You can also control the update behavior by using the flags described below.
 | `-minor`        | Only suggest minor version updates                                         | `false`                 |
 | `-patch`        | Only suggest patch version updates                                         | `true`                  |
 | `-exclude`      | Exclude specific services from being updated (comma-separated)             | `none`                  |
-| `-self-update`  | Download and install the latest version of `ccu`                           | `false`                 |
-| `-check-update` | Check whether a newer version of `ccu` is available, without installing it | `false`                 |
+
+### Commands
+
+These act on `ccu` itself rather than on your Compose files, and ignore the scan
+flags above.
+
+| Command        | Description                                                                |
+| -------------- | -------------------------------------------------------------------------- |
+| `self-update`  | Download and install the latest version of `ccu`                           |
+| `check-update` | Check whether a newer version of `ccu` is available, without installing it |
 
 ## Keeping ccu up to date
 
 `ccu` can update itself:
 
 ```bash
-ccu -self-update
+ccu self-update
 ```
 
 It downloads the latest release, verifies it, and replaces the running binary in
@@ -132,10 +140,15 @@ place. To only find out whether something newer exists, without installing
 anything:
 
 ```bash
-ccu -check-update
+ccu check-update
 ```
 
-Independently of those flags, a normal (non-interactive) run checks **at most
+> [!NOTE]
+> The older `-self-update` and `-check-update` flag spellings still work, so
+> existing scripts and cron entries keep running, but the subcommands above are
+> the supported form.
+
+Independently of those commands, a normal (non-interactive) run checks **at most
 once every 24 hours** whether a newer release exists and, if so, prints a single
 line to stderr — stdout stays clean, so piping `ccu`'s report somewhere is
 unaffected. The check never installs anything on its own; upgrading is always an
