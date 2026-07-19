@@ -1,180 +1,40 @@
 <p align="center">
-  <img src="./logo.png" alt="Beschrapi Logo" width="200">
+  <img src="./logo.png" alt="Compose-Check-Updates Logo" width="200">
 </p>
 
 <h1 align="center">Compose-Check-Updates</h1>
 
 <p align="center">
-  <strong>
-Easily update Docker Compose image tags to their latest versions.
-  </strong>
+  <strong>Keep your Docker Compose image tags up to date — like <code>npm-check-updates</code>, but for <code>compose.yaml</code>.</strong>
 </p>
 
-`compose-check-updates` helps you manage and update images in Docker Compose files, similar to how `npm-check-updates` works for a `package.json`. This tool is heavily inspired by `npm-check-updates` and works in a similar way.
-
-## Table of Contents
-
-- [Table of Contents](#table-of-contents)
-- [Installation](#installation)
-  - [Quick](#quick)
-  - [System-wide](#system-wide)
-    - [Windows](#windows)
-    - [Linux](#linux)
-- [Usage](#usage)
-- [Flags](#flags)
-- [Keeping ccu up to date](#keeping-ccu-up-to-date)
-- [Interactive mode](#interactive-mode)
-- [How does it work?](#how-does-it-work)
-  - [Images without semver tags](#images-without-semver-tags)
-- [Troubleshooting](#troubleshooting)
-  - [Image tags with only x.y versions](#image-tags-with-only-xy-versions)
-  - [No new versions found but there are newer versions available](#no-new-versions-found-but-there-are-newer-versions-available)
-
-## Installation
-
-### Quick
-
-1. Download the latest Windows release from the [Releases](https://github.com/p-arndt/compose-check-updates/releases) page.
-2. Run the following command to check current directory for docker compose image updates:
-
 ```bash
-ccu-<YOUR_ARCHITECTURE>
+ccu        # show what's outdated
+ccu -u     # write the new tags
+ccu -i     # pick what to update in a full-screen TUI
 ```
 
-Example for Windows:
+## The interactive mode
 
-```ps1
-ccu-windows-amd64.exe
-```
+`ccu -i` is the nicest way to use this tool.
 
-Example for Linux:
+<!-- TODO: drop a screenshot or asciinema gif of the TUI here -->
 
-```bash
-chmod +x ccu-linux-amd64
-./ccu-linux-amd64
-```
+A full-screen terminal UI: updates grouped per Compose file, colour-coded by level,
+streaming in as the registries answer. Arrow keys to move, `space` to select,
+`A` to apply. Press `?` for everything else.
 
-### System-wide
+Nothing is written until you press `A`, and you decide per row which version gets
+written — so a major bump never sneaks in.
 
-#### Windows
-
-1. Download the latest Windows release from the [Releases](https://github.com/p-arndt/compose-check-updates/releases) page.
-2. Rename the downloaded file to `ccu.exe` for easier usage.
-   1. (Optional) Add the file's directory to your PATH environment variable. So you can run `ccu` from any directory.
-3. Run `ccu.exe -v` from the command prompt to check if the installation was successful.
-
-#### Linux
-
-1. Download the latest Linux release from the [Releases](https://github.com/p-arndt/compose-check-updates/releases) page.
-2. Rename the downloaded file to `ccu` for easier usage.
-3. (Optional) Move the file to `/usr/local/bin` to make it available system-wide or just add it to your PATH.
-4. Make the file executable by running `chmod +x ccu`.
-5. Include the path to `ccu` in your PATH environment variable.
-6. Run `ccu -v` from the terminal to check if the installation was successful.
-
-## Usage
-
-To check for updates in Docker Compose files in the current directory, run:
-
-Check for updates only (default: only checking patch versions):
-
-```bash
-ccu
-```
-
-Check for updates and update the Docker Compose files:
-
-> [!NOTE]
-> When choosing this option, `ccu` will create backups of the original Docker Compose files with the `.ccu` extension.
-
-```bash
-ccu -u
-```
-
-Check for updates, update the Docker Compose files, and restart the services:
-
-```bash
-ccu -u -r
-```
-
-You can also control the update behavior by using the flags described below.
-
-## Flags
-
-> [!IMPORTANT]
-> When using `-i` for interactive mode other arguments (except `-d` for directory and `-exclude`) will be ignored. See [Interactive mode](#interactive-mode).
-
-| Flag            | Description                                                                | Default                 |
-| --------------- | -------------------------------------------------------------------------- | ----------------------- |
-| `-h`            | Show help message                                                          | `false`                 |
-| `-u`            | Update the Docker Compose files with the new image tags                    | `false`                 |
-| `-r`            | Restart the services after updating the Docker Compose files               | `false`                 |
-| `-i`            | Launch the full-screen TUI to pick which images to update                  | `false`                 |
-| `-d`            | Specify the directory to scan for Docker Compose files                     | `.` (current directory) |
-| `-f`            | Full update mode, checks updates to latest semver version                  | `false`                 |
-| `-major`        | Only suggest major version updates                                         | `false`                 |
-| `-minor`        | Only suggest minor version updates                                         | `false`                 |
-| `-patch`        | Only suggest patch version updates                                         | `true`                  |
-| `-exclude`      | Exclude specific services from being updated (comma-separated)             | `none`                  |
-
-### Commands
-
-These act on `ccu` itself rather than on your Compose files, and ignore the scan
-flags above.
-
-| Command        | Description                                                                |
-| -------------- | -------------------------------------------------------------------------- |
-| `self-update`  | Download and install the latest version of `ccu`                           |
-| `check-update` | Check whether a newer version of `ccu` is available, without installing it |
-
-## Keeping ccu up to date
-
-`ccu` can update itself:
-
-```bash
-ccu self-update
-```
-
-It downloads the latest release, verifies it, and replaces the running binary in
-place. To only find out whether something newer exists, without installing
-anything:
-
-```bash
-ccu check-update
-```
-
-> [!NOTE]
-> The older `-self-update` and `-check-update` flag spellings still work, so
-> existing scripts and cron entries keep running, but the subcommands above are
-> the supported form.
-
-Independently of those commands, a normal (non-interactive) run checks **at most
-once every 24 hours** whether a newer release exists and, if so, prints a single
-line to stderr — stdout stays clean, so piping `ccu`'s report somewhere is
-unaffected. The check never installs anything on its own; upgrading is always an
-explicit `ccu -self-update`.
-
-The timestamp of the last check is kept in `<user config dir>/ccu/update-check.json`
-(`%AppData%\ccu\update-check.json` on Windows, `~/.config/ccu/update-check.json`
-on Linux). Set `CCU_NO_UPDATE_CHECK=1` to disable the check entirely.
-
-## Interactive mode
-
-```bash
-ccu -i
-```
-
-This opens a full-screen terminal UI. Updates are grouped by the Compose file they
-belong to and colour-coded by update level (major, minor, patch, digest), while a
-progress bar shows how far the scan got — results appear as the registries answer,
-so you can start selecting before the scan has finished.
+<details>
+<summary>All keys and the filter/target model</summary>
 
 | Key                | Action                                             |
 | ------------------ | -------------------------------------------------- |
 | `↑`/`↓` or `k`/`j` | Move the selection                                 |
-| `space` or `enter` | Toggle — select a row, or fold/unfold a file group |
-| `a`                | Select all updates                                 |
-| `n`                | Select none                                        |
+| `space` or `enter` | Toggle a row, or fold/unfold a file group          |
+| `a` / `n`          | Select all / select none                           |
 | `z`                | Fold/unfold the group under the cursor             |
 | `C` / `E`          | Collapse all / expand all groups                   |
 | `f`                | Cycle the display filter (which rows are shown)    |
@@ -185,57 +45,105 @@ so you can start selecting before the scan has finished.
 | `A`                | Apply the **selected** updates                     |
 | `u`                | Apply **only the highlighted row**                 |
 | `y` / `n`          | Answer the restart prompt                          |
-| `?`                | Show help                                          |
-| `q`                | Quit                                               |
+| `?` / `q`          | Help / quit                                        |
 
-`space`/`enter` never write anything — applying is always an explicit `A` or `u`.
-
-### Filter vs. target
-
-These are two different things, and the legend at the bottom names both:
-
-- **`show`** (`f`) only decides which rows are _visible_. It never changes a version.
-- **`target`** (`t`, `T`) decides which version `A` and `u` actually _write_.
-
-The target defaults to `major`, so out of the box `ccu -i` offers the highest
-available version, as it always has. Set it to `minor` or `patch` when you would
-rather not jump a major release: an image on `traefik:v2.9.3` that is offered
-`3.7.8` will re-point to the latest `2.11.x` at target `minor`, or `2.9.4` at
-target `patch`.
-
-Rows are re-pointed individually with `T`, which only cycles the levels that
-image actually has — the `(+2)` after a version tells you two other levels are
-available. The badge always shows the level of the version currently selected.
-An image with nothing at the current target is shown as `[-] … no patch update`
-and cannot be selected or applied, so `ccu` can never write a version you did not pick.
+**Filter vs. target** — `show` (`f`) only decides which rows are _visible_;
+`target` (`t`, `T`) decides which version actually gets _written_. The target
+defaults to `major`, so out of the box you are offered the highest available
+version. At target `minor`, an image on `traefik:v2.9.3` that has `3.7.8`
+available re-points to the latest `2.11.x` instead; at `patch`, to `2.9.4`.
+`T` only cycles the levels an image actually has — the `(+2)` after a version
+means two other levels exist. A row with nothing at the current target shows as
+`[-] … no patch update` and cannot be applied.
 
 After applying, `ccu` asks once whether the affected Compose files should be
 restarted with `docker compose up -d`.
 
+The TUI always resolves **all** update levels, regardless of `-patch`, `-minor`,
+`-major` or `-f`. Those flags govern the non-interactive mode only. Interactive
+mode needs a real terminal — when stdout is piped, `ccu` exits with a hint to use
+the non-interactive mode.
+
+</details>
+
+## Installation
+
+Download the binary for your platform from the
+[Releases](https://github.com/p-arndt/compose-check-updates/releases) page.
+
+**Windows** — rename it to `ccu.exe`, optionally put its directory on your `PATH`,
+then check with `ccu.exe -v`.
+
+**Linux** — rename it to `ccu`, `chmod +x ccu`, optionally move it to
+`/usr/local/bin`, then check with `ccu -v`.
+
+You can also just run the downloaded file directly (`./ccu-linux-amd64`) without
+installing anything.
+
+## Usage
+
+Run `ccu` in a directory — all subdirectories are scanned recursively for Compose
+files, and the images in their services are checked against their registries.
+
+```bash
+ccu              # report only (patch updates by default)
+ccu -u           # write the new tags
+ccu -u -r        # write, then restart the affected services
+ccu -f           # consider every newer version, not just patches
+ccu -d ./stacks  # scan a different directory
+```
+
 > [!NOTE]
-> The TUI always resolves and shows **all** update levels, regardless of `-patch`,
-> `-minor`, `-major` or `-f` — use the in-UI filter (`f`) to narrow the list and
-> the target (`t`) to choose which version gets written. Those flags still govern
-> the non-interactive mode.
+> `-u` creates a backup of every modified Compose file with a `.ccu` extension.
 
-Interactive mode needs a real terminal. When stdout is piped or redirected, `ccu`
-exits with an error message pointing you at the non-interactive mode.
+### Flags
 
-## How does it work?
+> [!IMPORTANT]
+> With `-i`, all flags except `-d` and `-exclude` are ignored.
 
-`compose-check-updates` scans the given directory for Docker Compose files. It then reads the images in the services and checks if there are newer versions available.
+| Flag       | Description                                                    | Default   |
+| ---------- | -------------------------------------------------------------- | --------- |
+| `-h`       | Show help message                                              | `false`   |
+| `-u`       | Update the Compose files with the new image tags               | `false`   |
+| `-r`       | Restart the services after updating                            | `false`   |
+| `-i`       | Launch the full-screen TUI                                     | `false`   |
+| `-d`       | Directory to scan                                              | `.`       |
+| `-f`       | Full update mode — check up to the latest semver version       | `false`   |
+| `-major`   | Only suggest major version updates                             | `false`   |
+| `-minor`   | Only suggest minor version updates                             | `false`   |
+| `-patch`   | Only suggest patch version updates                             | `true`    |
+| `-exclude` | Exclude services from being updated (comma-separated)          | `none`    |
 
-If newer versions are found, `compose-check-updates` will suggest the updated image tags. You can then choose to update the Docker Compose files with the new image tags.
+### Commands
 
-> [!NOTE]
-> All subdirectories are scanned recursively for Docker Compose files.
+These act on `ccu` itself and ignore the flags above.
 
-### Images without semver tags
+```bash
+ccu self-update    # download, verify and replace the running binary
+ccu check-update   # only report whether something newer exists
+```
+
+A normal (non-interactive) run also checks **at most once every 24 hours** whether
+a newer release exists and prints one line to stderr if so — stdout stays clean.
+It never installs anything by itself.
+
+<details>
+<summary>Update-check details</summary>
+
+The timestamp of the last check lives in `<user config dir>/ccu/update-check.json`
+(`%AppData%\ccu\update-check.json` on Windows, `~/.config/ccu/update-check.json`
+on Linux). Set `CCU_NO_UPDATE_CHECK=1` to disable the check entirely.
+
+The older `-self-update` and `-check-update` flag spellings still work so existing
+scripts keep running, but the subcommands above are the supported form.
+
+</details>
+
+## Images without semver tags
 
 Not every image publishes semantic versions. Some are pinned by digest, others tag
-every build with the commit it was built from (for example `ghcr.io/vert-sh/vert`,
-which publishes `sha-e1c83ba` style tags). For those, `ccu` compares the image
-manifest digest instead of the version number:
+every build with its commit (e.g. `ghcr.io/vert-sh/vert` with `sha-e1c83ba` tags).
+For those, `ccu` compares the image manifest digest instead of the version number:
 
 | In your Compose file            | What `ccu` does                                                          |
 | ------------------------------- | ------------------------------------------------------------------------ |
@@ -244,62 +152,34 @@ manifest digest instead of the version number:
 | `image: vert:1.2.3@sha256:abc…` | Bumps the tag **and** the digest together, so they stay consistent       |
 | `image: vert:latest`            | Skipped — a floating tag already resolves to the newest image            |
 
-These updates are reported with the update level `digest`. Since a digest change
-has no major/minor/patch level, it is always reported and is not affected by the
-`-major`, `-minor` and `-patch` flags.
+These are reported with the update level `digest`. A digest change has no
+major/minor/patch level, so it is always reported and is unaffected by `-major`,
+`-minor` and `-patch`.
 
 > [!NOTE]
 > Finding which tag carries the newest digest requires querying tags individually,
-> so the first check of such an image is noticeably slower than a semver lookup.
-> At most 250 tags of the same naming scheme are inspected; `ccu` warns when an
-> image has more tags than that.
+> so the first check of such an image is noticeably slower. At most 250 tags of the
+> same naming scheme are inspected; `ccu` warns when an image has more.
 
 ## Troubleshooting
 
-### Image tags with only x.y versions
+<details>
+<summary>No new versions found, but newer versions exist</summary>
 
-Some images only have `x.y` versions and no `x.y.z` versions.
-This can lead to the following scenario:
+By default `ccu` only checks for **patch** versions. With a current tag of `1.0.0`
+and a latest tag of `1.1.0`, there is no newer patch version, so nothing is
+suggested. Use `ccu -f` to consider every newer version.
 
-Alpine has the following tags:
+</details>
 
-- `3.14`
-- `3.14.1`
-- `3.14.0`
+<details>
+<summary>Image tags with only x.y versions</summary>
 
-If you are using `3.14` in your Docker Compose file, `ccu` will suggest an update to `3.14.1`.
+Some images only publish `x.y` tags. Alpine has `3.14`, `3.14.1` and `3.14.0` — if
+you use `3.14`, `ccu` suggests `3.14.1`. But Postgres has `13`, `13.3` and `13.4`:
+if you use `13.2`, `ccu` will not suggest `13.4`, because `13` is not a valid
+semver version.
 
-But for Postgres with the following tags:
+_(This might change in the future behind an additional flag.)_
 
-- `13`
-- `13.3`
-- `13.4`
-
-If you are using `13.2` in your Docker Compose file, `ccu` will not suggest an update to `13.4` because it's no valid semver version.
-
-_(This might be changed in the future with an additional flag)_
-
-### No new versions found but there are newer versions available
-
-On default `ccu` checks for patch versions only.
-
----
-
-Example:
-
-- Current image tag: `1.0.0`
-- Latest image tag: `1.1.0`
-
-Result: No newer patch versions available
-
----
-
-`ccu` on default will not suggest an update in this case.
-
-To check for all newer versions, use the `-f` flag:
-
-```bash
-ccu -f
-```
-
-This will suggest the latest version `1.1.0` as an update.
+</details>
