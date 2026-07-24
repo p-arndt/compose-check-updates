@@ -23,7 +23,7 @@ default:
 # Dev
 # ---------------------------------------------------------------------------
 
-# Run the CLI from source, passing through any args:  just run -d . -i
+# Run the CLI from source, passing through any args:  just run check -d .
 run *ARGS:
     go run . {{ARGS}}
 

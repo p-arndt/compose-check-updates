@@ -48,21 +48,33 @@ func main() {
 		Patch:   ccuFlags.Patch,
 	}
 
-	if ccuFlags.Interactive {
+	// The TUI is what a bare `ccu` means; `ccu check` is the way to ask for the
+	// report instead. A piped or redirected stdout has no frame to draw on, so
+	// rather than fail at something the user never spelled out, the run falls
+	// back to the report — that is what `ccu | tee`, a CI job or a cron entry
+	// wants anyway.
+	if !ccuFlags.Check && !isTerminal(os.Stdout) {
+		slog.Warn("No terminal on stdout, running the non-interactive report instead of the TUI; use `ccu check` to select it explicitly")
+		ccuFlags.Check = true
+	}
+
+	if !ccuFlags.Check {
 		// The TUI narrows the list with its own in-UI level filter, so it needs every
 		// level resolved up front — re-scanning whenever the filter changes would mean
 		// hitting the registries again for versions we already looked up.
 		opts.Major, opts.Minor, opts.Patch = true, true, true
 
 		if err := tui.Run(opts); err != nil {
-			if !isTerminal(os.Stdout) {
-				slog.Error("Interactive mode needs a terminal; run without -i to check for updates non-interactively", "error", err)
-			} else {
-				slog.Error("Error running interactive mode", "error", err)
-			}
+			slog.Error("Error running interactive mode", "error", err)
 			os.Exit(1)
 		}
 		return
+	}
+
+	// Said once, before the report itself, so an existing script keeps working
+	// and still gets told which spelling replaced it.
+	if ccuFlags.LegacyPlain {
+		slog.Warn("Report-only flags now belong to the `check` subcommand; use `ccu check ...` — the bare form still works for this release")
 	}
 
 	// The TUI installs its own quit handling, so only the non-interactive path
