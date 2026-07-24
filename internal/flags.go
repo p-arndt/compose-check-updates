@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
+	"text/tabwriter"
 )
 
 type CCUFlags struct {
@@ -13,6 +15,8 @@ type CCUFlags struct {
 	Update      bool     // Update the Docker Compose files with the new image tags
 	Restart     bool     // Restart the services after updating the Docker Compose files
 	Interactive bool     // Interactively choose which docker images to update
+	Check       bool     // Run the non-interactive report instead of the TUI
+	LegacyPlain bool     // Check was inferred from a report-only flag rather than the `check` subcommand
 	Directory   string   // Root directory to search for Docker Compose files
 	Full        bool     // Update to the latest semver version
 	Major       bool     // Update to the latest major version
@@ -25,11 +29,19 @@ type CCUFlags struct {
 	ExcludeStr  string   // Comma-separated list of directories to exclude from search (flag only)
 }
 
-// splitSubcommand pulls a leading subcommand off the argument list. These two
-// actions operate on ccu itself rather than on the user's compose files, and
-// they ignore every scan option — `ccu self-update -d /srv` never had a
-// meaning — so a subcommand states the shape of the invocation better than a
-// flag that silently coexists with flags it will not read.
+// plainOnlyFlags are the flags that only the non-interactive report reads: the
+// TUI resolves every level itself and applies on a keypress. Naming one of them
+// therefore states which mode was meant, even when `check` was left out.
+var plainOnlyFlags = map[string]bool{
+	"u": true, "r": true, "f": true, "major": true, "minor": true, "patch": true,
+}
+
+// splitSubcommand pulls a leading subcommand off the argument list. These
+// actions each pick a mode of their own — `check` the non-interactive report,
+// the rest something about ccu itself rather than about the user's compose
+// files — and they ignore the options the other modes read, so a subcommand
+// states the shape of the invocation better than a flag that silently coexists
+// with flags it will not read.
 //
 // Anything else is handed back untouched, which keeps an unrecognised bare
 // argument doing exactly what it did before: nothing.
@@ -38,7 +50,7 @@ func splitSubcommand(argv []string) (sub string, rest []string) {
 		return "", argv
 	}
 	switch argv[0] {
-	case "self-update", "check-update":
+	case "check", "self-update", "check-update", "help", "version":
 		return argv[0], argv[1:]
 	}
 	return "", argv
@@ -52,10 +64,13 @@ func Parse(version string) CCUFlags {
 	flag.BoolVar(&args.Help, "h", false, "Show help message")
 	flag.BoolVar(&args.Update, "u", false, "Update the Docker Compose files with the new image tags")
 	flag.BoolVar(&args.Restart, "r", false, "Restart the services after updating the Docker Compose files")
-	flag.BoolVar(&args.Interactive, "i", false, "Interactively choose which docker images to update")
+	// The TUI is what a bare `ccu` runs now, so -i no longer selects anything;
+	// it stays registered, and hidden from the usage text, so the invocation it
+	// used to name keeps working.
+	flag.BoolVar(&args.Interactive, "i", false, "")
 	flag.StringVar(&args.Directory, "d", ".", "Root directory to search for Docker Compose files")
-	flag.BoolVar(&args.Full, "f", false, "Update to the latest major version")
-	flag.BoolVar(&args.Major, "major", false, "Update to the latest semver version")
+	flag.BoolVar(&args.Full, "f", false, "Consider every newer version, not just patches")
+	flag.BoolVar(&args.Major, "major", false, "Update to the latest major version")
 	flag.BoolVar(&args.Minor, "minor", false, "Update to the latest minor version")
 	flag.BoolVar(&args.Patch, "patch", true, "Update to the latest patch version")
 	flag.BoolVar(&args.Version, "v", false, "Show version information")
@@ -71,11 +86,40 @@ func Parse(version string) CCUFlags {
 	flag.Usage = func() { usage(flag.CommandLine.Output()) }
 	flag.CommandLine.Parse(rest)
 
+	// A word that reached here is not one of the subcommands above, and flag
+	// parsing stopped at it — so `ccu nonsense -d /srv` would silently have
+	// ignored the -d as well. Now that there is a command surface to mistype,
+	// say so instead of scanning the wrong directory.
+	if flag.NArg() > 0 {
+		fmt.Fprintf(os.Stderr, "unknown command %q\n\n", flag.Arg(0))
+		usage(os.Stderr)
+		os.Exit(2)
+	}
+
 	switch sub {
+	case "check":
+		args.Check = true
 	case "self-update":
 		args.SelfUpdate = true
 	case "check-update":
 		args.CheckUpdate = true
+	case "help":
+		args.Help = true
+	case "version":
+		args.Version = true
+	}
+
+	// A report-only flag without `check` is what every pre-TUI-default script
+	// looks like. Launching the TUI at it would be worse than useless — `ccu -u`
+	// in a cron entry would hang on a terminal that is not there — so the mode
+	// those flags imply is honoured, and main says once which spelling replaced
+	// it. Not for -i: that one means the TUI, which is now the default anyway.
+	if !args.Check {
+		flag.Visit(func(f *flag.Flag) {
+			if plainOnlyFlags[f.Name] {
+				args.Check, args.LegacyPlain = true, true
+			}
+		})
 	}
 
 	if args.Version {
@@ -111,20 +155,32 @@ func Parse(version string) CCUFlags {
 // left out: they still work, but a help text listing both forms would suggest
 // there is a difference between them.
 func usage(w io.Writer) {
-	fmt.Fprintf(w, "Usage:\n  %s [flags]\n  %s <command>\n\nCommands:\n", os.Args[0], os.Args[0])
-	fmt.Fprintln(w, "  self-update\tDownload and install the latest version of ccu")
-	fmt.Fprintln(w, "  check-update\tCheck whether a newer version of ccu is available, without installing it")
-	fmt.Fprintln(w, "\nFlags:")
+	// The invocation name only, not the path it happened to be started from:
+	// help text that reads `/tmp/build/ccu check` teaches the wrong command.
+	name := filepath.Base(os.Args[0])
+
+	// A tabwriter rather than plain tabs, so the descriptions line up whatever
+	// the longest command or flag name turns out to be.
+	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
+	fmt.Fprintf(tw, "Usage:\n  %s\tPick what to update in the full-screen TUI\n", name)
+	fmt.Fprintf(tw, "  %s <command>\tRun one of the commands below\n\nCommands:\n", name)
+	fmt.Fprintln(tw, "  check\tReport the available updates without the TUI, and optionally apply them")
+	fmt.Fprintln(tw, "  self-update\tDownload and install the latest version of ccu")
+	fmt.Fprintln(tw, "  check-update\tCheck whether a newer version of ccu is available, without installing it")
+	fmt.Fprintln(tw, "  help\tShow this help message")
+	fmt.Fprintln(tw, "  version\tShow version information")
+	fmt.Fprintf(tw, "\nFlags (-d and -exclude apply to both modes, the rest only to `%s check`):\n", name)
 	flag.VisitAll(func(f *flag.Flag) {
 		// An empty usage string marks a flag kept only for backwards
 		// compatibility; see the registrations in Parse.
 		if f.Usage == "" {
 			return
 		}
-		fmt.Fprintf(w, "  -%s\t%s", f.Name, f.Usage)
+		fmt.Fprintf(tw, "  -%s\t%s", f.Name, f.Usage)
 		if f.DefValue != "" && f.DefValue != "false" {
-			fmt.Fprintf(w, " (default %s)", f.DefValue)
+			fmt.Fprintf(tw, " (default %s)", f.DefValue)
 		}
-		fmt.Fprintln(w)
+		fmt.Fprintln(tw)
 	})
+	tw.Flush()
 }

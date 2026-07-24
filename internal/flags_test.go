@@ -6,6 +6,82 @@ import (
 	"testing"
 )
 
+func TestSplitSubcommand(t *testing.T) {
+	tests := []struct {
+		name     string
+		argv     []string
+		wantSub  string
+		wantRest []string
+	}{
+		{name: "no arguments", argv: nil, wantSub: "", wantRest: nil},
+		{name: "check", argv: []string{"check", "-u"}, wantSub: "check", wantRest: []string{"-u"}},
+		{name: "help", argv: []string{"help"}, wantSub: "help", wantRest: []string{}},
+		{name: "version", argv: []string{"version"}, wantSub: "version", wantRest: []string{}},
+		{name: "self-update", argv: []string{"self-update"}, wantSub: "self-update", wantRest: []string{}},
+		{name: "check-update", argv: []string{"check-update"}, wantSub: "check-update", wantRest: []string{}},
+		// A leading flag is never a subcommand, and an unknown word is handed
+		// back so it keeps being ignored rather than changing the mode.
+		{name: "leading flag", argv: []string{"-d", "check"}, wantSub: "", wantRest: []string{"-d", "check"}},
+		{name: "unknown word", argv: []string{"nonsense"}, wantSub: "", wantRest: []string{"nonsense"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			sub, rest := splitSubcommand(tt.argv)
+			if sub != tt.wantSub {
+				t.Errorf("splitSubcommand(%q) sub = %q, expected %q", tt.argv, sub, tt.wantSub)
+			}
+			if len(rest) != len(tt.wantRest) {
+				t.Fatalf("splitSubcommand(%q) rest = %q, expected %q", tt.argv, rest, tt.wantRest)
+			}
+			for i := range rest {
+				if rest[i] != tt.wantRest[i] {
+					t.Errorf("splitSubcommand(%q) rest[%d] = %q, expected %q", tt.argv, i, rest[i], tt.wantRest[i])
+				}
+			}
+		})
+	}
+}
+
+// TestParseMode covers which mode an invocation selects: the TUI (Check false)
+// is what a bare run means now, and everything that only the report reads has
+// to end up in the report either way.
+func TestParseMode(t *testing.T) {
+	tests := []struct {
+		name            string
+		args            []string
+		wantCheck       bool
+		wantLegacyPlain bool
+	}{
+		{name: "bare run means the TUI", args: []string{}},
+		{name: "-i still means the TUI", args: []string{"-i"}},
+		{name: "-d alone stays interactive", args: []string{"-d", "/srv"}},
+		{name: "check subcommand", args: []string{"check"}, wantCheck: true},
+		{name: "check with flags", args: []string{"check", "-u", "-r"}, wantCheck: true},
+		{name: "bare -u infers the report", args: []string{"-u"}, wantCheck: true, wantLegacyPlain: true},
+		{name: "bare -f infers the report", args: []string{"-f"}, wantCheck: true, wantLegacyPlain: true},
+		{name: "bare -patch infers the report", args: []string{"-patch"}, wantCheck: true, wantLegacyPlain: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			origArgs := os.Args
+			defer func() { os.Args = origArgs }()
+			os.Args = append([]string{"ccu"}, tt.args...)
+
+			flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ContinueOnError)
+
+			result := Parse("test")
+			if result.Check != tt.wantCheck {
+				t.Errorf("Parse(%q).Check = %v, expected %v", tt.args, result.Check, tt.wantCheck)
+			}
+			if result.LegacyPlain != tt.wantLegacyPlain {
+				t.Errorf("Parse(%q).LegacyPlain = %v, expected %v", tt.args, result.LegacyPlain, tt.wantLegacyPlain)
+			}
+		})
+	}
+}
+
 func TestParse(t *testing.T) {
 	tests := []struct {
 		name     string
