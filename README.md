@@ -19,7 +19,7 @@ what's newer, and — if you want — rewrites the tags for you.
 
 ---
 
-## Install
+# Install
 
 Download the binary for your platform from the
 [Releases](https://github.com/p-arndt/compose-check-updates/releases) page.
@@ -41,7 +41,7 @@ installing anything.
 Later on, `ccu self-update` replaces the binary in place — see
 [Updating ccu](#updating-ccu).
 
-## Usage
+# Usage
 
 `cd` into the directory holding your stacks and run `ccu`. All subdirectories are
 scanned recursively for Compose files, and the images in their services are
@@ -60,7 +60,7 @@ Nothing is ever written unless you ask for it — `A` in the TUI, `-u` for `chec
 > Writing creates a backup of every modified Compose file next to it, with a
 > `.ccu` extension.
 
-### The TUI (default)
+## The TUI (default)
 
 ```bash
 ccu                # scan the current directory
@@ -122,7 +122,7 @@ The TUI always resolves **all** update levels, regardless of `-patch`, `-minor`,
 > the `check` report instead and says so on stderr — so an old cron entry or CI
 > job keeps working either way.
 
-### `ccu check` — the non-interactive report
+## `ccu check` — the non-interactive report
 
 ```bash
 ccu check              # report only (patch updates by default)
@@ -146,7 +146,7 @@ the TUI, which picks levels in the UI instead.
 | `-minor`   | Only suggest minor version updates                       | `false` |
 | `-patch`   | Only suggest patch version updates                       | `true`  |
 
-### All commands
+## All commands
 
 ```bash
 ccu                # the TUI
@@ -165,7 +165,7 @@ The last four act on `ccu` itself and ignore the flags above.
 > accepted as a no-op, and a report-only flag without `check` (`ccu -u`) still
 > runs the report, printing a one-line hint about the new spelling.
 
-## Updating ccu
+# Updating ccu
 
 ```bash
 ccu self-update    # download, verify and replace the running binary
@@ -188,7 +188,7 @@ scripts keep running, but the subcommands above are the supported form.
 
 </details>
 
-## Images without semver tags
+# Images without semver tags
 
 Not every image publishes semantic versions. Some are pinned by digest, others tag
 every build with its commit (e.g. `ghcr.io/vert-sh/vert` with `sha-e1c83ba` tags).
