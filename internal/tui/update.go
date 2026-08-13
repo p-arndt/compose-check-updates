@@ -174,13 +174,6 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleRestartKey(msg)
 	}
 
-	// The scope question owns the keyboard the same way, and for the same reason:
-	// its answers are p and g, and esc has to cancel it rather than quit the
-	// program the user was in the middle of talking to.
-	if m.pinPrompt {
-		return m.handlePinScopeKey(msg)
-	}
-
 	// The issues pane owns the keyboard while it is open, which is also what
 	// lets esc mean "back to the list" there and "quit" everywhere else.
 	if m.showIssues {
@@ -425,7 +418,6 @@ func (m Model) handleApplyRow() (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-// openPinPrompt asks which scope the row's current target should be saved to.
 // A header has no image to cap, so the key is a no-op there rather than an
 // error: the cursor lands on headers constantly while navigating the tree.
 func (m *Model) openPinPrompt() {

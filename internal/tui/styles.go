@@ -171,3 +171,61 @@ func shortDigest(d string) string {
 	}
 	return algo + ":" + hex[:12] + "…"
 }
+
+// The sidebar's own styles. They deliberately stay quieter than the list's: the
+// list is what the eye scans, and a right column shouting for attention would
+// pull it off the rows.
+
+func (t Theme) dim() lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(t.Dim)
+}
+
+func (t Theme) rule() string {
+	return t.dim().Render(" │ ")
+}
+
+// sideTitle names the image the column is about. It is the only bold line in
+// the sidebar, because everything below it is qualified by this one.
+func (t Theme) sideTitle(image string, width int) string {
+	return lipgloss.NewStyle().Foreground(t.Accent).Bold(true).Render(fit(image, width))
+}
+
+// sideField is a read-only fact: a dim label and its value.
+func (t Theme) sideField(label, value string, width int) string {
+	l := t.dim().Render(padRight(label, 6))
+	return fit(l+lipgloss.NewStyle().Foreground(t.Text).Render(value), width)
+}
+
+// sideHeading introduces a group of choices, and marks it when it has the
+// keyboard: a focused group is the one the arrow keys are about to change, and
+// nothing else on the frame says so.
+func (t Theme) sideHeading(label string, focused bool) string {
+	if !focused {
+		return t.dim().Render(label)
+	}
+	return lipgloss.NewStyle().Foreground(t.Accent).Bold(true).Render("▸ " + label)
+}
+
+// sideChoice is one option in a group. The filled marker is the current value;
+// the hint is the extra word that makes the option mean something, such as the
+// file a scope would write.
+func (t Theme) sideChoice(label, hint string, selected bool, width int) string {
+	marker, name := "  ○ ", t.dim()
+	if selected {
+		marker = lipgloss.NewStyle().Foreground(t.Success).Render("  ● ")
+		name = lipgloss.NewStyle().Foreground(t.Text).Bold(true)
+	} else {
+		marker = t.dim().Render(marker)
+	}
+
+	// Padded on the raw label rather than the styled one: the escape sequences
+	// count towards len but not towards the width the terminal shows.
+	line := marker + name.Render(label)
+	if pad := 9 - lipgloss.Width(label); pad > 0 {
+		line += strings.Repeat(" ", pad)
+	}
+	if hint != "" {
+		line += t.dim().Render(hint)
+	}
+	return fit(line, width)
+}

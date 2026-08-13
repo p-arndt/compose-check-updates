@@ -80,13 +80,14 @@ type Model struct {
 	// user's files. An empty level means "remove the cap for this image".
 	setCap func(scope pinScope, image string, max config.Level) error
 
-	// pinPrompt is the scope question raised by `p`. While it is up every other
-	// key is ignored, the same way the issues pane owns the keyboard while it is
-	// open. The image and level are captured when the question is asked, so the
-	// answer writes what the user was looking at when they pressed the key.
-	pinPrompt      bool
-	pinPromptImage string
-	pinPromptLevel config.Level
+	// focus is which half of the frame the keyboard is talking to. The list
+	// holds it by default: every reflex key has to keep meaning what it meant
+	// before there was a second column to lose them to.
+	focus focusArea
+
+	// sideField is the sidebar's own cursor, meaningful only while focus is
+	// focusSide.
+	sideField sideField
 
 	// logs captures slog output for the lifetime of the program. The scan logs
 	// from many goroutines and the default handler writes to the terminal, which
