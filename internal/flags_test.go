@@ -19,6 +19,7 @@ func TestSplitSubcommand(t *testing.T) {
 		{name: "version", argv: []string{"version"}, wantSub: "version", wantRest: []string{}},
 		{name: "self-update", argv: []string{"self-update"}, wantSub: "self-update", wantRest: []string{}},
 		{name: "check-update", argv: []string{"check-update"}, wantSub: "check-update", wantRest: []string{}},
+		{name: "config", argv: []string{"config", "-d", "/srv"}, wantSub: "config", wantRest: []string{"-d", "/srv"}},
 		// A leading flag is never a subcommand, and an unknown word is handed
 		// back so it keeps being ignored rather than changing the mode.
 		{name: "leading flag", argv: []string{"-d", "check"}, wantSub: "", wantRest: []string{"-d", "check"}},

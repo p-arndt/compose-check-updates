@@ -9,6 +9,7 @@ import (
 
 	"github.com/p-arndt/compose-check-updates/internal"
 	"github.com/p-arndt/compose-check-updates/internal/buildinfo"
+	"github.com/p-arndt/compose-check-updates/internal/config"
 	"github.com/p-arndt/compose-check-updates/internal/logger"
 	"github.com/p-arndt/compose-check-updates/internal/modes"
 	"github.com/p-arndt/compose-check-updates/internal/scanner"
@@ -40,9 +41,33 @@ func main() {
 		return
 	}
 
+	// Read before anything is scanned, and before the `config` command reports,
+	// so both see exactly the same resolution. A broken config file stops the run
+	// rather than being skipped: silently scanning with settings the user thinks
+	// are in effect is the one outcome worth failing over.
+	cfg, err := config.Load(ccuFlags.Directory, ccuFlags.Config)
+	if err != nil {
+		slog.Error("Error reading config", "error", err)
+		os.Exit(1)
+	}
+
+	// The command line adds to the config rather than replacing it: a directory
+	// written down once is meant to stay excluded, and -exclude is how a run adds
+	// one more on top.
+	effective := config.Config{
+		Exclude: config.Union(cfg.Exclude, ccuFlags.Exclude),
+	}
+
+	// A report about ccu's own settings, like the version and update commands
+	// above: it answers a question about the tool, so no scan follows it.
+	if ccuFlags.ShowConfig {
+		config.Show(os.Stdout, cfg, effective)
+		return
+	}
+
 	opts := scanner.Options{
 		Root:    ccuFlags.Directory,
-		Exclude: ccuFlags.Exclude,
+		Exclude: effective.Exclude,
 		Major:   ccuFlags.Major,
 		Minor:   ccuFlags.Minor,
 		Patch:   ccuFlags.Patch,

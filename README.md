@@ -132,13 +132,14 @@ ccu check -f           # consider every newer version, not just patches
 ccu check -d ./stacks  # scan a different directory
 ```
 
-Every flag below applies to `ccu check`; only `-d` and `-exclude` also apply to
-the TUI, which picks levels in the UI instead.
+Every flag below applies to `ccu check`; only `-d`, `-exclude` and `-config`
+also apply to the TUI, which picks levels in the UI instead.
 
 | Flag       | Description                                              | Default |
 | ---------- | -------------------------------------------------------- | ------- |
 | `-d`       | Directory to scan                                        | `.`     |
 | `-exclude` | Directories to exclude, comma-separated                  | none    |
+| `-config`  | Read this config file instead of searching for one       | none    |
 | `-u`       | Update the Compose files with the new image tags         | `false` |
 | `-r`       | Restart the services after updating                      | `false` |
 | `-f`       | Full mode — consider every newer version, not just patches | `false` |
@@ -153,17 +154,49 @@ ccu                # the TUI
 ccu check          # the non-interactive report
 ccu self-update    # download, verify and replace the running binary
 ccu check-update   # only report whether a newer ccu exists
+ccu config         # show the resolved configuration and where it came from
 ccu help           # show the help message
 ccu version        # show version information
 ```
 
-The last four act on `ccu` itself and ignore the flags above.
+`self-update`, `check-update`, `help` and `version` act on `ccu` itself and
+ignore the flags above.
 
 > [!NOTE]
 > **Coming from v0.6.x?** The report used to be the default and `-i` opened the
 > TUI. That is now the other way round. Both old spellings still work: `-i` is
 > accepted as a no-op, and a report-only flag without `check` (`ccu -u`) still
 > runs the report, printing a one-line hint about the new spelling.
+
+## Configuration file
+
+Directories you never want scanned, written down once:
+
+```yaml
+# .ccu.yaml
+exclude:
+  - node_modules
+  - backup
+  - services/legacy
+```
+
+| File                                      | For                                       |
+| ----------------------------------------- | ----------------------------------------- |
+| `~/.config/ccu/config.yaml`               | preferences across every project          |
+| `.ccu.yaml` in the scan root or any parent | settings that travel with the stacks, in git |
+
+Neither is required. Project layers over global, `-exclude` over both, and the
+lists are **unioned** rather than replaced. `.yml` works too. `-config <path>`
+reads one specific file instead of searching. `ccu config` shows what was read
+and what the merged result is.
+
+How an entry is written decides what it covers: `backup` matches that directory
+name **at any depth**, `services/legacy` only that path below the scan root,
+`/mnt/backups` that absolute location — all three with `*` wildcards. Excluded
+directories are never descended into.
+
+A malformed config file, or an unknown key in one, aborts the run instead of
+being skipped.
 
 # Updating ccu
 

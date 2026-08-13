@@ -27,6 +27,8 @@ type CCUFlags struct {
 	CheckUpdate bool     // Check whether a newer version of ccu is available, without installing it
 	Exclude     []string // Directories to exclude from search
 	ExcludeStr  string   // Comma-separated list of directories to exclude from search (flag only)
+	Config      string   // Explicit config file to read instead of searching for one
+	ShowConfig  bool     // Print the resolved configuration and where it came from
 }
 
 // plainOnlyFlags are the flags that only the non-interactive report reads: the
@@ -50,7 +52,7 @@ func splitSubcommand(argv []string) (sub string, rest []string) {
 		return "", argv
 	}
 	switch argv[0] {
-	case "check", "self-update", "check-update", "help", "version":
+	case "check", "self-update", "check-update", "config", "help", "version":
 		return argv[0], argv[1:]
 	}
 	return "", argv
@@ -82,6 +84,7 @@ func Parse(version string) CCUFlags {
 	flag.BoolVar(&args.SelfUpdate, "self-update", false, "")
 	flag.BoolVar(&args.CheckUpdate, "check-update", false, "")
 	flag.StringVar(&args.ExcludeStr, "exclude", "", "Comma-separated list of directories to exclude from search")
+	flag.StringVar(&args.Config, "config", "", "Read this config file instead of searching for one")
 
 	flag.Usage = func() { usage(flag.CommandLine.Output()) }
 	flag.CommandLine.Parse(rest)
@@ -103,6 +106,8 @@ func Parse(version string) CCUFlags {
 		args.SelfUpdate = true
 	case "check-update":
 		args.CheckUpdate = true
+	case "config":
+		args.ShowConfig = true
 	case "help":
 		args.Help = true
 	case "version":
@@ -167,9 +172,10 @@ func usage(w io.Writer) {
 	fmt.Fprintln(tw, "  check\tReport the available updates without the TUI, and optionally apply them")
 	fmt.Fprintln(tw, "  self-update\tDownload and install the latest version of ccu")
 	fmt.Fprintln(tw, "  check-update\tCheck whether a newer version of ccu is available, without installing it")
+	fmt.Fprintln(tw, "  config\tShow the resolved configuration and the files it was read from")
 	fmt.Fprintln(tw, "  help\tShow this help message")
 	fmt.Fprintln(tw, "  version\tShow version information")
-	fmt.Fprintf(tw, "\nFlags (-d and -exclude apply to both modes, the rest only to `%s check`):\n", name)
+	fmt.Fprintf(tw, "\nFlags (-d, -exclude and -config apply to both modes, the rest only to `%s check`):\n", name)
 	flag.VisitAll(func(f *flag.Flag) {
 		// An empty usage string marks a flag kept only for backwards
 		// compatibility; see the registrations in Parse.

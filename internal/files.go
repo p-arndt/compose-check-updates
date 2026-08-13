@@ -5,13 +5,22 @@ import (
 	"path/filepath"
 )
 
+// GetComposeFilePaths walks root and returns every compose file below it that
+// no exclude entry covers. See ExcludeMatcher for how an entry is read.
 func GetComposeFilePaths(root string, exclude []string) ([]string, error) {
 	var composeFilePaths []string
 
-	// Convert exclude slice to map for faster lookup
-	excludeMap := make(map[string]bool)
-	for _, path := range exclude {
-		excludeMap[path] = true
+	matcher := NewExcludeMatcher(exclude)
+
+	// Resolved once for the whole walk rather than per file: filepath.Abs on
+	// every entry would be a syscall each, and it would not follow the symlink
+	// that put the walk on a different spelling of the same path than the one an
+	// absolute exclude entry names.
+	rootAbs := ""
+	if !matcher.Empty() {
+		if abs, err := filepath.Abs(root); err == nil {
+			rootAbs = resolve(abs)
+		}
 	}
 
 	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
@@ -26,35 +35,29 @@ func GetComposeFilePaths(root string, exclude []string) ([]string, error) {
 			return err
 		}
 
-		// Check if current path is in exclude list
 		relPath, err := filepath.Rel(root, path)
 		if err != nil {
 			return err
 		}
 
-		// Check if the path or any of its parent directories are excluded
-		if info.IsDir() {
-			if excludeMap[relPath] {
+		// Absolute entries are the only ones that need the absolute path, and it
+		// is built from the resolved root rather than looked up again per file.
+		absPath := ""
+		if rootAbs != "" {
+			absPath = filepath.Join(rootAbs, relPath)
+		}
+
+		// Matching covers the parents too, so an excluded directory reached by a
+		// symlink-free walk never has its children examined at all.
+		if matcher.Match(relPath, absPath) {
+			if info.IsDir() {
 				return filepath.SkipDir
-			}
-			// Check parent directories
-			for parent := filepath.Dir(relPath); parent != "." && parent != ".."; parent = filepath.Dir(parent) {
-				if excludeMap[parent] {
-					return filepath.SkipDir
-				}
 			}
 			return nil
 		}
 
-		// Skip files in excluded directories
-		if excludeMap[relPath] {
+		if info.IsDir() {
 			return nil
-		}
-		// Check parent directories for files
-		for parent := filepath.Dir(relPath); parent != "." && parent != ".."; parent = filepath.Dir(parent) {
-			if excludeMap[parent] {
-				return nil
-			}
 		}
 
 		matched, err := filepath.Match("docker-compose.y*ml", filepath.Base(path))

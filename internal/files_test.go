@@ -168,3 +168,90 @@ func TestGetComposeFilePathsIgnoresPermissionDenied(t *testing.T) {
 		t.Fatalf("GetComposeFilePaths() should ignore permission errors, got %v", err)
 	}
 }
+
+// TestGetComposeFilePathsExcludesByName covers the entry a config file is
+// written for: a bare name, meant to hold wherever that directory turns up,
+// rather than only at the root the scan started from.
+func TestGetComposeFilePathsExcludesByName(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	dirs := []string{".", "keep", filepath.Join("keep", "backup"), "backup"}
+	for _, dir := range dirs {
+		full := filepath.Join(tmpDir, dir)
+		if err := os.MkdirAll(full, 0755); err != nil {
+			t.Fatalf("Failed to create %s: %v", full, err)
+		}
+		if err := os.WriteFile(filepath.Join(full, "docker-compose.yml"), []byte("version: '3'"), 0644); err != nil {
+			t.Fatalf("Failed to create file in %s: %v", full, err)
+		}
+	}
+
+	result, err := GetComposeFilePaths(tmpDir, []string{"backup"})
+	if err != nil {
+		t.Fatalf("GetComposeFilePaths() error = %v", err)
+	}
+
+	expected := []string{
+		filepath.Join(tmpDir, "docker-compose.yml"),
+		filepath.Join(tmpDir, "keep", "docker-compose.yml"),
+	}
+	if len(result) != len(expected) {
+		t.Fatalf("GetComposeFilePaths() = %v, want %v", result, expected)
+	}
+
+	sort.Strings(result)
+	sort.Strings(expected)
+	for i := range result {
+		if filepath.Clean(result[i]) != filepath.Clean(expected[i]) {
+			t.Errorf("GetComposeFilePaths() = %v, want %v", result, expected)
+		}
+	}
+}
+
+// TestGetComposeFilePathsExcludesAbsolutePath covers the entry a global config
+// would use to name a location outright, including the case that makes it easy
+// to get wrong: the scan root was reached through a symlinked parent, so the
+// paths the walk produces are a different spelling of the ones the entry names.
+func TestGetComposeFilePathsExcludesAbsolutePath(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Skipping symlink test on Windows")
+	}
+
+	parent := t.TempDir()
+	real := filepath.Join(parent, "stacks")
+
+	for _, dir := range []string{"keep", "skipme"} {
+		full := filepath.Join(real, dir)
+		if err := os.MkdirAll(full, 0755); err != nil {
+			t.Fatalf("Failed to create %s: %v", full, err)
+		}
+		if err := os.WriteFile(filepath.Join(full, "docker-compose.yml"), []byte("version: '3'"), 0644); err != nil {
+			t.Fatalf("Failed to create file in %s: %v", full, err)
+		}
+	}
+
+	excluded := filepath.Join(real, "skipme")
+
+	// Walk does not follow a symlink that *is* the root, so the link goes one
+	// level up: that is the shape of /tmp -> /private/tmp on macOS, where the
+	// spelling mismatch actually bites.
+	link := filepath.Join(t.TempDir(), "link")
+	if err := os.Symlink(parent, link); err != nil {
+		t.Fatalf("Failed to create symlink: %v", err)
+	}
+
+	// Once through the real path, once through the symlinked parent: the same
+	// entry has to exclude the same directory either way.
+	for _, root := range []string{real, filepath.Join(link, "stacks")} {
+		result, err := GetComposeFilePaths(root, []string{excluded})
+		if err != nil {
+			t.Fatalf("GetComposeFilePaths(%q) error = %v", root, err)
+		}
+		if len(result) != 1 {
+			t.Fatalf("GetComposeFilePaths(%q) = %v, want only the kept file", root, result)
+		}
+		if filepath.Base(filepath.Dir(result[0])) != "keep" {
+			t.Errorf("GetComposeFilePaths(%q) = %v, want the file under keep/", root, result)
+		}
+	}
+}
