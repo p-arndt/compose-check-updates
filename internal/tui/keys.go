@@ -1,6 +1,10 @@
 package tui
 
-import "github.com/charmbracelet/bubbles/key"
+import (
+	"strings"
+
+	"github.com/charmbracelet/bubbles/key"
+)
 
 // KeyMap is the single source of truth for the bindings. Help text is rendered
 // from the same values, so a rebinding cannot silently leave the footer lying.
@@ -185,3 +189,83 @@ func (k KeyMap) HelpHints() []key.Binding { return []key.Binding{k.Help, k.Issue
 
 // RestartHints are the only two answers the restart question accepts.
 func (k KeyMap) RestartHints() []key.Binding { return []key.Binding{k.Yes, k.No, k.Quit} }
+
+// HelpEntry is one line of the help dialog: the keys, and what they do. It is
+// built from the bindings rather than written out, so a rebinding still cannot
+// leave the dialog naming a key that does nothing.
+type HelpEntry struct {
+	Keys string
+	Desc string
+}
+
+// HelpSection groups the entries the dialog draws under one heading.
+type HelpSection struct {
+	Title   string
+	Entries []HelpEntry
+}
+
+// helpEntry takes a binding's own help text verbatim.
+func helpEntry(b key.Binding) HelpEntry {
+	h := b.Help()
+	return HelpEntry{Keys: h.Key, Desc: h.Desc}
+}
+
+// helpPair merges two bindings that are one idea onto one line — ↑ and ↓ are
+// never looked up separately — keeping the keys from the bindings and giving
+// the pair a description neither half could carry alone.
+func helpPair(desc string, bs ...key.Binding) HelpEntry {
+	keys := make([]string, 0, len(bs))
+	for _, b := range bs {
+		if k := b.Help().Key; k != "" {
+			keys = append(keys, k)
+		}
+	}
+	return HelpEntry{Keys: strings.Join(keys, " "), Desc: desc}
+}
+
+// HelpSections is what `?` shows: every binding, grouped by the thing it acts
+// on rather than by the order the KeyMap happens to declare them. The grouping
+// is the point — a flat list of twenty keys is a list nobody reads twice.
+func (k KeyMap) HelpSections() []HelpSection {
+	return []HelpSection{
+		{Title: "LIST", Entries: []HelpEntry{
+			helpPair("move", k.Up, k.Down),
+			helpPair("page", k.PageUp, k.PageDown),
+			helpPair("first / last", k.Home, k.End),
+			helpEntry(k.Filter),
+			helpEntry(k.Issues),
+			helpEntry(k.Help),
+			helpEntry(k.Quit),
+		}},
+		{Title: "TREE", Entries: []HelpEntry{
+			helpEntry(k.Collapse),
+			helpEntry(k.Expand),
+			helpEntry(k.ToggleGroup),
+			helpEntry(k.CollapseAll),
+			helpEntry(k.ExpandAll),
+		}},
+		{Title: "SELECT", Entries: []HelpEntry{
+			helpEntry(k.Toggle),
+			helpEntry(k.SelectAll),
+			helpEntry(k.SelectNone),
+			helpEntry(k.SelectAllGlobal),
+			helpEntry(k.SelectNoneGlobal),
+		}},
+		{Title: "DETAILS", Entries: []HelpEntry{
+			helpEntry(k.Focus),
+			helpEntry(k.FocusBack),
+			helpPair("change the value", k.ValuePrev, k.ValueNext),
+			helpPair("move between fields", k.Up, k.Down),
+			helpEntry(k.Target),
+		}},
+		{Title: "APPLY", Entries: []HelpEntry{
+			helpEntry(k.Apply),
+			helpEntry(k.ApplyRow),
+			{Keys: "y / n", Desc: "answer the restart question"},
+		}},
+		{Title: "ISSUES", Entries: []HelpEntry{
+			helpEntry(k.Issues),
+			helpEntry(k.IssuesClose),
+		}},
+	}
+}

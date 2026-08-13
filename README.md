@@ -80,35 +80,39 @@ affected Compose files should be restarted with `docker compose up -d`.
 <details>
 <summary><strong>All keys</strong></summary>
 
-| Key                | Action                                             |
-| ------------------ | -------------------------------------------------- |
-| `↑`/`↓` or `k`/`j` | Move the selection                                 |
-| `space` or `enter` | Toggle a row, or fold/unfold a file group          |
-| `a` / `n`          | Select all / select none                           |
-| `z`                | Fold/unfold the group under the cursor             |
-| `C` / `E`          | Collapse all / expand all groups                   |
-| `f`                | Cycle the display filter (which rows are shown)    |
-| `t`                | Cycle the target level for **all** rows            |
-| `T`/`→` or `←`     | Cycle the target level for the **highlighted** row |
-| `d` or `tab`       | Toggle the detail pane                             |
-| `i`                | Show the issues logged during the scan             |
-| `A`                | Apply the **selected** updates                     |
-| `u`                | Apply **only the highlighted row**                 |
-| `y` / `n`          | Answer the restart prompt                          |
-| `?` / `q`          | Help / quit                                        |
+| Key                | Action                                            |
+| ------------------ | ------------------------------------------------- |
+| `↑`/`↓` or `k`/`j` | Move the cursor                                   |
+| `pgup`/`pgdn`      | Page up / down (`home`/`end` for first / last)    |
+| `←`/`h`, `→`/`l`   | Collapse or go to parent / expand or step in      |
+| `z`                | Fold/unfold the node under the cursor             |
+| `C` / `E`          | Collapse all / expand all                         |
+| `space` or `enter` | Toggle the row (or the whole node) under the cursor |
+| `a` / `n`          | Select / deselect everything under the cursor     |
+| `ctrl+a` / `ctrl+n`| Select / deselect the whole list                  |
+| `f`                | Cycle the display filter (which rows are shown)   |
+| `t`                | Cycle the target level for **all** rows           |
+| `tab`              | Focus the details sidebar (`tab`/`esc` to leave)  |
+| `←` / `→`          | Change the focused sidebar value (target, pin)    |
+| `i`                | Show the issues logged during the scan            |
+| `A`                | Apply the **selected** updates                    |
+| `u`                | Apply **only the highlighted row**                |
+| `y` / `n`          | Answer the restart prompt                         |
+| `?` / `q`          | Help / quit                                       |
 
 </details>
 
 <details>
 <summary><strong>Filter vs. target</strong> — which version actually gets written</summary>
 
-`show` (`f`) only decides which rows are _visible_; `target` (`t`, `T`) decides
+`show` (`f`) only decides which rows are _visible_; `target` (`t`, or the
+sidebar's own target field) decides
 which version actually gets _written_. The target defaults to `major`, so out of
 the box you are offered the highest available version. At target `minor`, an
 image on `traefik:v2.9.3` that has `3.7.8` available re-points to the latest
 `2.11.x` instead; at `patch`, to `2.9.4`.
 
-`T` only cycles the levels an image actually has — the `(+2)` after a version
+The sidebar only offers the levels an image actually has — the `(+2)` after a version
 means two other levels exist. A row with nothing at the current target shows as
 `[-] … no patch update` and cannot be applied.
 

@@ -851,10 +851,17 @@ func TestKeyHintFooterIsAlwaysVisible(t *testing.T) {
 	// ? opens the grouped listing as a dialog over the pane.
 	exp := feed(t, m, keyMsg("?"))
 	require.True(t, exp.showHelp)
+	// The dialog aligns its keys into a column, so the key and its description
+	// are separated by however much padding that alignment costs.
 	ev := plainText(exp.View())
-	assert.Contains(t, ev, "C collapse all")
-	assert.Contains(t, ev, "E expand all")
-	assert.Contains(t, ev, "z fold node", "z still folds; only the footer dropped it")
+	assert.Regexp(t, `C\s+collapse all`, ev)
+	assert.Regexp(t, `E\s+expand all`, ev)
+	assert.Regexp(t, `z\s+fold node`, ev, "z still folds; only the footer dropped it")
+
+	// Grouped under headings rather than run together as one list.
+	for _, s := range exp.keys.HelpSections() {
+		assert.Contains(t, ev, s.Title, "every group is headed")
+	}
 	assert.Greater(t, exp.blockHeight(exp.helpDialog()), 1, "the help dialog is multi-line")
 	assert.Contains(t, ev, "closes this", "a dialog has to say how to leave it")
 

@@ -157,10 +157,10 @@ func (m Model) hintBindings() []key.Binding {
 	}
 }
 
-// helpDialog is the `?` view: FullHelp's groups, one line each so related keys
-// stay together, in a box centred over the pane. It is a dialog rather than a
-// taller footer because the listing is many lines and growing the footer by
-// that much shoved the list off the top of the screen.
+// helpDialog is the `?` view: every binding, grouped by what it acts on and
+// laid out in columns under a heading, in a box centred over the pane. It is a
+// dialog rather than a taller footer because the listing is many lines and
+// growing the footer by that much shoved the list off the top of the screen.
 func (m Model) helpDialog() string {
 	h := m.listHeight()
 	if sidebarWidth(m.width) > 0 {
@@ -172,18 +172,27 @@ func (m Model) helpDialog() string {
 	// truncated whichever group grew past it.
 	avail := clampWidth(m.width) - boxChrome
 
-	var body []string
+	title := lipgloss.NewStyle().Foreground(m.theme.Accent).Bold(true).Render("KEYS") +
+		m.theme.dim().Render("  everything ccu binds")
+
+	// Four lines of the box belong to the title, the closing hint and the blank
+	// line before each: the panel gets what is left, and is what shrinks when
+	// the terminal is short. Trimming the hint instead would leave a dialog on
+	// screen that never says how to dismiss itself.
+	room := max(h-2-4, 1)
+	panel := m.theme.HelpPanel(m.keys.HelpSections(), avail, room)
+	if len(panel) > room {
+		panel = panel[:room]
+	}
+
+	body := append([]string{title, ""}, panel...)
+	body = append(body, "", m.theme.dim().Render("? or esc closes this"))
+
 	inner := 0
-	for _, g := range m.keys.FullHelp() {
-		line := m.theme.Help(g, avail)
-		if line == "" {
-			continue
-		}
-		body = append(body, line)
-		inner = max(inner, lipgloss.Width(line))
+	for _, l := range body {
+		inner = max(inner, lipgloss.Width(l))
 	}
 	inner = min(max(inner, 40), avail)
-	body = append(body, "", m.theme.dim().Render("? or esc closes this"))
 
 	box := m.theme.Box(body, inner, min(len(body), max(h-2, 1)), true)
 
