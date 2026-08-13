@@ -56,6 +56,7 @@ func main() {
 	// one more on top.
 	effective := config.Config{
 		Exclude: config.Union(cfg.Exclude, ccuFlags.Exclude),
+		Images:  cfg.Images,
 	}
 
 	// A report about ccu's own settings, like the version and update commands
@@ -68,6 +69,7 @@ func main() {
 	opts := scanner.Options{
 		Root:    ccuFlags.Directory,
 		Exclude: effective.Exclude,
+		Caps:    effective.Caps(),
 		Major:   ccuFlags.Major,
 		Minor:   ccuFlags.Minor,
 		Patch:   ccuFlags.Patch,
@@ -89,7 +91,7 @@ func main() {
 		// hitting the registries again for versions we already looked up.
 		opts.Major, opts.Minor, opts.Patch = true, true, true
 
-		if err := tui.Run(opts); err != nil {
+		if err := tui.Run(opts, cfg.Project, cfg.Global); err != nil {
 			slog.Error("Error running interactive mode", "error", err)
 			os.Exit(1)
 		}

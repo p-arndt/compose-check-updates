@@ -13,6 +13,7 @@ import (
 	"github.com/mattn/go-isatty"
 
 	"github.com/p-arndt/compose-check-updates/internal"
+	"github.com/p-arndt/compose-check-updates/internal/config"
 	"github.com/p-arndt/compose-check-updates/internal/scanner"
 )
 
@@ -103,7 +104,11 @@ func captureSlog(min slog.Level) (*logCapture, func()) {
 
 // Run starts the interactive UI and blocks until the user is done. Any restarts
 // the user asked for happen after the program has returned, never during it.
-func Run(opts scanner.Options) error {
+//
+// project and global are the two config layers as they were read from disk, kept
+// apart rather than merged: a pin is written to one scope, and the UI has to
+// know which scope a cap already came from to be able to remove it again.
+func Run(opts scanner.Options, project, global config.Config) error {
 	fd := os.Stdout.Fd()
 	if !isatty.IsTerminal(fd) && !isatty.IsCygwinTerminal(fd) {
 		return errors.New("interactive mode needs a terminal, but stdout is not a TTY; run without -i to print the available updates instead")
@@ -117,7 +122,7 @@ func Run(opts scanner.Options) error {
 	// even if the user never looked at the status line.
 	defer dumpLogs(logs)
 
-	p := tea.NewProgram(NewModel(opts).WithLogCapture(logs), tea.WithAltScreen(), tea.WithMouseCellMotion())
+	p := tea.NewProgram(NewModel(opts).WithPins(project, global).WithLogCapture(logs), tea.WithAltScreen(), tea.WithMouseCellMotion())
 	final, err := p.Run()
 	if err != nil {
 		return err

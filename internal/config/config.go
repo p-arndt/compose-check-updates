@@ -23,6 +23,12 @@ type Config struct {
 	// the files and with -exclude rather than replacing each other: the point of
 	// writing one down is not having to remember it again.
 	Exclude []string `yaml:"exclude"`
+
+	// Images holds the per-image preferences, keyed by image name without tag or
+	// digest. Unlike Exclude these replace rather than union when merged: a
+	// project has to be able to raise a cap the global file set, not only
+	// tighten it.
+	Images map[string]ImagePolicy `yaml:"images"`
 }
 
 // projectNames are the project-local file names, in the order they are tried.
@@ -39,6 +45,13 @@ var globalNames = []string{"config.yaml", "config.yml"}
 type Loaded struct {
 	Config
 	Sources []string // absolute paths actually read, in merge order
+
+	// Global and Project are the two layers before merging. A caller that only
+	// wants the resolved settings reads the embedded Config; the TUI needs the
+	// layers apart, because a pin is added to or removed from one scope and must
+	// not be confused by what the other one says.
+	Global  Config
+	Project Config
 }
 
 // Load resolves the configuration for a scan rooted at root. explicit, when
@@ -51,40 +64,35 @@ func Load(root, explicit string) (Loaded, error) {
 		if err != nil {
 			return Loaded{}, err
 		}
-		return Loaded{Config: cfg, Sources: []string{explicit}}, nil
+		// A file named by hand belongs to no scope in particular. Treating it as
+		// the project layer is the safer of the two: a pin then lands in the file
+		// the user pointed at rather than somewhere they did not name.
+		return Loaded{Config: cfg, Sources: []string{explicit}, Project: cfg}, nil
 	}
 
 	var loaded Loaded
 
-	for _, path := range candidatePaths(root) {
+	if path := globalFile(); path != "" {
 		cfg, err := readFile(path)
-		if errors.Is(err, os.ErrNotExist) {
-			continue
-		}
 		if err != nil {
 			return Loaded{}, err
 		}
+		loaded.Global = cfg
+		loaded.Config = merge(loaded.Config, cfg)
+		loaded.Sources = append(loaded.Sources, path)
+	}
+
+	if path := findProjectFile(root); path != "" {
+		cfg, err := readFile(path)
+		if err != nil {
+			return Loaded{}, err
+		}
+		loaded.Project = cfg
 		loaded.Config = merge(loaded.Config, cfg)
 		loaded.Sources = append(loaded.Sources, path)
 	}
 
 	return loaded, nil
-}
-
-// candidatePaths lists every file Load would read, global first so the
-// project-local one is merged on top of it.
-func candidatePaths(root string) []string {
-	var paths []string
-
-	if p := globalFile(); p != "" {
-		paths = append(paths, p)
-	}
-
-	if p := findProjectFile(root); p != "" {
-		paths = append(paths, p)
-	}
-
-	return paths
 }
 
 // globalDirs lists the per-user config directories to try, in preference order.
@@ -200,6 +208,10 @@ func Parse(r io.Reader) (Config, error) {
 	}
 	cfg.Exclude = nonEmpty(cfg.Exclude)
 
+	if err := validateImages(cfg.Images); err != nil {
+		return Config{}, err
+	}
+
 	return cfg, nil
 }
 
@@ -208,6 +220,7 @@ func Parse(r io.Reader) (Config, error) {
 // user already excluded globally.
 func merge(base, over Config) Config {
 	base.Exclude = Union(base.Exclude, over.Exclude)
+	base.Images = mergeImages(base.Images, over.Images)
 	return base
 }
 

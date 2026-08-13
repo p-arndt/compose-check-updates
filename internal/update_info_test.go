@@ -301,3 +301,61 @@ func TestUpdate(t *testing.T) {
 		t.Errorf("Update() = %v, want %v", string(updatedContent), expectedContent)
 	}
 }
+
+// TestCap covers the per-image cap: the user recorded how far this image may
+// move, and every question about a target has to respect that.
+func TestCap(t *testing.T) {
+	t.Run("hides levels above the cap", func(t *testing.T) {
+		u := UpdateInfo{Cap: "minor", PatchTag: "2.9.4", MinorTag: "2.11.3", MajorTag: "3.7.8"}
+		assert.Equal(t, []string{"patch", "minor"}, u.AvailableTargets())
+	})
+
+	t.Run("degrades a request above the cap", func(t *testing.T) {
+		u := UpdateInfo{Cap: "minor", PatchTag: "2.9.4", MinorTag: "2.11.3", MajorTag: "3.7.8"}
+		assert.Equal(t, "2.11.3", u.TagForTarget("major"))
+		assert.Equal(t, u.TagForTarget("minor"), u.TagForTarget("major"))
+	})
+
+	t.Run("SelectTarget cannot select above the cap", func(t *testing.T) {
+		u := UpdateInfo{Cap: "minor", LatestTag: "3.7.8", PatchTag: "2.9.4", MinorTag: "2.11.3", MajorTag: "3.7.8"}
+		assert.True(t, u.SelectTarget("major"))
+		assert.Equal(t, "2.11.3", u.LatestTag)
+	})
+
+	t.Run("an update above the cap is not a new version", func(t *testing.T) {
+		u := UpdateInfo{Cap: "patch", CurrentTag: "1.0.0", LatestTag: "2.0.0", MajorTag: "2.0.0"}
+		assert.False(t, u.HasNewVersion(true, true, true))
+	})
+
+	t.Run("an update within the cap still counts", func(t *testing.T) {
+		u := UpdateInfo{Cap: "minor", CurrentTag: "1.0.0", LatestTag: "1.1.0", MinorTag: "1.1.0"}
+		assert.True(t, u.HasNewVersion(true, true, true))
+	})
+
+	t.Run("a cap has no say over a digest update", func(t *testing.T) {
+		u := UpdateInfo{
+			Cap: "patch", CurrentTag: "stable", LatestTag: "stable",
+			CurrentDigest: "sha256:old", LatestDigest: "sha256:new",
+		}
+		assert.True(t, u.HasNewVersion(true, true, true))
+		assert.Equal(t, "stable", u.TagForTarget("major"))
+	})
+
+	t.Run("an empty cap changes nothing", func(t *testing.T) {
+		u := UpdateInfo{PatchTag: "2.9.4", MinorTag: "2.11.3", MajorTag: "3.7.8"}
+		assert.Equal(t, []string{"patch", "minor", "major"}, u.AvailableTargets())
+		assert.Equal(t, "3.7.8", u.TagForTarget("major"))
+
+		v := UpdateInfo{CurrentTag: "1.0.0", LatestTag: "2.0.0"}
+		assert.True(t, v.HasNewVersion(true, true, true))
+	})
+
+	t.Run("an unrecognised cap permits everything", func(t *testing.T) {
+		u := UpdateInfo{Cap: "nonsense", PatchTag: "2.9.4", MinorTag: "2.11.3", MajorTag: "3.7.8"}
+		assert.Equal(t, []string{"patch", "minor", "major"}, u.AvailableTargets())
+		assert.Equal(t, "3.7.8", u.TagForTarget("major"))
+
+		v := UpdateInfo{Cap: "nonsense", CurrentTag: "1.0.0", LatestTag: "2.0.0"}
+		assert.True(t, v.HasNewVersion(true, true, true))
+	})
+}

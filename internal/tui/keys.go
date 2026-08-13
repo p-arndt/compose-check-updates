@@ -43,10 +43,18 @@ type KeyMap struct {
 	// must not rewrite compose files.
 	Apply    key.Binding
 	ApplyRow key.Binding
-	Help     key.Binding
-	Quit     key.Binding
-	Yes      key.Binding
-	No       key.Binding
+	// Pin saves the row's current target as a cap that outlives the run. It asks
+	// for a scope first, and PinProject/PinGlobal/PinCancel are the answers to
+	// that question — read only while the prompt is up, which is the same reason
+	// IssuesClose may share esc with Quit and why PinProject may share p with Pin.
+	Pin        key.Binding
+	PinProject key.Binding
+	PinGlobal  key.Binding
+	PinCancel  key.Binding
+	Help       key.Binding
+	Quit       key.Binding
+	Yes        key.Binding
+	No         key.Binding
 }
 
 func DefaultKeyMap() KeyMap {
@@ -80,18 +88,28 @@ func DefaultKeyMap() KeyMap {
 
 		Filter: key.NewBinding(key.WithKeys("f"), key.WithHelp("f", "filter")),
 		Target: key.NewBinding(key.WithKeys("t"), key.WithHelp("t", "target level")),
-		// The row-target cycle lost ←/h/→/l to the tree. T keeps the forward step
-		// because it is the shifted twin of t; B ("back") is the only free letter
-		// that reads as the reverse of it, and shift+tab is the pair to d/tab for
-		// anyone who reaches for tab-and-back rather than a letter.
-		RowNext: key.NewBinding(key.WithKeys("T"), key.WithHelp("T", "row target next")),
-		RowPrev: key.NewBinding(key.WithKeys("B", "shift+tab"), key.WithHelp("B/shift+tab", "row target back")),
+		// The row-target cycle lost ←/h/→/l to the tree, and the T/B pair that
+		// replaced them read as nothing in particular. +/- say what they do
+		// without being taught: one step up the levels, one step down. The old
+		// letters stay bound, and out of the help text, so a hand that learned
+		// them keeps working; shift+tab stays for anyone who reaches for
+		// tab-and-back rather than a key of its own.
+		RowNext: key.NewBinding(key.WithKeys("+", "T"), key.WithHelp("+", "row target up")),
+		RowPrev: key.NewBinding(key.WithKeys("-", "B", "shift+tab"), key.WithHelp("-", "row target down")),
 		Detail:  key.NewBinding(key.WithKeys("d", "tab"), key.WithHelp("d/tab", "detail")),
 
 		// Shift-a pairs with `a` (select all) and stays clear of every taken key;
 		// `u` reads as "update this one" and is the only free letter near it.
 		Apply:    key.NewBinding(key.WithKeys("A"), key.WithHelp("A", "apply selected")),
 		ApplyRow: key.NewBinding(key.WithKeys("u"), key.WithHelp("u", "apply row")),
+
+		// p is the only free letter that reads as "pin"; g is free as well and is
+		// the initial of the scope it answers for, so neither answer needs a key
+		// the user has to be told twice.
+		Pin:        key.NewBinding(key.WithKeys("p"), key.WithHelp("p", "pin target")),
+		PinProject: key.NewBinding(key.WithKeys("p"), key.WithHelp("p", "project")),
+		PinGlobal:  key.NewBinding(key.WithKeys("g"), key.WithHelp("g", "global")),
+		PinCancel:  key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "cancel")),
 
 		Help: key.NewBinding(key.WithKeys("?"), key.WithHelp("?", "help")),
 		Quit: key.NewBinding(key.WithKeys("q", "esc", "ctrl+c"), key.WithHelp("q", "quit")),
@@ -106,7 +124,7 @@ func (k KeyMap) Bindings() []key.Binding {
 		k.Up, k.Down, k.PageUp, k.PageDown, k.Home, k.End,
 		k.Toggle, k.SelectAll, k.SelectNone, k.SelectAllGlobal, k.SelectNoneGlobal,
 		k.ToggleGroup, k.Collapse, k.Expand, k.CollapseAll, k.ExpandAll,
-		k.Filter, k.Target, k.RowNext, k.RowPrev, k.Detail, k.Issues, k.Apply, k.ApplyRow, k.Help, k.Quit,
+		k.Filter, k.Target, k.RowNext, k.RowPrev, k.Pin, k.Detail, k.Issues, k.Apply, k.ApplyRow, k.Help, k.Quit,
 	}
 }
 
@@ -120,7 +138,7 @@ func (k KeyMap) FullHelp() [][]key.Binding {
 		{k.Toggle, k.SelectAll, k.SelectNone, k.SelectAllGlobal, k.SelectNoneGlobal},
 		{k.Filter, k.Detail, k.Issues},
 		{k.ToggleGroup, k.Collapse, k.Expand, k.CollapseAll, k.ExpandAll},
-		{k.Target, k.RowNext, k.RowPrev},
+		{k.Target, k.RowNext, k.RowPrev, k.Pin},
 		{k.Apply, k.ApplyRow, k.Help, k.Quit},
 	}
 }
@@ -152,12 +170,19 @@ func (k KeyMap) IssueHints() []key.Binding {
 func (k KeyMap) BrowseHints() []key.Binding {
 	return []key.Binding{
 		k.Up, k.Down, k.Toggle, k.Apply, k.ApplyRow,
-		k.Collapse, k.Expand, k.Filter, k.Target, k.RowNext, k.Issues, k.Help, k.Quit,
+		k.Collapse, k.Expand, k.Filter, k.Target, k.RowNext, k.Pin, k.Issues, k.Help, k.Quit,
 	}
 }
 
 // ApplyHints: the apply phase ignores every key but quit.
 func (k KeyMap) ApplyHints() []key.Binding { return []key.Binding{k.Quit} }
+
+// PinHints are the only answers the pin scope question accepts. It ends on the
+// way out for the same reason IssueHints leads with one: a question covering
+// the status line has to say how to leave it unanswered.
+func (k KeyMap) PinHints() []key.Binding {
+	return []key.Binding{k.PinProject, k.PinGlobal, k.PinCancel}
+}
 
 // RestartHints are the only two answers the restart question accepts.
 func (k KeyMap) RestartHints() []key.Binding { return []key.Binding{k.Yes, k.No, k.Quit} }

@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/p-arndt/compose-check-updates/internal"
+	"github.com/p-arndt/compose-check-updates/internal/config"
 	"github.com/p-arndt/compose-check-updates/internal/scanner"
 )
 
@@ -1048,4 +1049,155 @@ func TestRestartPromptAnswers(t *testing.T) {
 	no := feed(t, base, keyMsg("n"))
 	assert.Equal(t, phaseDone, no.phase)
 	assert.Empty(t, no.restartTargets)
+}
+
+// capWrite is one call the pin keys would have made. Tests record these rather
+// than letting the model near the user's config file — which is the reason the
+// writer is a field on the Model at all.
+type capWrite struct {
+	scope pinScope
+	image string
+	level config.Level
+}
+
+type capRecorder struct {
+	writes []capWrite
+	err    error
+}
+
+func (c *capRecorder) set(scope pinScope, image string, max config.Level) error {
+	c.writes = append(c.writes, capWrite{scope: scope, image: image, level: max})
+	return c.err
+}
+
+// pinModel is a browsing model with one row that has a release at every level,
+// the cursor parked on it, and a recorder standing in for the config writer.
+func pinModel(t *testing.T) (Model, *capRecorder) {
+	t.Helper()
+
+	rec := &capRecorder{}
+	m := newTestModel()
+	m.setCap = rec.set
+	m = feed(t, m, levelEvent("library/traefik", "v2.9.3", "2.9.4", "2.11.0", "3.7.8"))
+	return moveToRow(t, m), rec
+}
+
+// moveToRow walks the cursor down until it leaves the tree headers and lands on
+// the first row, so a test does not have to know how deep the path nests.
+func moveToRow(t *testing.T, m Model) Model {
+	t.Helper()
+	for i := 0; i < len(m.entries); i++ {
+		if m.currentRow() != nil {
+			return m
+		}
+		m = feed(t, m, keyMsg("j"))
+	}
+	require.NotNil(t, m.currentRow(), "no row to put the cursor on")
+	return m
+}
+
+func TestPinKeyAsksForScopeOnARowAndDoesNothingOnAHeader(t *testing.T) {
+	m, rec := pinModel(t)
+	m.width = 200
+
+	// The top of the list is a tree header, which has no image to cap.
+	header := feed(t, m, keyMsg("home"))
+	require.Nil(t, header.currentRow())
+	header = feed(t, header, keyMsg("p"))
+	assert.False(t, header.pinPrompt)
+	assert.Empty(t, rec.writes)
+
+	m = feed(t, m, keyMsg("p"))
+	require.True(t, m.pinPrompt)
+	assert.Contains(t, plainText(m.statusLine()),
+		"save cap major for library/traefik? (p)roject  (g)lobal  (esc) cancel")
+	// The footer must name the only keys the question reads.
+	assert.Equal(t, m.keys.PinHints(), m.hintBindings())
+	v := plainText(m.View())
+	assert.Contains(t, v, "p project")
+	assert.Contains(t, v, "g global")
+	assert.NotContains(t, v, "A apply selected")
+}
+
+func TestPinPromptIgnoresUnrelatedKeys(t *testing.T) {
+	m, rec := pinModel(t)
+	m = feed(t, m, keyMsg(" ")) // arm a selection so A would have something to do
+	require.True(t, m.currentRow().Selected)
+
+	m = feed(t, m, keyMsg("p"), keyMsg("A"))
+	assert.NotEqual(t, phaseApplying, m.phase, "apply must not fire out from under the question")
+	assert.False(t, m.pinPrompt, "a key that is not an answer cancels rather than writing")
+	assert.Empty(t, rec.writes)
+}
+
+func TestPinAnswersRecordTheChosenScopeAndLevel(t *testing.T) {
+	m, rec := pinModel(t)
+
+	// Point the row at its minor release first: the pin saves what the row reads.
+	m = feed(t, m, keyMsg("T"))
+	for m.currentRow().Target != TargetMinor {
+		m = feed(t, m, keyMsg("T"))
+	}
+	require.Equal(t, "minor", m.currentRow().Target.Label())
+
+	m = feed(t, m, keyMsg("p"), keyMsg("p"))
+	assert.False(t, m.pinPrompt)
+	assert.Equal(t, []capWrite{{pinProject, "library/traefik", config.LevelMinor}}, rec.writes)
+	assert.Equal(t, StatusSuccess, m.statusKind)
+	assert.Contains(t, plainText(m.statusLine()), "library/traefik capped at minor (project)")
+
+	// The same answer given as `g` writes the other scope.
+	g, rec := pinModel(t)
+	g = feed(t, g, keyMsg("p"), keyMsg("g"))
+	assert.Equal(t, []capWrite{{pinGlobal, "library/traefik", config.LevelMajor}}, rec.writes)
+	assert.Contains(t, plainText(g.statusLine()), "library/traefik capped at major (global)")
+}
+
+func TestPinPromptCancelledByEscWritesNothing(t *testing.T) {
+	m, rec := pinModel(t)
+
+	m = feed(t, m, keyMsg("p"))
+	require.True(t, m.pinPrompt)
+
+	m = feed(t, m, tea.KeyMsg{Type: tea.KeyEsc})
+	assert.False(t, m.pinPrompt)
+	assert.NotEqual(t, phaseDone, m.phase, "esc answers the question, it does not quit")
+	assert.Empty(t, rec.writes)
+	assert.Equal(t, m.keys.BrowseHints(), m.hintBindings())
+}
+
+func TestPinOnAnAlreadyCappedImageClearsThatScope(t *testing.T) {
+	rec := &capRecorder{}
+	m := newTestModel()
+	m.setCap = rec.set
+	m = m.WithPins(config.Config{Images: map[string]config.ImagePolicy{
+		"library/traefik": {Max: config.LevelPatch},
+	}}, config.Config{})
+	m = feed(t, m, levelEvent("library/traefik", "v2.9.3", "2.9.4", "2.11.0", "3.7.8"))
+	m = moveToRow(t, m)
+	require.Equal(t, config.LevelPatch, m.currentRow().Pin)
+
+	// Project already holds a cap, so the answer removes it…
+	m = feed(t, m, keyMsg("p"), keyMsg("p"))
+	assert.Equal(t, []capWrite{{pinProject, "library/traefik", config.Level("")}}, rec.writes)
+	assert.Contains(t, plainText(m.statusLine()), "library/traefik cap removed (project)")
+	assert.Equal(t, config.Level(""), m.currentRow().Pin, "the row stops advertising a cap it no longer has")
+
+	// …while the global scope, which never had one, is still a set.
+	rec.writes = nil
+	m = feed(t, m, keyMsg("p"), keyMsg("g"))
+	assert.Equal(t, []capWrite{{pinGlobal, "library/traefik", config.LevelMajor}}, rec.writes)
+	assert.Equal(t, config.LevelMajor, m.currentRow().Pin)
+}
+
+func TestPinWriteFailureIsAStatusErrorAndClosesThePrompt(t *testing.T) {
+	m, rec := pinModel(t)
+	rec.err = errors.New("permission denied writing .ccu.yaml")
+
+	m = feed(t, m, keyMsg("p"), keyMsg("p"))
+	assert.False(t, m.pinPrompt, "a failed write must not leave the question on screen")
+	assert.Equal(t, StatusError, m.statusKind)
+	assert.Contains(t, plainText(m.statusLine()), "permission denied writing .ccu.yaml")
+	// Nothing was recorded, so the next press is still a set rather than a clear.
+	assert.Equal(t, config.Level(""), m.currentRow().Pin)
 }

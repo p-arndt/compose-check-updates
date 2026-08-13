@@ -26,9 +26,38 @@ type UpdateInfo struct {
 	MinorTag string
 	MajorTag string
 
+	// Cap is the highest level this image may move to ("patch"/"minor"/"major");
+	// empty means no cap. It is kept as a plain string so this package stays
+	// independent of wherever the preference was read from.
+	Cap string
+
 	// Tag LatestDigest was resolved for. A digest only ever describes one
 	// release, so switching target has to invalidate it.
 	digestFor string
+}
+
+// levelRank orders the levels a cap can be expressed in. A level missing from
+// this map is one no cap can speak about — "digest", for one, which carries no
+// version to be higher or lower than anything.
+var levelRank = map[string]int{"patch": 1, "minor": 2, "major": 3}
+
+// AllowsLevel reports whether an update of the given level stays within Cap, for
+// callers deciding whether a selection has to be moved before it is offered.
+func (u *UpdateInfo) AllowsLevel(level string) bool { return u.allowsLevel(level) }
+
+// allowsLevel reports whether an update of the given level stays within Cap. An
+// empty or unrecognised cap permits everything: a cap nobody can interpret must
+// not silently hide every update the user came here to see.
+func (u *UpdateInfo) allowsLevel(level string) bool {
+	capRank, ok := levelRank[u.Cap]
+	if !ok {
+		return true
+	}
+	want, ok := levelRank[level]
+	if !ok {
+		return true
+	}
+	return want <= capRank
 }
 
 // TagForTarget returns the tag this image would move to at the given target
@@ -38,6 +67,12 @@ func (u *UpdateInfo) TagForTarget(target string) string {
 	// A non-semver image moved by digest alone has no levels to choose between.
 	if u.PatchTag == "" && u.MinorTag == "" && u.MajorTag == "" && u.IsDigestUpdate() {
 		return u.LatestTag
+	}
+
+	// The cap clamps the request rather than the answer, so a capped "major"
+	// behaves exactly as asking for the cap would, degradation included.
+	if !u.allowsLevel(target) {
+		target = u.Cap
 	}
 
 	switch target {
@@ -70,6 +105,10 @@ func (u *UpdateInfo) AvailableTargets() []string {
 		{"major", u.MajorTag},
 	} {
 		if t.tag == "" {
+			continue
+		}
+		// A level above the cap is not a choice this image has.
+		if !u.allowsLevel(t.name) {
 			continue
 		}
 		if _, dup := seen[t.tag]; dup {
@@ -153,7 +192,13 @@ func (u *UpdateInfo) HasNewVersion(major, minor, patch bool) bool {
 		return false
 	}
 
-	return latest.GreaterThan(current)
+	if !latest.GreaterThan(current) {
+		return false
+	}
+
+	// An update above the cap is one this image may never take, so it does not
+	// count as having a new version at all.
+	return u.allowsLevel(u.UpdateLevel())
 }
 
 // UpdateLevel returns the semantic version increment level between CurrentTag and LatestTag.

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"sort"
 )
 
 // Show writes the configuration a scan would run with: which files were read,
@@ -29,10 +30,34 @@ func Show(w io.Writer, loaded Loaded, effective Config) {
 	fmt.Fprintln(w, "Effective settings (config plus command line):")
 	if len(effective.Exclude) == 0 {
 		fmt.Fprintln(w, "  exclude: (none)")
+	} else {
+		fmt.Fprintln(w, "  exclude:")
+		for _, e := range effective.Exclude {
+			fmt.Fprintf(w, "    - %s\n", e)
+		}
+	}
+
+	showImages(w, effective)
+}
+
+// showImages lists the per-image caps in a stable order. A map iterates at
+// random, and a report whose lines move between two identical runs is one nobody
+// can diff.
+func showImages(w io.Writer, effective Config) {
+	caps := effective.Caps()
+	if len(caps) == 0 {
+		fmt.Fprintln(w, "  images: (no caps set)")
 		return
 	}
-	fmt.Fprintln(w, "  exclude:")
-	for _, e := range effective.Exclude {
-		fmt.Fprintf(w, "    - %s\n", e)
+
+	images := make([]string, 0, len(caps))
+	for image := range caps {
+		images = append(images, image)
+	}
+	sort.Strings(images)
+
+	fmt.Fprintln(w, "  images:")
+	for _, image := range images {
+		fmt.Fprintf(w, "    %s: max %s\n", image, caps[image])
 	}
 }

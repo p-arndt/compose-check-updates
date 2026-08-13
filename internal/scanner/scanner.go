@@ -5,6 +5,7 @@ package scanner
 
 import (
 	"context"
+	"log/slog"
 	"sync"
 
 	"github.com/p-arndt/compose-check-updates/internal"
@@ -16,11 +17,16 @@ const (
 )
 
 type Options struct {
-	Root        string   // root directory to walk
-	Exclude     []string // directories to exclude
-	Major       bool     // passed through to UpdateChecker.Check
-	Minor       bool
-	Patch       bool
+	Root    string   // root directory to walk
+	Exclude []string // directories to exclude
+	Major   bool     // passed through to UpdateChecker.Check
+	Minor   bool
+	Patch   bool
+
+	// Caps is the per-image cap the user recorded, keyed by image name without
+	// tag or digest, valued "patch"/"minor"/"major". An image with no entry has
+	// no cap.
+	Caps        map[string]string
 	Concurrency int // max compose files checked at once; <=0 means a sensible default (8)
 }
 
@@ -100,7 +106,8 @@ func checkFile(ctx context.Context, events chan<- Event, opts Options, path stri
 		return
 	}
 
-	checker := internal.NewUpdateChecker(path, internal.NewRegistry(""))
+	registry := internal.NewRegistry("")
+	checker := internal.NewUpdateChecker(path, registry)
 	infos, err := checker.Check(opts.Major, opts.Minor, opts.Patch)
 	if err != nil {
 		send(ctx, events, Event{Kind: EventError, Path: path, Err: err})
@@ -108,6 +115,13 @@ func checkFile(ctx context.Context, events chan<- Event, opts Options, path stri
 	}
 
 	for _, info := range infos {
+		// Check resolved the highest tag the level flags allow, which for a
+		// capped image may be a release it is not allowed to take. Re-pointing it
+		// at the cap here — rather than letting HasNewVersion drop it — is what
+		// makes a cap mean "no further than this" instead of "hide this image":
+		// an image capped at minor still has its minor update offered.
+		applyCap(&info, opts.Caps[info.ImageName], registry)
+
 		if !info.HasNewVersion(opts.Major, opts.Minor, opts.Patch) {
 			continue
 		}
@@ -117,6 +131,34 @@ func checkFile(ctx context.Context, events chan<- Event, opts Options, path stri
 	}
 
 	send(ctx, events, Event{Kind: EventFileDone, Path: path})
+}
+
+// applyCap records the cap on info and moves its selection down to it when the
+// tag Check picked sits above it. A no-op for an uncapped image, which is every
+// image until the user pins one.
+func applyCap(info *internal.UpdateInfo, cap string, registry *internal.Registry) {
+	if cap == "" {
+		return
+	}
+
+	info.Cap = cap
+
+	// Only a selection the cap actually forbids is moved; re-selecting an
+	// already-permitted tag would throw away the digest Check resolved for it.
+	if info.LatestTag == "" || info.AllowsLevel(info.UpdateLevel()) {
+		return
+	}
+
+	info.SelectTarget(cap)
+
+	// SelectTarget drops a digest resolved for the tag it replaced, and a
+	// reference that pins one cannot be written without it.
+	if info.CurrentDigest != "" && info.LatestTag != "" {
+		if err := info.ResolveDigest(registry); err != nil {
+			slog.Warn("Skipping (failed resolving digest for capped tag)", "image", info.ImageName, "tag", info.LatestTag, "path", info.FilePath)
+			info.LatestTag = ""
+		}
+	}
 }
 
 // send reports whether the event was delivered; a false result means ctx was

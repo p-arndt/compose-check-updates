@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/p-arndt/compose-check-updates/internal"
+	"github.com/p-arndt/compose-check-updates/internal/config"
 )
 
 // ansiEscape strips styling so assertions can talk about what the user sees.
@@ -103,7 +104,9 @@ func TestRowLineRespectsWidth(t *testing.T) {
 	noTarget.Update.PatchTag, noTarget.Update.MinorTag = "", ""
 	var m Model
 	m.retarget(&noTarget, TargetPatch)
-	rows = append(rows, applied, failed, targetRow(), noTarget)
+	pinned := targetRow()
+	pinned.Pin = config.LevelMinor
+	rows = append(rows, applied, failed, targetRow(), noTarget, pinned)
 
 	widths := []int{-5, 0, 1, 2, 5, 20, 21, 24, 30, 40, 60, 80, 120}
 	for _, r := range rows {
@@ -302,4 +305,28 @@ func TestNoTrailingWhitespaceOnSingleLineRenderers(t *testing.T) {
 	} {
 		assert.Equal(t, plain(out), strings.TrimRight(plain(out), " "), "%s has trailing whitespace", name)
 	}
+}
+
+func TestRowLineMarksAPinnedImage(t *testing.T) {
+	th := DefaultTheme()
+
+	r := targetRow()
+	assert.NotContains(t, plain(th.RowLine(r, false, 120)), "pin",
+		"an image with no saved cap must carry no marker")
+
+	r.Pin = config.LevelMinor
+	out := plain(th.RowLine(r, false, 120))
+	assert.Contains(t, out, "[pin minor]")
+	// The marker sits beside the existing hints rather than replacing them.
+	assert.Contains(t, out, "v2.9.3 → 3.7.8")
+	assert.Contains(t, out, "(+2)")
+
+	// A row with nothing at its target still says what was pinned: the cap is
+	// the likeliest reason it has nowhere to go.
+	nt := targetRow()
+	nt.Update.PatchTag, nt.Update.MinorTag = "", ""
+	var m Model
+	m.retarget(&nt, TargetPatch)
+	nt.Pin = config.LevelPatch
+	assert.Contains(t, plain(th.RowLine(nt, false, 120)), "[pin patch]")
 }

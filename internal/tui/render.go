@@ -150,7 +150,7 @@ func (t Theme) RowLine(r Row, cursor bool, width int) string {
 // as the single definition of what that column says.
 func rowTailPlain(r Row) string {
 	if r.NoTarget {
-		return "no " + r.Target.Label() + " update"
+		return "no " + r.Target.Label() + " update" + pinMarker(r)
 	}
 	s := plainDelta(r.Update.CurrentTag, r.Update.LatestTag)
 	if n := r.otherTargets(); n > 0 {
@@ -158,7 +158,18 @@ func rowTailPlain(r Row) string {
 		// version — without it, a row pointing at 2.9.4 looks like the only option.
 		s += fmt.Sprintf(" (+%d)", n)
 	}
-	return s
+	return s + pinMarker(r)
+}
+
+// pinMarker is how a saved cap shows on the row. It spells the level out rather
+// than using a symbol: the whole point of the pin is which level was saved, and
+// a marker that only said "pinned" would send the user to the config file to
+// find out.
+func pinMarker(r Row) string {
+	if r.Pin == "" {
+		return ""
+	}
+	return fmt.Sprintf(" [pin %s]", r.Pin)
 }
 
 // rowTail is the right-hand column: the version delta, or the error on a row
@@ -174,6 +185,9 @@ func (t Theme) rowTail(r Row, tailPlain string, budget int) string {
 	full := t.VersionDelta(r.Update.CurrentTag, r.Update.LatestTag, r.Level)
 	if n := r.otherTargets(); n > 0 {
 		full += lipgloss.NewStyle().Foreground(t.Dim).Render(fmt.Sprintf(" (+%d)", n))
+	}
+	if p := pinMarker(r); p != "" {
+		full += lipgloss.NewStyle().Foreground(t.Accent).Render(p)
 	}
 	if lipgloss.Width(full) <= budget {
 		return full

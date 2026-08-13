@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/p-arndt/compose-check-updates/internal/config"
 	"github.com/p-arndt/compose-check-updates/internal/scanner"
 )
 
@@ -173,6 +174,13 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleRestartKey(msg)
 	}
 
+	// The scope question owns the keyboard the same way, and for the same reason:
+	// its answers are p and g, and esc has to cancel it rather than quit the
+	// program the user was in the middle of talking to.
+	if m.pinPrompt {
+		return m.handlePinScopeKey(msg)
+	}
+
 	// The issues pane owns the keyboard while it is open, which is also what
 	// lets esc mean "back to the list" there and "quit" everywhere else.
 	if m.showIssues {
@@ -247,6 +255,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.cycleRowTarget(1)
 	case key.Matches(msg, m.keys.RowPrev):
 		m.cycleRowTarget(-1)
+	case key.Matches(msg, m.keys.Pin):
+		m.openPinPrompt()
 	case key.Matches(msg, m.keys.Detail):
 		m.showDetail = !m.showDetail
 		m.syncScroll()
@@ -413,6 +423,68 @@ func (m Model) handleApplyRow() (tea.Model, tea.Cmd) {
 	cmd := m.beginApply([]Row{*r})
 	m.cancel()
 	return m, cmd
+}
+
+// openPinPrompt asks which scope the row's current target should be saved to.
+// A header has no image to cap, so the key is a no-op there rather than an
+// error: the cursor lands on headers constantly while navigating the tree.
+func (m *Model) openPinPrompt() {
+	r := m.currentRow()
+	if r == nil {
+		return
+	}
+	m.pinPrompt = true
+	m.pinPromptImage = r.Update.ImageName
+	m.pinPromptLevel = config.Level(r.Target.Label())
+}
+
+// pinPromptText is the question itself, rendered by the status line. It names
+// the level and the image because the answer is one keystroke away and there is
+// no second chance to notice the cursor was on the wrong row.
+func (m Model) pinPromptText() string {
+	return fmt.Sprintf("save cap %s for %s? (p)roject  (g)lobal  (esc) cancel",
+		m.pinPromptLevel, m.pinPromptImage)
+}
+
+// handlePinScopeKey reads the answer. Anything that is not one of the two
+// scopes cancels: a question the user did not mean to ask must not be able to
+// write a file by way of a mistyped key.
+func (m Model) handlePinScopeKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch {
+	case key.Matches(msg, m.keys.PinProject):
+		return m.answerPin(pinProject)
+	case key.Matches(msg, m.keys.PinGlobal):
+		return m.answerPin(pinGlobal)
+	}
+	m.pinPrompt = false
+	m.setStatus(StatusInfo, "cap not saved")
+	return m, nil
+}
+
+// answerPin writes — or removes — the cap in the scope the user picked. Pressing
+// p on an image already capped in that scope clears it, so the key is a toggle
+// per scope rather than a way to write the same line twice.
+func (m Model) answerPin(scope pinScope) (tea.Model, tea.Cmd) {
+	m.pinPrompt = false
+
+	image, level := m.pinPromptImage, m.pinPromptLevel
+	clearing := m.capInScope(scope, image) != ""
+	if clearing {
+		level = ""
+	}
+
+	if err := m.setCap(scope, image, level); err != nil {
+		m.setStatus(StatusError, fmt.Sprintf("could not save cap for %s: %v", image, err))
+		return m, nil
+	}
+
+	m.recordPin(scope, image, level)
+	if clearing {
+		m.setStatus(StatusSuccess, fmt.Sprintf("%s cap removed (%s)", image, scope.Label()))
+		return m, nil
+	}
+	m.setStatus(StatusSuccess, fmt.Sprintf("%s capped at %s (%s)", image, level, scope.Label()))
+	return m, nil
 }
 
 func (m Model) handleRestartKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {

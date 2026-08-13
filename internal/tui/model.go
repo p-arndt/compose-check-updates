@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/bubbles/spinner"
 
 	"github.com/p-arndt/compose-check-updates/internal"
+	"github.com/p-arndt/compose-check-updates/internal/config"
 	"github.com/p-arndt/compose-check-updates/internal/scanner"
 )
 
@@ -68,6 +69,25 @@ type Model struct {
 	// row individually. Filter hides rows; target changes what gets written.
 	target Target
 
+	// pins are the caps already recorded on disk, kept one Config per scope
+	// rather than merged: a pin is toggled inside the scope the user picks, so
+	// clearing a project cap must not be talked out of it by a global file that
+	// happens to say the same thing.
+	pins map[pinScope]config.Config
+
+	// setCap writes a pin. It is a field rather than a direct call on the config
+	// package so a test can observe what would be written without touching the
+	// user's files. An empty level means "remove the cap for this image".
+	setCap func(scope pinScope, image string, max config.Level) error
+
+	// pinPrompt is the scope question raised by `p`. While it is up every other
+	// key is ignored, the same way the issues pane owns the keyboard while it is
+	// open. The image and level are captured when the question is asked, so the
+	// answer writes what the user was looking at when they pressed the key.
+	pinPrompt      bool
+	pinPromptImage string
+	pinPromptLevel config.Level
+
 	// logs captures slog output for the lifetime of the program. The scan logs
 	// from many goroutines and the default handler writes to the terminal, which
 	// would paint over the alt screen; see run.go.
@@ -117,6 +137,8 @@ func NewModel(opts scanner.Options) Model {
 
 	return Model{
 		opts:      opts,
+		setCap:    writeCap(opts.Root),
+		pins:      make(map[pinScope]config.Config),
 		theme:     theme,
 		keys:      DefaultKeyMap(),
 		phase:     phaseScanning,
@@ -130,6 +152,80 @@ func NewModel(opts scanner.Options) Model {
 		target: TargetMajor,
 		width:  80,
 		height: 24,
+	}
+}
+
+// writeCap is the real writer behind Model.setCap: it resolves the file the
+// chosen scope writes to and then sets or clears the entry. The project path is
+// derived from the scanned root, because that is the tree the user is looking at.
+func writeCap(root string) func(pinScope, string, config.Level) error {
+	return func(scope pinScope, image string, max config.Level) error {
+		var (
+			path string
+			err  error
+		)
+		if scope == pinGlobal {
+			path, err = config.GlobalWritePath()
+		} else {
+			path, err = config.ProjectWritePath(root)
+		}
+		if err != nil {
+			return err
+		}
+		if max == "" {
+			return config.ClearImageMax(path, image)
+		}
+		return config.SetImageMax(path, image, max)
+	}
+}
+
+// WithPins attaches the caps already on disk, so the list can mark a pinned
+// image and `p` can tell setting one from clearing it.
+func (m Model) WithPins(project, global config.Config) Model {
+	m.pins = map[pinScope]config.Config{pinProject: project, pinGlobal: global}
+	m.refreshPins()
+	return m
+}
+
+// capInScope is the cap recorded for an image in one scope, or "" when that
+// scope says nothing about it.
+func (m Model) capInScope(scope pinScope, image string) config.Level {
+	return m.pins[scope].MaxLevel(image)
+}
+
+// capFor is the cap that applies to an image, project first: a project file
+// exists to override the global one, so that is the level the row shows.
+func (m Model) capFor(image string) config.Level {
+	if l := m.capInScope(pinProject, image); l != "" {
+		return l
+	}
+	return m.capInScope(pinGlobal, image)
+}
+
+// recordPin folds a written pin back into the in-memory scopes, so the marker
+// and the next toggle agree with the file without re-reading it.
+func (m *Model) recordPin(scope pinScope, image string, max config.Level) {
+	cfg := m.pins[scope]
+	if max == "" {
+		delete(cfg.Images, image)
+	} else {
+		if cfg.Images == nil {
+			cfg.Images = make(map[string]config.ImagePolicy)
+		}
+		cfg.Images[image] = config.ImagePolicy{Max: max}
+	}
+	if m.pins == nil {
+		m.pins = make(map[pinScope]config.Config)
+	}
+	m.pins[scope] = cfg
+	m.refreshPins()
+}
+
+// refreshPins re-stamps every row with the cap for its image. Rows carry it so
+// the renderer stays a function of the row alone.
+func (m *Model) refreshPins() {
+	for i := range m.rows {
+		m.rows[i].Pin = m.capFor(m.rows[i].Update.ImageName)
 	}
 }
 
@@ -153,6 +249,7 @@ func (m *Model) addRow(r Row) {
 	// one is pointed at it immediately rather than showing the scanner's default.
 	r.Target = m.target
 	m.retarget(&r, m.target)
+	r.Pin = m.capFor(r.Update.ImageName)
 
 	m.rows = append(m.rows, r)
 	// Stable ordering by file then image means a row arriving mid-scan lands in

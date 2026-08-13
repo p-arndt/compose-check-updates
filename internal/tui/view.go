@@ -104,6 +104,9 @@ func (m Model) paneView() string {
 // browsing keys during the restart question would advertise keys that phase
 // throws away.
 func (m Model) hintBindings() []key.Binding {
+	if m.pinPrompt {
+		return m.keys.PinHints()
+	}
 	if m.showIssues {
 		return m.keys.IssueHints()
 	}
@@ -140,6 +143,12 @@ func (m Model) status(kind StatusKind, text string) string {
 }
 
 func (m Model) statusLine() string {
+	// The scope question outranks every other line: it is a question, and the
+	// next keystroke answers it.
+	if m.pinPrompt {
+		return m.status(StatusWarn, m.pinPromptText())
+	}
+
 	switch m.phase {
 	case phaseScanning:
 		// Skipped images are logged while the scan is still running, so the

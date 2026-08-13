@@ -10,6 +10,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/p-arndt/compose-check-updates/internal"
+	"github.com/p-arndt/compose-check-updates/internal/config"
 )
 
 // Filter is the set of update levels the list is currently showing. It is a
@@ -118,6 +119,12 @@ type Row struct {
 	// update, or applying would write a version the user never chose.
 	Target   Target
 	NoTarget bool
+
+	// Pin is the cap recorded for this image in the user's config, or "" when
+	// there is none. It is carried on the row rather than looked up while
+	// rendering so the list line stays a pure function of the row, the way the
+	// (+N) hint already is.
+	Pin config.Level
 }
 
 // FilePath is the compose file this row's image lives in.
@@ -137,6 +144,24 @@ func (r Row) otherTargets() int {
 		return n
 	}
 	return n - 1
+}
+
+// pinScope is the config file a cap is written to. The user picks one per pin
+// rather than the program guessing: a cap on an image used in one project is a
+// different statement from a cap on that image everywhere.
+type pinScope int
+
+const (
+	pinProject pinScope = iota
+	pinGlobal
+)
+
+// Label is the word the prompt and the confirmation use for the scope.
+func (s pinScope) Label() string {
+	if s == pinGlobal {
+		return "global"
+	}
+	return "project"
 }
 
 // entryKind distinguishes the two things a list line — and therefore the cursor
