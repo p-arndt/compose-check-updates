@@ -35,26 +35,23 @@ type KeyMap struct {
 	IssuesClose key.Binding
 	Filter      key.Binding
 	Target      key.Binding
-	RowNext     key.Binding
-	RowPrev     key.Binding
-	Detail      key.Binding
+	// The sidebar decides one image at a time: which release it moves to and
+	// whether that is remembered. Focus moves there and back on tab, and the
+	// two values are changed with ←/→ once it is there — which is why the row
+	// target and the pin have no keys of their own any more.
+	Focus     key.Binding
+	FocusBack key.Binding
+	ValueNext key.Binding
+	ValuePrev key.Binding
 	// Apply writes the selection; ApplyRow writes only the row under the cursor.
 	// Both are deliberately off enter: enter is a reflex key, and a reflex key
 	// must not rewrite compose files.
 	Apply    key.Binding
 	ApplyRow key.Binding
-	// Pin saves the row's current target as a cap that outlives the run. It asks
-	// for a scope first, and PinProject/PinGlobal/PinCancel are the answers to
-	// that question — read only while the prompt is up, which is the same reason
-	// IssuesClose may share esc with Quit and why PinProject may share p with Pin.
-	Pin        key.Binding
-	PinProject key.Binding
-	PinGlobal  key.Binding
-	PinCancel  key.Binding
-	Help       key.Binding
-	Quit       key.Binding
-	Yes        key.Binding
-	No         key.Binding
+	Help     key.Binding
+	Quit     key.Binding
+	Yes      key.Binding
+	No       key.Binding
 }
 
 func DefaultKeyMap() KeyMap {
@@ -88,15 +85,16 @@ func DefaultKeyMap() KeyMap {
 
 		Filter: key.NewBinding(key.WithKeys("f"), key.WithHelp("f", "filter")),
 		Target: key.NewBinding(key.WithKeys("t"), key.WithHelp("t", "target level")),
-		// The row-target cycle lost ←/h/→/l to the tree, and the T/B pair that
-		// replaced them read as nothing in particular. +/- say what they do
-		// without being taught: one step up the levels, one step down. The old
-		// letters stay bound, and out of the help text, so a hand that learned
-		// them keeps working; shift+tab stays for anyone who reaches for
-		// tab-and-back rather than a key of its own.
-		RowNext: key.NewBinding(key.WithKeys("+", "T"), key.WithHelp("+", "row target up")),
-		RowPrev: key.NewBinding(key.WithKeys("-", "B", "shift+tab"), key.WithHelp("-", "row target down")),
-		Detail:  key.NewBinding(key.WithKeys("d", "tab"), key.WithHelp("d/tab", "detail")),
+		// tab moves between the two halves of the frame, which is the one thing
+		// every split layout already means by it. esc leaves the sidebar as well,
+		// sharing the key with Quit the way IssuesClose does, and for the same
+		// reason: while the sidebar is focused, esc means "back".
+		Focus:     key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "details")),
+		FocusBack: key.NewBinding(key.WithKeys("tab", "esc"), key.WithHelp("tab/esc", "back to list")),
+		// ←/→ walk the tree in the list, so they are free to change a value once
+		// the sidebar has the focus; h/l come along for the same reason.
+		ValueNext: key.NewBinding(key.WithKeys("right", "l", "+"), key.WithHelp("→", "next value")),
+		ValuePrev: key.NewBinding(key.WithKeys("left", "h", "-"), key.WithHelp("←", "previous value")),
 
 		// Shift-a pairs with `a` (select all) and stays clear of every taken key;
 		// `u` reads as "update this one" and is the only free letter near it.
@@ -106,10 +104,6 @@ func DefaultKeyMap() KeyMap {
 		// p is the only free letter that reads as "pin"; g is free as well and is
 		// the initial of the scope it answers for, so neither answer needs a key
 		// the user has to be told twice.
-		Pin:        key.NewBinding(key.WithKeys("p"), key.WithHelp("p", "pin target")),
-		PinProject: key.NewBinding(key.WithKeys("p"), key.WithHelp("p", "project")),
-		PinGlobal:  key.NewBinding(key.WithKeys("g"), key.WithHelp("g", "global")),
-		PinCancel:  key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "cancel")),
 
 		Help: key.NewBinding(key.WithKeys("?"), key.WithHelp("?", "help")),
 		Quit: key.NewBinding(key.WithKeys("q", "esc", "ctrl+c"), key.WithHelp("q", "quit")),
@@ -124,21 +118,21 @@ func (k KeyMap) Bindings() []key.Binding {
 		k.Up, k.Down, k.PageUp, k.PageDown, k.Home, k.End,
 		k.Toggle, k.SelectAll, k.SelectNone, k.SelectAllGlobal, k.SelectNoneGlobal,
 		k.ToggleGroup, k.Collapse, k.Expand, k.CollapseAll, k.ExpandAll,
-		k.Filter, k.Target, k.RowNext, k.RowPrev, k.Pin, k.Detail, k.Issues, k.Apply, k.ApplyRow, k.Help, k.Quit,
+		k.Filter, k.Target, k.Focus, k.ValueNext, k.ValuePrev, k.Issues, k.Apply, k.ApplyRow, k.Help, k.Quit,
 	}
 }
 
 func (k KeyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.Up, k.Down, k.Toggle, k.Collapse, k.Expand, k.Filter, k.Target, k.RowNext, k.Issues, k.Apply, k.ApplyRow, k.Help, k.Quit}
+	return []key.Binding{k.Up, k.Down, k.Toggle, k.Collapse, k.Expand, k.Focus, k.Filter, k.Target, k.Issues, k.Apply, k.ApplyRow, k.Help, k.Quit}
 }
 
 func (k KeyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.Up, k.Down, k.PageUp, k.PageDown, k.Home, k.End},
 		{k.Toggle, k.SelectAll, k.SelectNone, k.SelectAllGlobal, k.SelectNoneGlobal},
-		{k.Filter, k.Detail, k.Issues},
+		{k.Filter, k.Issues},
 		{k.ToggleGroup, k.Collapse, k.Expand, k.CollapseAll, k.ExpandAll},
-		{k.Target, k.RowNext, k.RowPrev, k.Pin},
+		{k.Focus, k.ValuePrev, k.ValueNext, k.Target},
 		{k.Apply, k.ApplyRow, k.Help, k.Quit},
 	}
 }
@@ -169,20 +163,25 @@ func (k KeyMap) IssueHints() []key.Binding {
 // the cheapest ones to lose to truncation.
 func (k KeyMap) BrowseHints() []key.Binding {
 	return []key.Binding{
-		k.Up, k.Down, k.Toggle, k.Apply, k.ApplyRow,
-		k.Collapse, k.Expand, k.Filter, k.Target, k.RowNext, k.Pin, k.Issues, k.Help, k.Quit,
+		k.Up, k.Down, k.Toggle, k.Apply, k.ApplyRow, k.Focus,
+		k.Collapse, k.Expand, k.Filter, k.Target, k.Issues, k.Help, k.Quit,
 	}
 }
 
 // ApplyHints: the apply phase ignores every key but quit.
 func (k KeyMap) ApplyHints() []key.Binding { return []key.Binding{k.Quit} }
 
-// PinHints are the only answers the pin scope question accepts. It ends on the
-// way out for the same reason IssueHints leads with one: a question covering
-// the status line has to say how to leave it unanswered.
-func (k KeyMap) PinHints() []key.Binding {
-	return []key.Binding{k.PinProject, k.PinGlobal, k.PinCancel}
+// SideHints are the keys the sidebar reads while it has the focus. It leads
+// with the way out, because a column that has taken the keyboard has to say how
+// to give it back.
+func (k KeyMap) SideHints() []key.Binding {
+	return []key.Binding{k.FocusBack, k.Up, k.Down, k.ValuePrev, k.ValueNext, k.Quit}
 }
+
+// HelpHints are the only keys the help dialog reads. A footer advertising the
+// list keys while a dialog is covering the list would name keys that phase
+// throws away, which is the one thing the footer must never do.
+func (k KeyMap) HelpHints() []key.Binding { return []key.Binding{k.Help, k.IssuesClose, k.Quit} }
 
 // RestartHints are the only two answers the restart question accepts.
 func (k KeyMap) RestartHints() []key.Binding { return []key.Binding{k.Yes, k.No, k.Quit} }

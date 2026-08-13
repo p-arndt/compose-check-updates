@@ -226,7 +226,16 @@ func (m *Model) recordPin(scope pinScope, image string, max config.Level) {
 // the renderer stays a function of the row alone.
 func (m *Model) refreshPins() {
 	for i := range m.rows {
-		m.rows[i].Pin = m.capFor(m.rows[i].Update.ImageName)
+		r := &m.rows[i]
+		r.Pin = m.capFor(r.Update.ImageName)
+
+		// The cap is a ceiling on this image, so it has to bind the selection
+		// too. Leaving a row aimed at a release its own cap forbids would let
+		// `A` write exactly the version the user just said never to take.
+		r.Update.Cap = string(r.Pin)
+		if r.Pin != "" && !r.Update.AllowsLevel(string(r.Target)) {
+			m.retarget(r, Target(r.Pin))
+		}
 	}
 }
 

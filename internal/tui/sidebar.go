@@ -42,8 +42,9 @@ func sidebarWidth(total int) int {
 type sideField int
 
 const (
-	fieldTarget sideField = iota
-	fieldPin
+	fieldTarget sideField = iota // the release this run would apply
+	fieldCap                     // the ceiling to remember, as a level of its own
+	fieldScope                   // which config file remembers it
 	sideFieldCount
 )
 
@@ -57,93 +58,151 @@ const (
 	focusSide
 )
 
-// pinChoices are the values the Merken field cycles through, in the order shown.
-// The empty Level is "not remembered", which is what an image starts as.
-var pinChoices = []struct {
-	scope pinScope
-	level bool // whether this choice records a cap at all
-	label string
-}{
-	{label: "no"},
-	{scope: pinProject, level: true, label: "project"},
-	{scope: pinGlobal, level: true, label: "global"},
+// capChoicesFor are the values the cap field steps through for one image. The
+// cap names a level in its own right rather than borrowing whatever the target
+// field happens to show: the target is what this run does, the cap is what every
+// run from now on may not exceed, and reading one off the other made it
+// impossible to set a cap without first moving a target the user did not want
+// moved.
+//
+// Levels the image has no release for are still offered — a cap is a policy
+// about the future, and an image with no major today may publish one tomorrow.
+//
+// Major is the exception, and only appears when it would mean something. On its
+// own it is the same as no cap at all, since nothing in semver sits above it.
+// It earns its place only when a global cap exists: the project file overrides
+// the global one, so "major" there is how a project says the global ceiling does
+// not apply to it.
+func (m Model) capChoicesFor(image string) []config.Level {
+	choices := []config.Level{"", config.LevelPatch, config.LevelMinor}
+	if m.capInScope(pinGlobal, image) != "" {
+		choices = append(choices, config.LevelMajor)
+	}
+	return choices
 }
 
-// sidebarLines renders the right column for the row under the cursor, padded to
-// exactly height lines so the two columns stay in step.
-func (m Model) sidebarLines(width, height int) []string {
-	out := make([]string, 0, height)
+// scopeChoices are the files a cap can be remembered in, in the order the field
+// steps through them.
+var scopeChoices = []pinScope{pinProject, pinGlobal}
 
+// sidebarLines renders the right column for the row under the cursor, within
+// the height it is given.
+//
+// The fields come first when space runs out. A short terminal that dropped the
+// cap field would leave the setting unreachable, whereas dropping the file path
+// only costs a fact the user can see in the list anyway — so the lines are
+// added in priority order rather than top to bottom.
+func (m Model) sidebarLines(width, height int) []string {
 	r := m.currentRow()
 	if r == nil {
-		out = append(out, m.theme.dim().Render("no image selected"))
-		return padLines(out, width, height)
+		return []string{m.theme.dim().Render(fit("no image selected", width))}
 	}
 
 	u := r.Update
-	out = append(out, m.theme.sideTitle(u.ImageName, width))
-	out = append(out, "")
-	out = append(out, m.theme.sideField("file", shortPath(u.FilePath), width))
-	out = append(out, m.theme.sideField("now", u.CurrentTag, width))
-	out = append(out, "")
 
-	out = append(out, m.theme.sideHeading("target", m.focus == focusSide && m.sideField == fieldTarget))
-	for _, line := range m.targetChoices(r, width) {
-		out = append(out, line)
+	// Everything here has to survive, in this order: the image being described,
+	// then each thing that can be changed about it.
+	fields := []string{
+		m.theme.sideTitle(u.ImageName, width),
+		m.theme.sideValue("target", m.targetValue(r), m.focused(fieldTarget), width),
+		m.theme.sideValue("cap", m.capValue(r), m.focused(fieldCap), width),
 	}
-	out = append(out, "")
-
-	out = append(out, m.theme.sideHeading("remember", m.focus == focusSide && m.sideField == fieldPin))
-	for _, line := range m.pinChoiceLines(r, width) {
-		out = append(out, line)
+	if r.Pin != "" {
+		// The scope only exists once there is a cap to put somewhere. Showing it
+		// permanently would ask the user to answer a question with no subject.
+		fields = append(fields, m.theme.sideValue("save to", m.scopeValue(r, width), m.focused(fieldScope), width))
 	}
 
-	return padLines(out, width, height)
+	if height <= len(fields) {
+		return fields[:max(height, 1)]
+	}
+
+	// Room to spare, so the context and the spacing go back in — the path first,
+	// because it is the one that says which of two identically named services
+	// this is.
+	out := []string{fields[0]}
+	rest := fields[1:]
+
+	if height >= len(fields)+1 {
+		out = append(out, m.theme.dim().Render(fit(shortPath(u.FilePath)+" · now "+u.CurrentTag, width)))
+	}
+	if height >= len(fields)+2 {
+		out = append(out, "")
+	}
+	out = append(out, rest...)
+
+	// Only while the list still holds the keyboard: once the sidebar has it the
+	// footer names the same keys, and saying it twice on one frame is noise.
+	if m.focus == focusList && height >= len(out)+2 {
+		out = append(out, "", m.theme.dim().Render(fit("tab to change", width)))
+	}
+
+	return out
 }
 
-// targetChoices renders one line per level this image actually has a release
-// for, marking the one currently selected. A level the image does not publish
-// is left out rather than shown as unavailable: the list is short enough that
-// an absent line is read as "not offered", and a greyed one invites pressing it.
-func (m Model) targetChoices(r *Row, width int) []string {
-	avail := r.Update.AvailableTargets()
-	if len(avail) == 0 {
-		return []string{m.theme.dim().Render("  no other releases")}
-	}
-
-	lines := make([]string, 0, len(avail))
-	for _, level := range avail {
-		tag := r.Update.TagForTarget(level)
-		selected := !r.NoTarget && string(r.Target) == level
-		lines = append(lines, m.theme.sideChoice(level, tag, selected, width))
-	}
-	return lines
+// focused reports whether f is the field the arrow keys would change.
+func (m Model) focused(f sideField) bool {
+	return m.focus == focusSide && m.sideField == f
 }
 
-// pinChoiceLines renders the remember field. The scope's file is named next to
-// it, because "project" and "global" only mean something once you can see which
-// file each would write.
-func (m Model) pinChoiceLines(r *Row, width int) []string {
-	current := m.pinScopeOf(r.Update.ImageName)
-
-	lines := make([]string, 0, len(pinChoices))
-	for _, c := range pinChoices {
-		selected := c.level == (r.Pin != "") && (!c.level || c.scope == current)
-		hint := ""
-		switch c.scope {
-		case pinProject:
-			hint = ".ccu.yaml"
-		case pinGlobal:
-			hint = "~/.config/ccu"
-		}
-		lines = append(lines, m.theme.sideChoice(c.label, hint, selected, width))
+// targetValue is the release this row would move to, named by its level as well
+// as its tag: the level is the thing being chosen, the tag only the consequence.
+func (m Model) targetValue(r *Row) string {
+	focused := m.focused(fieldTarget)
+	if r.NoTarget || len(r.Update.AvailableTargets()) == 0 {
+		return m.theme.sideText("—", focused)
 	}
-	return lines
+	// The same badge the row carries in the list, so the level the field is set
+	// to and the level the row shows are recognisably one thing.
+	return m.theme.BadgeTight(r.Target.Label()) + " " + m.theme.sideText(r.Update.LatestTag, focused)
 }
 
-// pinScopeOf reports which scope holds a cap for this image, so the remember
-// field can show which of the two files the value came from. Project wins, the
-// same way it wins when the two are merged.
+// capValue is the ceiling this image may never move past, phrased so the line
+// reads as the rule it is rather than as a version number.
+func (m Model) capValue(r *Row) string {
+	focused := m.focused(fieldCap)
+	if r.Pin == "" {
+		return m.theme.sideText("off", focused)
+	}
+
+	value := m.theme.BadgeTight(string(r.Pin))
+
+	// The one case where "major" is not a no-op is worth spelling out, because
+	// on its own the word says nothing: it is only there to lift a ceiling the
+	// global file set.
+	if r.Pin == config.LevelMajor {
+		value += m.theme.dim().Render("  lifts the global cap")
+	}
+	return value
+}
+
+// scopeValue names the file the cap is remembered in, with the path beside it:
+// "project" and "global" only mean something once you can see which file each
+// one is.
+// scopeValue names the file the cap is remembered in. The path is a hint rather
+// than the answer, so it is dropped when the column is too narrow to hold it —
+// a truncated line would eat the closing chevron and make the field look broken
+// rather than abbreviated.
+func (m Model) scopeValue(r *Row, width int) string {
+	focused := m.focused(fieldScope)
+
+	name, path := "project", "  .ccu.yaml"
+	if m.pinScopeOf(r.Update.ImageName) == pinGlobal {
+		name, path = "global", "  ~/.config/ccu"
+	}
+
+	// The label, the chevrons and their spaces: what sideValue puts around the
+	// value, and therefore what the value may not use.
+	const chrome = 8 + 4
+	if lipgloss.Width(name+path)+chrome > width {
+		path = ""
+	}
+	return m.theme.sideText(name, focused) + m.theme.dim().Render(path)
+}
+
+// pinScopeOf reports which scope holds a cap for this image, so the cap field
+// can say which of the two files the value came from. Project wins, the same
+// way it wins when the two layers are merged.
 func (m Model) pinScopeOf(image string) pinScope {
 	if m.pins[pinProject].MaxLevel(image) != "" {
 		return pinProject
@@ -152,7 +211,7 @@ func (m Model) pinScopeOf(image string) pinScope {
 }
 
 // cycleSideValue changes the focused field by delta. It is the only way the
-// sidebar writes anything, so both questions go through one place.
+// sidebar writes anything, so every question goes through one place.
 func (m *Model) cycleSideValue(delta int) {
 	r := m.currentRow()
 	if r == nil {
@@ -162,49 +221,111 @@ func (m *Model) cycleSideValue(delta int) {
 	switch m.sideField {
 	case fieldTarget:
 		m.cycleRowTarget(delta)
-	case fieldPin:
-		m.cyclePin(r, delta)
+	case fieldCap:
+		m.cycleCap(r, delta)
+	case fieldScope:
+		m.cycleScope(r, delta)
 	}
 }
 
-// cyclePin steps the remember field and writes the result immediately. Writing
-// on the keypress rather than on leaving the pane is what makes the field honest:
-// what it shows is what is on disk, with no unsaved state to lose.
-func (m *Model) cyclePin(r *Row, delta int) {
+// cycleCap steps the ceiling and writes it immediately. Writing on the keypress
+// rather than on leaving the pane is what makes the field honest: what it shows
+// is what is on disk, with no unsaved state to lose.
+func (m *Model) cycleCap(r *Row, delta int) {
 	image := r.Update.ImageName
+
+	choices := m.capChoicesFor(image)
 	cur := 0
-	if r.Pin != "" {
-		cur = 1
-		if m.pinScopeOf(image) == pinGlobal {
-			cur = 2
+	for i, c := range choices {
+		if c == r.Pin {
+			cur = i
+			break
 		}
 	}
+	next := choices[((cur+delta)%len(choices)+len(choices))%len(choices)]
 
-	next := ((cur+delta)%len(pinChoices) + len(pinChoices)) % len(pinChoices)
-	choice := pinChoices[next]
-
-	// Leaving a scope means clearing it, or the image would end up capped in two
-	// files at once and the field could no longer say which one it is showing.
+	// A cap already recorded lives in one scope; a new one goes to the project
+	// file, which is the narrower of the two and the easier to undo.
+	scope := pinProject
 	if r.Pin != "" {
-		if err := m.setCap(m.pinScopeOf(image), image, ""); err != nil {
-			m.setStatus(StatusError, fmt.Sprintf("could not update %s: %v", image, err))
-			return
-		}
+		scope = m.pinScopeOf(image)
 	}
 
-	if !choice.level {
-		m.applyPin(image, "", 0)
+	if !m.writeCapValue(scope, image, next) {
+		return
+	}
+
+	if next == "" {
 		m.setStatus(StatusSuccess, fmt.Sprintf("%s no longer capped", image))
 		return
 	}
+	m.setStatus(StatusSuccess, fmt.Sprintf("%s capped at %s (%s)", image, next, scopeLabel(scope)))
+}
 
-	level := config.Level(r.Target.Label())
-	if err := m.setCap(choice.scope, image, level); err != nil {
-		m.setStatus(StatusError, fmt.Sprintf("could not save %s: %v", image, err))
+// cycleScope moves an existing cap between the two files. There is nothing to
+// move when no cap is set, and the field is not shown then either.
+func (m *Model) cycleScope(r *Row, delta int) {
+	if r.Pin == "" {
 		return
 	}
-	m.applyPin(image, level, choice.scope)
-	m.setStatus(StatusSuccess, fmt.Sprintf("%s capped at %s (%s)", image, level, choice.label))
+
+	image := r.Update.ImageName
+	from := m.pinScopeOf(image)
+
+	cur := 0
+	for i, s := range scopeChoices {
+		if s == from {
+			cur = i
+			break
+		}
+	}
+	to := scopeChoices[((cur+delta)%len(scopeChoices)+len(scopeChoices))%len(scopeChoices)]
+	if to == from {
+		return
+	}
+
+	// Cleared from the file it is leaving before being written to the new one,
+	// or the image ends up capped in both and the field can no longer say which
+	// one it is showing.
+	if err := m.setCap(from, image, ""); err != nil {
+		m.setStatus(StatusError, fmt.Sprintf("could not update %s: %v", image, err))
+		return
+	}
+	if !m.writeCapValue(to, image, r.Pin) {
+		return
+	}
+	m.setStatus(StatusSuccess, fmt.Sprintf("%s capped at %s (%s)", image, r.Pin, scopeLabel(to)))
+}
+
+// writeCapValue records level in scope — clearing every scope first, so a cap
+// can never end up in two files — and reports whether it got that far. A failed
+// write leaves the rows alone: the sidebar must not show a cap that is not on
+// disk.
+func (m *Model) writeCapValue(scope pinScope, image string, level config.Level) bool {
+	if level == "" {
+		for _, s := range scopeChoices {
+			if err := m.setCap(s, image, ""); err != nil {
+				m.setStatus(StatusError, fmt.Sprintf("could not update %s: %v", image, err))
+				return false
+			}
+		}
+		m.applyPin(image, "", scope)
+		return true
+	}
+
+	if err := m.setCap(scope, image, level); err != nil {
+		m.setStatus(StatusError, fmt.Sprintf("could not save %s: %v", image, err))
+		return false
+	}
+	m.applyPin(image, level, scope)
+	return true
+}
+
+func scopeLabel(s pinScope) string {
+	if s == pinGlobal {
+		return "global"
+	}
+	return "project"
 }
 
 // applyPin records the new cap in the in-memory layers and restamps the rows, so
@@ -242,39 +363,39 @@ func shortPath(p string) string {
 	return strings.Join(parts[len(parts)-2:], "/")
 }
 
-// padLines fits every line to width and pads the block out to height, so the
-// sidebar can be joined to the list line by line without either drifting.
-func padLines(lines []string, width, height int) []string {
+// joinColumns places the two boxes side by side. Both are drawn to the same
+// height so their borders close level with each other; a shorter box would look
+// like the taller one had lost its bottom edge.
+func (m Model) joinColumns(left, right []string, leftInner, height int) string {
+	inner := height - 2
+	if inner < 1 {
+		inner = 1
+	}
+
+	rightInner := sidebarWidth(m.width) - boxChrome
+	if rightInner < 1 {
+		rightInner = 1
+	}
+
+	lb := m.theme.Box(left, leftInner, inner, m.focus == focusList)
+	rb := m.theme.Box(right, rightInner, inner, m.focus == focusSide)
+
 	out := make([]string, 0, height)
-	for _, l := range lines {
-		if len(out) == height {
-			break
+	for i := range lb {
+		r := ""
+		if i < len(rb) {
+			r = rb[i]
 		}
-		out = append(out, padRight(fit(l, width), width))
+		out = append(out, lb[i]+" "+r)
 	}
 	for len(out) < height {
-		out = append(out, strings.Repeat(" ", width))
+		out = append(out, "")
 	}
-	return out
-}
 
-// joinColumns glues the list and the sidebar together with a vertical rule.
-// Both blocks are already exactly height lines, so this only has to concatenate.
-func (m Model) joinColumns(left []string, right []string, leftWidth int) string {
-	rule := m.theme.rule()
-	out := make([]string, 0, len(left))
-	for i := range left {
-		l := padRight(fit(left[i], leftWidth), leftWidth)
-		r := ""
-		if i < len(right) {
-			r = right[i]
-		}
-		out = append(out, l+rule+r)
-	}
 	return strings.Join(out, "\n")
 }
 
-// sidebarGutter is the width the vertical rule and its padding occupy.
-const sidebarGutter = 3
-
-var _ = lipgloss.Width
+// sidebarGutter is the single blank column between the two boxes. Their own
+// borders do the separating, so one space is all that is needed to keep them
+// from touching.
+const sidebarGutter = 1

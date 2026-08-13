@@ -8,7 +8,6 @@ import (
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/p-arndt/compose-check-updates/internal/config"
 	"github.com/p-arndt/compose-check-updates/internal/scanner"
 )
 
@@ -174,10 +173,30 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleRestartKey(msg)
 	}
 
+	// The help dialog owns the keyboard: it covers the pane, so every key that
+	// would act on a row it is hiding has to be inert, and esc has to close the
+	// dialog rather than quit the program behind it.
+	if m.showHelp {
+		if key.Matches(msg, m.keys.Help) || key.Matches(msg, m.keys.IssuesClose) || key.Matches(msg, m.keys.Quit) {
+			m.showHelp = false
+		}
+		return m, nil
+	}
+
 	// The issues pane owns the keyboard while it is open, which is also what
 	// lets esc mean "back to the list" there and "quit" everywhere else.
 	if m.showIssues {
 		return m.handleIssuesKey(msg)
+	}
+
+	// The sidebar owns only the keys it needs while focused, and hands
+	// everything else straight back to the list below: a user who tabs across,
+	// changes a level and then presses `j` means to move down the list, not to
+	// be told that j does nothing over here.
+	if m.focus == focusSide {
+		if handled, model, cmd := m.handleSideKey(msg); handled {
+			return model, cmd
+		}
 	}
 
 	if key.Matches(msg, m.keys.Quit) {
@@ -244,15 +263,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		next := m.target.Next()
 		m.setTarget(next)
 		m.setStatus(StatusInfo, fmt.Sprintf("target level: %s", next.Label()))
-	case key.Matches(msg, m.keys.RowNext):
-		m.cycleRowTarget(1)
-	case key.Matches(msg, m.keys.RowPrev):
-		m.cycleRowTarget(-1)
-	case key.Matches(msg, m.keys.Pin):
-		m.openPinPrompt()
-	case key.Matches(msg, m.keys.Detail):
-		m.showDetail = !m.showDetail
-		m.syncScroll()
+	case key.Matches(msg, m.keys.Focus):
+		m.toggleFocus()
 	case key.Matches(msg, m.keys.Issues):
 		// Nothing to browse is a no-op with an explanation, not an empty pane
 		// the user then has to find their way out of.
@@ -417,68 +429,6 @@ func (m Model) handleApplyRow() (tea.Model, tea.Cmd) {
 	m.cancel()
 	return m, cmd
 }
-
-// A header has no image to cap, so the key is a no-op there rather than an
-// error: the cursor lands on headers constantly while navigating the tree.
-func (m *Model) openPinPrompt() {
-	r := m.currentRow()
-	if r == nil {
-		return
-	}
-	m.pinPrompt = true
-	m.pinPromptImage = r.Update.ImageName
-	m.pinPromptLevel = config.Level(r.Target.Label())
-}
-
-// pinPromptText is the question itself, rendered by the status line. It names
-// the level and the image because the answer is one keystroke away and there is
-// no second chance to notice the cursor was on the wrong row.
-func (m Model) pinPromptText() string {
-	return fmt.Sprintf("save cap %s for %s? (p)roject  (g)lobal  (esc) cancel",
-		m.pinPromptLevel, m.pinPromptImage)
-}
-
-// handlePinScopeKey reads the answer. Anything that is not one of the two
-// scopes cancels: a question the user did not mean to ask must not be able to
-// write a file by way of a mistyped key.
-func (m Model) handlePinScopeKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch {
-	case key.Matches(msg, m.keys.PinProject):
-		return m.answerPin(pinProject)
-	case key.Matches(msg, m.keys.PinGlobal):
-		return m.answerPin(pinGlobal)
-	}
-	m.pinPrompt = false
-	m.setStatus(StatusInfo, "cap not saved")
-	return m, nil
-}
-
-// answerPin writes — or removes — the cap in the scope the user picked. Pressing
-// p on an image already capped in that scope clears it, so the key is a toggle
-// per scope rather than a way to write the same line twice.
-func (m Model) answerPin(scope pinScope) (tea.Model, tea.Cmd) {
-	m.pinPrompt = false
-
-	image, level := m.pinPromptImage, m.pinPromptLevel
-	clearing := m.capInScope(scope, image) != ""
-	if clearing {
-		level = ""
-	}
-
-	if err := m.setCap(scope, image, level); err != nil {
-		m.setStatus(StatusError, fmt.Sprintf("could not save cap for %s: %v", image, err))
-		return m, nil
-	}
-
-	m.recordPin(scope, image, level)
-	if clearing {
-		m.setStatus(StatusSuccess, fmt.Sprintf("%s cap removed (%s)", image, scope.Label()))
-		return m, nil
-	}
-	m.setStatus(StatusSuccess, fmt.Sprintf("%s capped at %s (%s)", image, level, scope.Label()))
-	return m, nil
-}
-
 func (m Model) handleRestartKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case key.Matches(msg, m.keys.Yes):
@@ -492,4 +442,65 @@ func (m Model) handleRestartKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	}
 	return m, nil
+}
+
+// handleSideKey reads the keys the sidebar claims while it has the focus. The
+// bool reports whether it consumed the key; anything it does not claim falls
+// through to the list, so the sidebar never becomes a mode the user is stuck in.
+func (m Model) handleSideKey(msg tea.KeyMsg) (bool, tea.Model, tea.Cmd) {
+	switch {
+	case key.Matches(msg, m.keys.FocusBack):
+		m.focus = focusList
+		return true, m, nil
+	case key.Matches(msg, m.keys.Up):
+		m.sideField = m.stepField(-1)
+		return true, m, nil
+	case key.Matches(msg, m.keys.Down):
+		m.sideField = m.stepField(1)
+		return true, m, nil
+	case key.Matches(msg, m.keys.ValueNext):
+		m.cycleSideValue(1)
+		return true, m, nil
+	case key.Matches(msg, m.keys.ValuePrev):
+		m.cycleSideValue(-1)
+		return true, m, nil
+	}
+	return false, m, nil
+}
+
+// toggleFocus hands the keyboard to the sidebar and back. There is nothing to
+// focus on a header — it describes no image — so the key stays in the list
+// there rather than moving onto a column showing nothing.
+func (m *Model) toggleFocus() {
+	if m.focus == focusSide {
+		m.focus = focusList
+		return
+	}
+	if m.currentRow() == nil || sidebarWidth(m.width) == 0 {
+		return
+	}
+	m.focus = focusSide
+}
+
+// stepField moves the sidebar cursor by delta, skipping any field that is not
+// on screen — the scope has nothing to answer until a cap exists, and stopping
+// on a line the user cannot see reads as a dead keypress.
+func (m Model) stepField(delta int) sideField {
+	f := m.sideField
+	for i := 0; i < int(sideFieldCount); i++ {
+		f = (f + sideField(delta) + sideFieldCount) % sideFieldCount
+		if m.fieldVisible(f) {
+			return f
+		}
+	}
+	return fieldTarget
+}
+
+// fieldVisible reports whether the sidebar currently draws this field.
+func (m Model) fieldVisible(f sideField) bool {
+	if f != fieldScope {
+		return true
+	}
+	r := m.currentRow()
+	return r != nil && r.Pin != ""
 }

@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/bubbles/key"
+	"github.com/charmbracelet/lipgloss"
 )
 
 // topChrome is the fixed block above the pane: title, status, and the blank
@@ -82,30 +83,64 @@ func (m Model) bottomBlock() []string {
 	lines = append(lines, m.theme.Legend(m.filter, m.target, m.width))
 
 	// The hint line is unconditional: keys nobody can see are keys nobody uses.
-	// `?` then expands it into the grouped listing rather than revealing it.
-	if m.showHelp {
-		lines = append(lines, strings.Split(m.expandedHelp(), "\n")...)
-	} else {
-		lines = append(lines, m.theme.Help(m.hintBindings(), m.width))
-	}
+	// `?` opens the full listing as a dialog over the pane rather than growing
+	// the footer, which used to push the list up by however many groups there
+	// happened to be.
+	lines = append(lines, m.theme.Help(m.hintBindings(), m.width))
 	return lines
 }
 
 // paneView is the scrollable middle of the screen: the update list, or the
 // captured scan issues when the user has opened them.
+// paneView is the middle of the frame: the list, and beside it the sidebar for
+// whatever the cursor is on. The issues pane takes the whole width — it is a
+// report about the scan rather than about one image, so there is nothing for a
+// sidebar to describe next to it.
 func (m Model) paneView() string {
+	// The dialog is drawn where the boxes are rather than over them: a terminal
+	// gives no way to float anything, and a listing that overwrote half the list
+	// would be harder to read than one that replaces it outright.
+	if m.showHelp {
+		return m.helpDialog()
+	}
 	if m.showIssues {
 		return m.issuesView()
 	}
-	return m.listView()
+
+	side := sidebarWidth(m.width)
+	if side == 0 {
+		return m.listView()
+	}
+
+	// listHeight already discounts the border rows, so the boxes get them back
+	// here: what the list can show plus the two lines its frame occupies.
+	h := m.listHeight() + 2
+	left := strings.Split(m.listView(), "\n")
+
+	return m.joinColumns(left, m.sidebarLines(side-boxChrome, h-2), m.listWidth(), h)
+}
+
+// listWidth is what the left column has to itself once the sidebar and the rule
+// between them have taken their share.
+// listWidth is the width available *inside* the left box, once the sidebar, the
+// gap and both of the left box's border columns have taken their share.
+func (m Model) listWidth() int {
+	side := sidebarWidth(m.width)
+	if side == 0 {
+		return clampWidth(m.width)
+	}
+	return clampWidth(m.width) - side - sidebarGutter - boxChrome
 }
 
 // hintBindings is the footer's key set for the current phase. Showing the
 // browsing keys during the restart question would advertise keys that phase
 // throws away.
 func (m Model) hintBindings() []key.Binding {
-	if m.pinPrompt {
-		return m.keys.PinHints()
+	if m.showHelp {
+		return m.keys.HelpHints()
+	}
+	if m.focus == focusSide {
+		return m.keys.SideHints()
 	}
 	if m.showIssues {
 		return m.keys.IssueHints()
@@ -122,17 +157,50 @@ func (m Model) hintBindings() []key.Binding {
 	}
 }
 
-// expandedHelp is the `?` view: FullHelp's groups, one line each, so related
-// keys stay together instead of wrapping into one undifferentiated run.
-func (m Model) expandedHelp() string {
-	groups := m.keys.FullHelp()
-	lines := make([]string, 0, len(groups))
-	for _, g := range groups {
-		if line := m.theme.Help(g, m.width); line != "" {
-			lines = append(lines, line)
-		}
+// helpDialog is the `?` view: FullHelp's groups, one line each so related keys
+// stay together, in a box centred over the pane. It is a dialog rather than a
+// taller footer because the listing is many lines and growing the footer by
+// that much shoved the list off the top of the screen.
+func (m Model) helpDialog() string {
+	h := m.listHeight()
+	if sidebarWidth(m.width) > 0 {
+		h += 2 // the boxed pane's own frame rows, which the dialog occupies too
 	}
-	return strings.Join(lines, "\n")
+
+	// Sized to its contents rather than to a number picked in advance: the
+	// groups are as wide as their keys happen to be, and a fixed width silently
+	// truncated whichever group grew past it.
+	avail := clampWidth(m.width) - boxChrome
+
+	var body []string
+	inner := 0
+	for _, g := range m.keys.FullHelp() {
+		line := m.theme.Help(g, avail)
+		if line == "" {
+			continue
+		}
+		body = append(body, line)
+		inner = max(inner, lipgloss.Width(line))
+	}
+	inner = min(max(inner, 40), avail)
+	body = append(body, "", m.theme.dim().Render("? or esc closes this"))
+
+	box := m.theme.Box(body, inner, min(len(body), max(h-2, 1)), true)
+
+	// Centred horizontally, and pushed down far enough to read as a dialog over
+	// the pane rather than as the pane itself having changed shape.
+	indent := strings.Repeat(" ", max((clampWidth(m.width)-inner-boxChrome)/2, 0))
+	out := make([]string, 0, h)
+	for i := 0; i < max((h-len(box))/2, 0); i++ {
+		out = append(out, "")
+	}
+	for _, l := range box {
+		out = append(out, indent+l)
+	}
+	for len(out) < h {
+		out = append(out, "")
+	}
+	return strings.Join(out[:h], "\n")
 }
 
 // status renders one status line, truncated with an ellipsis before styling so
@@ -143,12 +211,6 @@ func (m Model) status(kind StatusKind, text string) string {
 }
 
 func (m Model) statusLine() string {
-	// The scope question outranks every other line: it is a question, and the
-	// next keystroke answers it.
-	if m.pinPrompt {
-		return m.status(StatusWarn, m.pinPromptText())
-	}
-
 	switch m.phase {
 	case phaseScanning:
 		// Skipped images are logged while the scan is still running, so the
@@ -183,8 +245,14 @@ func (m Model) statusLine() string {
 // listHeight is how many terminal lines the pane may occupy: whatever the fixed
 // chrome leaves over. Deriving it this way is what keeps the frame exactly as
 // tall as the terminal however many lines the detail pane or expanded help take.
+// listHeight is how many list lines fit. When the frame is boxed, the two
+// border rows come out of it here rather than at the renderer, so scrolling and
+// drawing agree on the same number without either having to know about borders.
 func (m Model) listHeight() int {
 	h := m.viewHeight() - topChrome - len(m.bottomBlock())
+	if sidebarWidth(m.width) > 0 {
+		h -= 2
+	}
 	if h < 1 {
 		return 1
 	}
@@ -208,7 +276,7 @@ func (m Model) blockHeight(s string) int {
 
 func (m Model) listView() string {
 	if len(m.entries) == 0 {
-		return m.theme.Empty(m.emptyText(), m.width)
+		return m.theme.Empty(m.emptyText(), m.listWidth())
 	}
 
 	h := m.listHeight()
@@ -231,7 +299,7 @@ func (m Model) listView() string {
 	for i := offset; i < end; i++ {
 		e := m.entries[i]
 		if e.kind == entryHeader {
-			lines = append(lines, m.theme.GroupHeader(m.groupInfo(e.node, i == m.cursor), m.width))
+			lines = append(lines, m.theme.GroupHeader(m.groupInfo(e.node, i == m.cursor), m.listWidth()))
 			continue
 		}
 		// A row is indented one level past the compose file that owns it, so an
@@ -240,7 +308,7 @@ func (m Model) listView() string {
 		// that is left, which is how the header does it too — the cursor
 		// highlight therefore starts at the text rather than at the margin.
 		indent := strings.Repeat("  ", m.rowDepth(e))
-		lines = append(lines, indent+m.theme.RowLine(m.rows[e.row], i == m.cursor, m.width-len(indent)))
+		lines = append(lines, indent+m.theme.RowLine(m.rows[e.row], i == m.cursor, m.listWidth()-len(indent)))
 	}
 
 	return strings.Join(lines, "\n")

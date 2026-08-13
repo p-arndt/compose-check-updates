@@ -68,6 +68,22 @@ func (t Theme) Badge(level string) string {
 		Render(body)
 }
 
+// BadgeTight is the same chip without the fixed width. The padding in Badge
+// exists to keep the columns after it lined up in the list; nothing lines up
+// after a badge in the sidebar, where the trailing blanks only open a gap
+// before whatever follows.
+func (t Theme) BadgeTight(level string) string {
+	label := strings.ToUpper(strings.TrimSpace(level))
+	if label == "" {
+		label = "-"
+	}
+	return lipgloss.NewStyle().
+		Foreground(lipgloss.Color("235")).
+		Background(t.LevelColor(level)).
+		Bold(true).
+		Render(" " + label + " ")
+}
+
 // VersionDelta renders "current → latest" with only the version segments that
 // actually changed carrying the level colour, so the eye lands on the part of
 // the number that moved (the ncu trick the CLI logger uses).
@@ -149,6 +165,18 @@ func padRight(s string, w int) string {
 	return s
 }
 
+// padDisplay pads to a width the terminal will actually show. padRight counts
+// runes, which is right for plain text and wrong for anything styled: an escape
+// sequence is several runes and zero columns wide, so a coloured line comes out
+// short by however much styling it carries. Any layout that has to line two
+// columns up has to measure the rendered width instead.
+func padDisplay(s string, w int) string {
+	if n := w - lipgloss.Width(s); n > 0 {
+		return s + strings.Repeat(" ", n)
+	}
+	return s
+}
+
 // fit is the last line of defence: it trims already-styled output to width
 // without cutting escape sequences, guaranteeing the caller's layout invariant
 // even if a segment estimate was off.
@@ -196,36 +224,65 @@ func (t Theme) sideField(label, value string, width int) string {
 	return fit(l+lipgloss.NewStyle().Foreground(t.Text).Render(value), width)
 }
 
-// sideHeading introduces a group of choices, and marks it when it has the
-// keyboard: a focused group is the one the arrow keys are about to change, and
-// nothing else on the frame says so.
-func (t Theme) sideHeading(label string, focused bool) string {
-	if !focused {
-		return t.dim().Render(label)
+// boxChrome is what a box costs a caller in width: two border columns and the
+// one column of padding inside each of them, so text never touches the frame.
+const boxChrome = 4
+
+// Box frames a block of lines. The frame is the only thing on screen that says
+// which half the keyboard is talking to, so the focused box changes both colour
+// and weight: colour alone is easy to miss, and impossible to see at all on a
+// terminal that has been told not to use any.
+//
+// Both borders are one cell wide, so switching between them moves nothing.
+//
+// The returned lines are innerH+2 of them, each innerW+boxChrome wide, so a
+// caller can place two boxes side by side without measuring anything itself.
+func (t Theme) Box(content []string, innerW, innerH int, focused bool) []string {
+	colour, border := t.Dim, lipgloss.RoundedBorder()
+	if focused {
+		colour, border = t.Accent, lipgloss.ThickBorder()
 	}
-	return lipgloss.NewStyle().Foreground(t.Accent).Bold(true).Render("▸ " + label)
+
+	body := make([]string, innerH)
+	for i := range body {
+		line := ""
+		if i < len(content) {
+			line = content[i]
+		}
+		body[i] = padDisplay(fit(line, innerW), innerW)
+	}
+
+	rendered := lipgloss.NewStyle().
+		Border(border).
+		BorderForeground(colour).
+		Padding(0, 1).
+		Render(strings.Join(body, "\n"))
+
+	return strings.Split(rendered, "\n")
 }
 
-// sideChoice is one option in a group. The filled marker is the current value;
-// the hint is the extra word that makes the option mean something, such as the
-// file a scope would write.
-func (t Theme) sideChoice(label, hint string, selected bool, width int) string {
-	marker, name := "  ○ ", t.dim()
-	if selected {
-		marker = lipgloss.NewStyle().Foreground(t.Success).Render("  ● ")
-		name = lipgloss.NewStyle().Foreground(t.Text).Bold(true)
-	} else {
-		marker = t.dim().Render(marker)
+// sideValue is one editable field: a label, and its value between chevrons. The
+// chevrons are the affordance — they say the value steps sideways — and they
+// only light up on the field the arrow keys would actually change.
+//
+// The value arrives already styled, so a field can put a level badge where its
+// value goes and have it look like the same level does in the list. Restyling
+// it here would flatten the badge back into text.
+func (t Theme) sideValue(label, value string, focused bool, width int) string {
+	name := t.dim().Render(padRight(label, 8))
+	chevron := t.dim()
+	if focused {
+		name = lipgloss.NewStyle().Foreground(t.Accent).Bold(true).Render(padRight(label, 8))
+		chevron = lipgloss.NewStyle().Foreground(t.Accent)
 	}
+	return fit(name+chevron.Render("‹ ")+value+chevron.Render(" ›"), width)
+}
 
-	// Padded on the raw label rather than the styled one: the escape sequences
-	// count towards len but not towards the width the terminal shows.
-	line := marker + name.Render(label)
-	if pad := 9 - lipgloss.Width(label); pad > 0 {
-		line += strings.Repeat(" ", pad)
+// sideText styles a field value that is plain words rather than a badge.
+func (t Theme) sideText(s string, focused bool) string {
+	style := lipgloss.NewStyle().Foreground(t.Text)
+	if focused {
+		style = style.Bold(true)
 	}
-	if hint != "" {
-		line += t.dim().Render(hint)
-	}
-	return fit(line, width)
+	return style.Render(s)
 }

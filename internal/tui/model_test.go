@@ -658,20 +658,21 @@ func TestRowTargetCyclingStaysWithinAvailableTargets(t *testing.T) {
 	avail := m.currentRow().Update.AvailableTargets()
 	require.Equal(t, []string{"patch", "major"}, avail)
 
+	// The target is changed in the sidebar now, so the focus goes there first.
 	// Forward from major wraps to patch, skipping the minor level it has no
 	// release for.
-	m = feed(t, m, keyMsg("T"))
+	m.width = 200
+	m = feed(t, m, keyMsg("tab"), keyMsg("right"))
 	assert.Equal(t, "2.9.4", m.currentRow().Update.LatestTag)
 	assert.Equal(t, "patch", m.currentRow().Level)
 
-	m = feed(t, m, keyMsg("T"))
+	m = feed(t, m, keyMsg("right"))
 	assert.Equal(t, "3.7.8", m.currentRow().Update.LatestTag)
 	assert.Equal(t, "major", m.currentRow().Level)
 
-	// Backwards, too — and never onto a level the image does not have. The
-	// backwards key is B, not ←: the arrows now walk the directory tree.
+	// Backwards, too — and never onto a level the image does not have.
 	for i := 0; i < 5; i++ {
-		m = feed(t, m, keyMsg("B"))
+		m = feed(t, m, keyMsg("left"))
 		require.Contains(t, avail, string(m.currentRow().Target))
 		require.False(t, m.currentRow().NoTarget)
 	}
@@ -688,7 +689,8 @@ func TestRowTargetCyclingRecoversARowWithNoGlobalTarget(t *testing.T) {
 
 	// Per-image control is the point of the feature: the row can be pointed back
 	// at the only level it actually has.
-	m = feed(t, m, keyMsg("j"), keyMsg("T"))
+	m.width = 200
+	m = feed(t, m, keyMsg("j"), keyMsg("tab"), keyMsg("right"))
 	assert.False(t, m.rows[0].NoTarget)
 	assert.Equal(t, TargetMajor, m.rows[0].Target)
 	assert.Equal(t, "16", m.rows[0].Update.LatestTag)
@@ -703,7 +705,8 @@ func TestRowTargetIsANoopForDigestOnlyRows(t *testing.T) {
 	m = feed(t, m, ev)
 
 	// No levels to choose between: the row must survive both keys unchanged.
-	m = feed(t, m, keyMsg("j"), keyMsg("t"), keyMsg("T"))
+	m.width = 200
+	m = feed(t, m, keyMsg("j"), keyMsg("t"), keyMsg("tab"), keyMsg("right"))
 	assert.False(t, m.rows[0].NoTarget)
 	assert.Equal(t, "digest", m.rows[0].Level)
 	assert.Equal(t, "latest", m.rows[0].Update.LatestTag)
@@ -764,11 +767,11 @@ func TestFooterIsPinnedToTheLastRow(t *testing.T) {
 	lines := strings.Split(m.View(), "\n")
 	require.Len(t, lines, 40)
 
-	// The hints are the final row, the legend the one above it, and the space
-	// between them and the list is padding rather than dead space at the bottom.
+	// The hints are the final row and the legend the one above it, however tall
+	// the terminal is: the frame pads between the boxes and the bottom chrome
+	// rather than letting the chrome float in the middle of the screen.
 	assert.Contains(t, plainText(lines[39]), "q quit")
 	assert.Contains(t, plainText(lines[38]), "target")
-	assert.Equal(t, "", strings.TrimSpace(plainText(lines[30])))
 }
 
 // Two bindings answering the same key in the same phase means one of them
@@ -781,8 +784,7 @@ func TestNoKeyIsBoundTwiceInTheBrowsingPhase(t *testing.T) {
 		"selectAll": {k.SelectAll}, "selectNone": {k.SelectNone},
 		"toggleGroup": {k.ToggleGroup}, "collapseAll": {k.CollapseAll}, "expandAll": {k.ExpandAll},
 		"collapse": {k.Collapse}, "expand": {k.Expand},
-		"filter": {k.Filter}, "target": {k.Target}, "rowNext": {k.RowNext}, "rowPrev": {k.RowPrev},
-		"detail": {k.Detail}, "issues": {k.Issues},
+		"filter": {k.Filter}, "target": {k.Target}, "focus": {k.Focus}, "issues": {k.Issues},
 		"apply": {k.Apply}, "applyRow": {k.ApplyRow}, "help": {k.Help}, "quit": {k.Quit},
 	}
 
@@ -803,13 +805,12 @@ func TestNoKeyIsBoundTwiceInTheBrowsingPhase(t *testing.T) {
 	assert.Equal(t, []string{"E"}, k.ExpandAll.Keys())
 	assert.Equal(t, []string{"i"}, k.Issues.Keys())
 
-	// ←/h and →/l walk the tree, so the per-row target keys had to move off them:
-	// a directory tree with no horizontal navigation would be the odd one out
-	// among every file browser the user already knows.
+	// ←/h and →/l walk the tree while the list has the focus, which is the only
+	// place this test's uniqueness rule applies: ValueNext/ValuePrev share those
+	// keys deliberately, and are read only once the sidebar has taken over.
 	assert.Equal(t, []string{"left", "h"}, k.Collapse.Keys())
 	assert.Equal(t, []string{"right", "l"}, k.Expand.Keys())
-	assert.NotContains(t, k.RowNext.Keys(), "right")
-	assert.NotContains(t, k.RowPrev.Keys(), "left")
+	assert.Contains(t, k.Focus.Keys(), "tab")
 
 	// The two write keys are the whole point of the rebinding: enter toggles and
 	// nothing else, and `a`/`A` are separate keys with separate meanings.
@@ -847,20 +848,41 @@ func TestKeyHintFooterIsAlwaysVisible(t *testing.T) {
 	assert.Contains(t, v, "u apply row")
 	assert.Contains(t, v, "? help")
 
-	// ? expands the one-liner into the grouped listing rather than revealing it.
+	// ? opens the grouped listing as a dialog over the pane.
 	exp := feed(t, m, keyMsg("?"))
 	require.True(t, exp.showHelp)
 	ev := plainText(exp.View())
 	assert.Contains(t, ev, "C collapse all")
 	assert.Contains(t, ev, "E expand all")
 	assert.Contains(t, ev, "z fold node", "z still folds; only the footer dropped it")
-	assert.Greater(t, exp.blockHeight(exp.expandedHelp()), 1, "the expanded help is multi-line")
+	assert.Greater(t, exp.blockHeight(exp.helpDialog()), 1, "the help dialog is multi-line")
+	assert.Contains(t, ev, "closes this", "a dialog has to say how to leave it")
 
 	// Both forms are budgeted for: the list never spills past its window.
 	for _, mm := range []Model{m, exp} {
 		assert.LessOrEqual(t, len(strings.Split(mm.listView(), "\n")), mm.listHeight())
 		assert.LessOrEqual(t, mm.blockHeight(mm.View()), mm.height)
 	}
+}
+
+// The dialog covers the pane, so a key that would act on a row it is hiding has
+// to be inert until it is closed — and esc has to close it rather than quit the
+// program behind it.
+func TestHelpDialogOwnsTheKeyboardUntilItIsClosed(t *testing.T) {
+	m := newTestModel()
+	m = feed(t, m, updateEvent("a/compose.yml", "caddy", "2.7", "2.8", "minor"))
+	m.width, m.height = 200, 30
+	m = moveToRow(t, m)
+
+	open := feed(t, m, keyMsg("?"))
+	require.True(t, open.showHelp)
+
+	blocked := feed(t, open, keyMsg(" "))
+	assert.False(t, blocked.currentRow().Selected, "space must not reach a row the dialog is covering")
+	assert.True(t, blocked.showHelp)
+
+	assert.False(t, feed(t, open, keyMsg("esc")).showHelp, "esc closes the dialog")
+	assert.False(t, feed(t, open, keyMsg("?")).showHelp, "? toggles it shut again")
 }
 
 func TestHintFooterIsContextualPerPhase(t *testing.T) {
@@ -1096,108 +1118,232 @@ func moveToRow(t *testing.T, m Model) Model {
 	return m
 }
 
-func TestPinKeyAsksForScopeOnARowAndDoesNothingOnAHeader(t *testing.T) {
+// pinModel parks the cursor on a row and gives the sidebar room to render, so a
+// test can tab across to it the way a user would.
+func sidebarModel(t *testing.T) (Model, *capRecorder) {
+	t.Helper()
 	m, rec := pinModel(t)
 	m.width = 200
-
-	// The top of the list is a tree header, which has no image to cap.
-	header := feed(t, m, keyMsg("home"))
-	require.Nil(t, header.currentRow())
-	header = feed(t, header, keyMsg("p"))
-	assert.False(t, header.pinPrompt)
-	assert.Empty(t, rec.writes)
-
-	m = feed(t, m, keyMsg("p"))
-	require.True(t, m.pinPrompt)
-	assert.Contains(t, plainText(m.statusLine()),
-		"save cap major for library/traefik? (p)roject  (g)lobal  (esc) cancel")
-	// The footer must name the only keys the question reads.
-	assert.Equal(t, m.keys.PinHints(), m.hintBindings())
-	v := plainText(m.View())
-	assert.Contains(t, v, "p project")
-	assert.Contains(t, v, "g global")
-	assert.NotContains(t, v, "A apply selected")
+	return m, rec
 }
 
-func TestPinPromptIgnoresUnrelatedKeys(t *testing.T) {
-	m, rec := pinModel(t)
-	m = feed(t, m, keyMsg(" ")) // arm a selection so A would have something to do
-	require.True(t, m.currentRow().Selected)
+func TestTabMovesFocusToTheSidebarAndBack(t *testing.T) {
+	m, _ := sidebarModel(t)
+	require.Equal(t, focusList, m.focus)
 
-	m = feed(t, m, keyMsg("p"), keyMsg("A"))
-	assert.NotEqual(t, phaseApplying, m.phase, "apply must not fire out from under the question")
-	assert.False(t, m.pinPrompt, "a key that is not an answer cancels rather than writing")
-	assert.Empty(t, rec.writes)
+	m = feed(t, m, keyMsg("tab"))
+	assert.Equal(t, focusSide, m.focus, "tab on a row hands the keyboard to the sidebar")
+
+	m = feed(t, m, keyMsg("tab"))
+	assert.Equal(t, focusList, m.focus, "tab again gives it back")
 }
 
-func TestPinAnswersRecordTheChosenScopeAndLevel(t *testing.T) {
-	m, rec := pinModel(t)
+// A header describes no image, so there is nothing beside it to focus. Tabbing
+// there has to stay in the list rather than move onto a column showing nothing.
+func TestTabOnAHeaderKeepsTheFocusInTheList(t *testing.T) {
+	m, _ := sidebarModel(t)
+	m.cursor = 0
+	require.Nil(t, m.currentRow(), "this test needs the cursor on a header")
 
-	// Point the row at its minor release first: the pin saves what the row reads.
-	m = feed(t, m, keyMsg("T"))
-	for m.currentRow().Target != TargetMinor {
-		m = feed(t, m, keyMsg("T"))
-	}
-	require.Equal(t, "minor", m.currentRow().Target.Label())
+	m = feed(t, m, keyMsg("tab"))
+	assert.Equal(t, focusList, m.focus)
+}
 
-	m = feed(t, m, keyMsg("p"), keyMsg("p"))
-	assert.False(t, m.pinPrompt)
-	assert.Equal(t, []capWrite{{pinProject, "library/traefik", config.LevelMinor}}, rec.writes)
+// A terminal too narrow for two columns has no sidebar to focus, and tab must
+// not put the keyboard somewhere the user cannot see.
+func TestTabDoesNothingWhenTheSidebarIsTooNarrowToDraw(t *testing.T) {
+	m, _ := sidebarModel(t)
+	m.width = sidebarMinTotal - 1
+	require.Zero(t, sidebarWidth(m.width))
+
+	m = feed(t, m, keyMsg("tab"))
+	assert.Equal(t, focusList, m.focus)
+}
+
+// With no cap set there is no scope to choose, so the field is not drawn and
+// must not be stopped on: a cursor on a line the user cannot see reads as a
+// dead keypress.
+func TestSidebarSkipsTheScopeFieldUntilACapExists(t *testing.T) {
+	m, _ := sidebarModel(t)
+	m = feed(t, m, keyMsg("tab"))
+	require.Equal(t, fieldTarget, m.sideField)
+
+	m = feed(t, m, keyMsg("j"))
+	assert.Equal(t, fieldCap, m.sideField)
+
+	m = feed(t, m, keyMsg("j"))
+	assert.Equal(t, fieldTarget, m.sideField, "the scope field is skipped while there is no cap")
+
+	m = feed(t, m, keyMsg("k"))
+	assert.Equal(t, fieldCap, m.sideField)
+}
+
+func TestSidebarReachesTheScopeFieldOnceACapIsSet(t *testing.T) {
+	m, _ := sidebarModel(t)
+	m = feed(t, m, keyMsg("tab"), keyMsg("j"), keyMsg("right"))
+	require.NotEmpty(t, m.currentRow().Pin, "the cap should be set now")
+
+	m = feed(t, m, keyMsg("j"))
+	assert.Equal(t, fieldScope, m.sideField)
+}
+
+func TestSidebarTargetFieldRetargetsTheRow(t *testing.T) {
+	m, rec := sidebarModel(t)
+	m = feed(t, m, keyMsg("tab"))
+	before := m.currentRow().Update.LatestTag
+
+	m = feed(t, m, keyMsg("right"))
+	assert.NotEqual(t, before, m.currentRow().Update.LatestTag, "→ on the target field picks another release")
+	assert.Empty(t, rec.writes, "changing the target alone writes nothing to disk")
+}
+
+// The cap names its own level. Reading it off the target field is what made the
+// two fields impossible to tell apart, so the first step from "off" is the
+// lowest level and never whatever the target happens to show.
+func TestSidebarCapFieldStepsThroughLevelsIndependentOfTheTarget(t *testing.T) {
+	m, rec := sidebarModel(t)
+	m = feed(t, m, keyMsg("tab"))
+	require.Equal(t, TargetMajor, m.currentRow().Target, "this test needs the target on major")
+
+	m = feed(t, m, keyMsg("j"), keyMsg("right"))
+	require.Len(t, rec.writes, 1)
+	assert.Equal(t, config.LevelPatch, rec.writes[0].level, "first step off is patch, not the target's major")
+	assert.Equal(t, pinProject, rec.writes[0].scope, "a new cap goes to the narrower file")
+	assert.Equal(t, "library/traefik", rec.writes[0].image)
 	assert.Equal(t, StatusSuccess, m.statusKind)
-	assert.Contains(t, plainText(m.statusLine()), "library/traefik capped at minor (project)")
 
-	// The same answer given as `g` writes the other scope.
-	g, rec := pinModel(t)
-	g = feed(t, g, keyMsg("p"), keyMsg("g"))
-	assert.Equal(t, []capWrite{{pinGlobal, "library/traefik", config.LevelMajor}}, rec.writes)
-	assert.Contains(t, plainText(g.statusLine()), "library/traefik capped at major (global)")
+	m = feed(t, m, keyMsg("right"))
+	assert.Equal(t, config.LevelMinor, rec.writes[len(rec.writes)-1].level)
+
+	// Nothing in semver sits above major, so capping at it would say exactly what
+	// no cap says. The cycle wraps back to off instead of offering a no-op.
+	m = feed(t, m, keyMsg("right"))
+	assert.Equal(t, config.Level(""), rec.writes[len(rec.writes)-1].level)
 }
 
-func TestPinPromptCancelledByEscWritesNothing(t *testing.T) {
-	m, rec := pinModel(t)
+// Major is not a no-op in one case: the project file overrides the global one,
+// so a project cap of major is how a project lifts a global ceiling. It is
+// offered exactly when it would mean that, and not otherwise.
+func TestCapOffersMajorOnlyToLiftAGlobalCap(t *testing.T) {
+	m, _ := sidebarModel(t)
+	assert.NotContains(t, m.capChoicesFor("library/traefik"), config.LevelMajor,
+		"with no global cap, major would say the same as off")
 
-	m = feed(t, m, keyMsg("p"))
-	require.True(t, m.pinPrompt)
-
-	m = feed(t, m, tea.KeyMsg{Type: tea.KeyEsc})
-	assert.False(t, m.pinPrompt)
-	assert.NotEqual(t, phaseDone, m.phase, "esc answers the question, it does not quit")
-	assert.Empty(t, rec.writes)
-	assert.Equal(t, m.keys.BrowseHints(), m.hintBindings())
+	m = m.WithPins(
+		config.Config{},
+		config.Config{Images: map[string]config.ImagePolicy{"library/traefik": {Max: config.LevelMinor}}},
+	)
+	assert.Contains(t, m.capChoicesFor("library/traefik"), config.LevelMajor,
+		"with a global cap in force, major is how the project lifts it")
 }
 
-func TestPinOnAnAlreadyCappedImageClearsThatScope(t *testing.T) {
-	rec := &capRecorder{}
-	m := newTestModel()
-	m.setCap = rec.set
-	m = m.WithPins(config.Config{Images: map[string]config.ImagePolicy{
-		"library/traefik": {Max: config.LevelPatch},
-	}}, config.Config{})
-	m = feed(t, m, levelEvent("library/traefik", "v2.9.3", "2.9.4", "2.11.0", "3.7.8"))
-	m = moveToRow(t, m)
-	require.Equal(t, config.LevelPatch, m.currentRow().Pin)
+// A cap is a ceiling on the image, so it has to bind the selection too —
+// otherwise `A` would write exactly the release the user just forbade.
+func TestSettingACapPullsTheTargetDownToIt(t *testing.T) {
+	m, _ := sidebarModel(t)
+	m = feed(t, m, keyMsg("tab"))
+	require.Equal(t, TargetMajor, m.currentRow().Target)
 
-	// Project already holds a cap, so the answer removes it…
-	m = feed(t, m, keyMsg("p"), keyMsg("p"))
-	assert.Equal(t, []capWrite{{pinProject, "library/traefik", config.Level("")}}, rec.writes)
-	assert.Contains(t, plainText(m.statusLine()), "library/traefik cap removed (project)")
-	assert.Equal(t, config.Level(""), m.currentRow().Pin, "the row stops advertising a cap it no longer has")
+	m = feed(t, m, keyMsg("j"), keyMsg("right")) // cap -> patch
+	assert.Equal(t, TargetPatch, m.currentRow().Target)
+	assert.Equal(t, "2.9.4", m.currentRow().Update.LatestTag)
+}
 
-	// …while the global scope, which never had one, is still a set.
+func TestSidebarScopeFieldMovesAnExistingCap(t *testing.T) {
+	m, rec := sidebarModel(t)
+	m = feed(t, m, keyMsg("tab"), keyMsg("j"), keyMsg("right")) // cap on, project
+	m = feed(t, m, keyMsg("j"))                                 // onto the scope field
+	require.Equal(t, fieldScope, m.sideField)
+
 	rec.writes = nil
-	m = feed(t, m, keyMsg("p"), keyMsg("g"))
-	assert.Equal(t, []capWrite{{pinGlobal, "library/traefik", config.LevelMajor}}, rec.writes)
-	assert.Equal(t, config.LevelMajor, m.currentRow().Pin)
+	m = feed(t, m, keyMsg("right"))
+
+	// Cleared where it was before being written where it is going, so the image
+	// is never capped in two files at once.
+	require.GreaterOrEqual(t, len(rec.writes), 2)
+	assert.Equal(t, pinProject, rec.writes[0].scope)
+	assert.Equal(t, config.Level(""), rec.writes[0].level)
+	last := rec.writes[len(rec.writes)-1]
+	assert.Equal(t, pinGlobal, last.scope)
+	assert.Equal(t, config.LevelPatch, last.level)
 }
 
-func TestPinWriteFailureIsAStatusErrorAndClosesThePrompt(t *testing.T) {
-	m, rec := pinModel(t)
+func TestSidebarCapCyclesBackToOff(t *testing.T) {
+	m, rec := sidebarModel(t)
+	m = feed(t, m, keyMsg("tab"), keyMsg("j"))
+
+	m = feed(t, m, keyMsg("right"))
+	require.NotEmpty(t, m.currentRow().Pin, "the row should now be capped")
+
+	m = feed(t, m, keyMsg("left"))
+	assert.Empty(t, m.currentRow().Pin, "stepping back off the levels stops capping")
+	last := rec.writes[len(rec.writes)-1]
+	assert.Equal(t, config.Level(""), last.level)
+}
+
+func TestSidebarCapWriteFailureIsAStatusError(t *testing.T) {
+	m, rec := sidebarModel(t)
 	rec.err = errors.New("permission denied writing .ccu.yaml")
 
-	m = feed(t, m, keyMsg("p"), keyMsg("p"))
-	assert.False(t, m.pinPrompt, "a failed write must not leave the question on screen")
+	m = feed(t, m, keyMsg("tab"), keyMsg("j"), keyMsg("right"))
+
 	assert.Equal(t, StatusError, m.statusKind)
 	assert.Contains(t, plainText(m.statusLine()), "permission denied writing .ccu.yaml")
-	// Nothing was recorded, so the next press is still a set rather than a clear.
-	assert.Equal(t, config.Level(""), m.currentRow().Pin)
+	assert.Empty(t, m.currentRow().Pin, "a failed write must not leave the row looking capped")
+}
+
+// The sidebar claims only the keys it needs. A key it does not claim has to
+// reach the list, or tabbing across would trap the user in a mode.
+func TestSidebarPassesUnclaimedKeysToTheList(t *testing.T) {
+	m, _ := sidebarModel(t)
+	m = feed(t, m, keyMsg("tab"))
+	before := m.currentRow().Selected
+
+	m = feed(t, m, keyMsg(" "))
+	assert.NotEqual(t, before, m.currentRow().Selected, "space still selects while the sidebar has the focus")
+}
+
+// The footer has to advertise the keys that actually work right now. While the
+// sidebar holds the keyboard, that is its own set and not the browsing one.
+func TestSidebarFocusSwapsTheFooterHints(t *testing.T) {
+	m, _ := sidebarModel(t)
+	assert.Equal(t, m.keys.BrowseHints(), m.hintBindings())
+
+	m = feed(t, m, keyMsg("tab"))
+	assert.Equal(t, m.keys.SideHints(), m.hintBindings())
+}
+
+func TestSidebarRendersTheCurrentImage(t *testing.T) {
+	m, _ := sidebarModel(t)
+	out := plainText(strings.Join(m.sidebarLines(sidebarWidth(m.width)-boxChrome, 20), "\n"))
+
+	assert.Contains(t, out, "library/traefik")
+	assert.Contains(t, out, "target")
+	assert.Contains(t, out, "cap")
+	assert.Contains(t, out, "off", "an uncapped image reads as cap off")
+	assert.NotContains(t, out, "save to", "the scope has nothing to answer until a cap exists")
+
+	// The value the arrow keys would change is between chevrons, which is the
+	// only thing on the frame saying the field is editable at all.
+	assert.Contains(t, out, "‹")
+	assert.Contains(t, out, "›")
+}
+
+// The panel says how to reach it only while the list still has the keyboard;
+// once the sidebar holds it, the footer names the same keys.
+func TestSidebarHintOnlyShowsWhileTheListHasFocus(t *testing.T) {
+	m, _ := sidebarModel(t)
+	assert.Contains(t, plainText(strings.Join(m.sidebarLines(40, 20), "\n")), "tab to change")
+
+	m = feed(t, m, keyMsg("tab"))
+	assert.NotContains(t, plainText(strings.Join(m.sidebarLines(40, 20), "\n")), "tab to change")
+}
+
+func TestHelpDialogSwapsTheFooterHints(t *testing.T) {
+	m := newTestModel()
+	m = feed(t, m, updateEvent("a/compose.yml", "caddy", "2.7", "2.8", "minor"))
+	m.width, m.height = 200, 30
+
+	assert.Equal(t, m.keys.BrowseHints(), m.hintBindings())
+	assert.Equal(t, m.keys.HelpHints(), feed(t, m, keyMsg("?")).hintBindings())
 }

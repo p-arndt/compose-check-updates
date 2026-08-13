@@ -330,3 +330,119 @@ func TestRowLineMarksAPinnedImage(t *testing.T) {
 	nt.Pin = config.LevelPatch
 	assert.Contains(t, plain(th.RowLine(nt, false, 120)), "[pin patch]")
 }
+
+// A styled line is several runes wider than it is columns wide, so measuring it
+// with len() under-pads it by however much colour it carries — which used to
+// bend the divider into a ragged edge that moved per row. Boxed, the same bug
+// shows up as a right-hand frame that does not close: every pane line has to
+// render to one width, with the second box starting on one column.
+func TestPaneColumnsLineUpRegardlessOfStyling(t *testing.T) {
+	for _, width := range []int{96, 118, 160, 240} {
+		m := newTestModel()
+		m = feed(t, m,
+			levelEvent("alpine", "3.16", "3.16.9", "3.24.1", ""),
+			levelEvent("library/traefik", "v2.9.3", "2.9.4", "2.11.5", "3.7.10"),
+			levelEvent("redis", "7.0.0", "7.0.5", "7.2.0", "8.10"),
+		)
+		m.width, m.height = width, 20
+		m = feed(t, m, keyMsg("j"), keyMsg("j"))
+
+		require.NotZero(t, sidebarWidth(width), "width %d should draw two columns", width)
+
+		lines := strings.Split(m.paneView(), "\n")
+		require.Greater(t, len(lines), 3)
+
+		// Where the second box has to start, computed rather than discovered: the
+		// left box's content, its frame, and the gutter between them. Counted in
+		// runes because a box-drawing glyph is three bytes and one column, so a
+		// byte offset would report a frame that never moved as ragged.
+		want := m.listWidth() + boxChrome + sidebarGutter
+
+		for i, line := range lines {
+			runes := []rune(plainText(line))
+			require.Greater(t, len(runes), want, "width %d line %d: line too short to hold the second box", width, i)
+			assert.Contains(t, "╭│╰┏┃┗", string(runes[want]),
+				"width %d line %d: the right box moved — %q", width, i, string(runes))
+			assert.Equal(t, lipgloss.Width(lines[0]), lipgloss.Width(line),
+				"width %d line %d: pane lines must all render to one width", width, i)
+		}
+	}
+}
+
+// The cap and target values carry the same coloured chip the row carries in the
+// list: the level being set and the level being shown are one thing, and two
+// different renderings of it read as two different concepts.
+func TestSidebarValuesUseLevelBadges(t *testing.T) {
+	m, _ := sidebarModel(t)
+	m = feed(t, m, keyMsg("tab"), keyMsg("j"), keyMsg("right")) // cap -> patch
+
+	side := strings.Join(m.sidebarLines(sidebarWidth(m.width)-boxChrome, 20), "\n")
+
+	assert.Contains(t, side, m.theme.BadgeTight("patch"), "the cap value should render as a level badge")
+	assert.NotContains(t, plainText(side), "never above patch",
+		"the level belongs in the badge, not repeated as plain text")
+
+	// Tight rather than the list's fixed-width chip: nothing lines up after a
+	// badge here, so the padding would only open a gap before the closing
+	// chevron. Measured, because the padded chip is a prefix-plus-space away
+	// from the tight one and a substring check cannot tell them apart.
+	assert.Less(t, lipgloss.Width(m.theme.BadgeTight("patch")), badgeWidth)
+}
+
+// Colour alone is easy to miss, and invisible on a terminal told not to use
+// any, so the focused box changes weight too. Both borders are one cell wide,
+// so the swap must not move anything either.
+func TestFocusedBoxIsDrawnHeavierThanTheUnfocusedOne(t *testing.T) {
+	th := DefaultTheme()
+
+	focused := th.Box([]string{"x"}, 10, 1, true)
+	unfocused := th.Box([]string{"x"}, 10, 1, false)
+
+	assert.NotEqual(t, plainText(unfocused[0]), plainText(focused[0]),
+		"the two states must be distinguishable without colour")
+	assert.Contains(t, plainText(focused[0]), "┏")
+	assert.Contains(t, plainText(unfocused[0]), "╭")
+
+	require.Len(t, focused, len(unfocused))
+	for i := range focused {
+		assert.Equal(t, lipgloss.Width(unfocused[i]), lipgloss.Width(focused[i]),
+			"line %d: focus must not change the box's geometry", i)
+	}
+}
+
+// A terminal too short for everything must keep what can be changed and drop
+// what is only context: a sidebar that hid the cap field would put the setting
+// out of reach with nothing on screen to say so.
+func TestSidebarKeepsItsFieldsWhenSpaceRunsOut(t *testing.T) {
+	m, _ := sidebarModel(t)
+	m = feed(t, m, keyMsg("tab"), keyMsg("j"), keyMsg("right")) // a cap, so all four lines exist
+
+	width := sidebarWidth(m.width) - boxChrome
+
+	full := plainText(strings.Join(m.sidebarLines(width, 20), "\n"))
+	require.Contains(t, full, "now ", "the path line is there when there is room")
+
+	tight := plainText(strings.Join(m.sidebarLines(width, 4), "\n"))
+	assert.Contains(t, tight, "library/traefik")
+	assert.Contains(t, tight, "target")
+	assert.Contains(t, tight, "cap")
+	assert.Contains(t, tight, "save to")
+	assert.NotContains(t, tight, "now ", "context is what gives way, not the fields")
+}
+
+// The chevrons are what say a value can be stepped. A path that pushed the
+// closing one off the line would make the field look broken rather than
+// abbreviated, so the path is dropped instead.
+func TestSidebarScopeDropsThePathRatherThanTheChevron(t *testing.T) {
+	m, _ := sidebarModel(t)
+	m = feed(t, m, keyMsg("tab"), keyMsg("j"), keyMsg("right"))
+
+	// From the narrowest column the layout can actually produce upwards: the
+	// sidebar is only drawn at all past sidebarMinTotal, and fit refuses to
+	// clamp below minWidth, so anything narrower is a width no run reaches.
+	for _, width := range []int{sidebarWidth(sidebarMinTotal) - boxChrome, 28, 31, 40} {
+		line := plainText(m.theme.sideValue("save to", m.scopeValue(m.currentRow(), width), true, width))
+		assert.Contains(t, line, "›", "width %d: the closing chevron must survive — %q", width, line)
+		assert.LessOrEqual(t, lipgloss.Width(line), width, "width %d", width)
+	}
+}
