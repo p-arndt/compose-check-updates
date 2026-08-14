@@ -454,12 +454,21 @@ func (m Model) handleRestartKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // through to the list, so the sidebar never becomes a mode the user is stuck in.
 func (m Model) handleSideKey(msg tea.KeyMsg) (bool, tea.Model, tea.Cmd) {
 	switch {
-	case key.Matches(msg, m.keys.FocusBack), key.Matches(msg, m.keys.FocusPrev),
-		key.Matches(msg, m.keys.Collapse):
+	case key.Matches(msg, m.keys.FocusBack), key.Matches(msg, m.keys.FocusPrev):
 		m.focus = focusList
 		return true, m, nil
 	case key.Matches(msg, m.keys.Bar):
 		m.openBar()
+		return true, m, nil
+	// ←/→ step the options of the field under the cursor rather than closing the
+	// column. A column of settings is walked along, not folded, and tab/esc is
+	// the way out of every pane anyway — so the arrows are free to do the one
+	// thing the fields need.
+	case key.Matches(msg, m.keys.SidePrev):
+		m.cycleSideValue(-1)
+		return true, m, nil
+	case key.Matches(msg, m.keys.SideNext):
+		m.cycleSideValue(1)
 		return true, m, nil
 	case key.Matches(msg, m.keys.Up):
 		m.sideField = m.stepField(-1)

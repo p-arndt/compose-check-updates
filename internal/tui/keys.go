@@ -25,8 +25,9 @@ type KeyMap struct {
 	// Fold keys. The list is a directory tree, so ←/h and →/l carry the meaning
 	// every tree in every file browser gives them: collapse-or-go-to-parent,
 	// expand-or-step-into-child. On a row, which has nothing to expand, →/l opens
-	// the detail column instead and ←/h closes it — the same gesture one level
-	// out. z/C/E stay as the keyboard-only shortcuts.
+	// the detail column instead. Inside the column they no longer close it —
+	// there they step the options — so the way out is tab/esc alone.
+	// z/C/E stay as the keyboard-only shortcuts.
 	ToggleGroup key.Binding
 	Collapse    key.Binding
 	Expand      key.Binding
@@ -40,19 +41,23 @@ type KeyMap struct {
 	Filter      key.Binding
 	Target      key.Binding
 	// Three places can hold the keyboard: the list, the bar above it and the
-	// detail column beside it. Focus/FocusPrev/Bar reach them, FocusBack leaves
-	// the column, and each place is left in the direction it sits from the list.
+	// detail column beside it. Focus/FocusPrev/Bar reach them, and FocusBack —
+	// tab/esc — is the way out of the column, the arrows there being spent on
+	// the options of the field under the cursor.
 	Focus     key.Binding
 	FocusPrev key.Binding
 	FocusBack key.Binding
 	Bar       key.Binding
 	// ValueNext/ValuePrev act on whatever has the focus; BarNext/BarPrev move
-	// along the bar. Movement and change are separate keys everywhere, which is
-	// the rule the whole arrangement rests on.
+	// along the bar. SideNext/SidePrev are the same change one pane over: in the
+	// detail column the arrows step the options of the field under the cursor,
+	// because a column of settings is a thing one walks along, not a tree.
 	ValueNext key.Binding
 	ValuePrev key.Binding
 	BarNext   key.Binding
 	BarPrev   key.Binding
+	SideNext  key.Binding
+	SidePrev  key.Binding
 	// Apply writes the selection; ApplyRow writes only the row under the cursor.
 	// Both are deliberately off enter: enter is a reflex key, and a reflex key
 	// must not rewrite compose files. The one exception is the bar's apply
@@ -116,6 +121,14 @@ func DefaultKeyMap() KeyMap {
 		// pane and edits in another is the confusion this rule exists to end.
 		BarNext: key.NewBinding(key.WithKeys("right", "l"), key.WithHelp("→", "next stop")),
 		BarPrev: key.NewBinding(key.WithKeys("left", "h"), key.WithHelp("←", "previous stop")),
+
+		// In the detail column the same two arrows step the options of the field
+		// under the cursor. Nothing else there is a tree, so nothing is lost by
+		// it, and stepping a setting with ←/→ is what every settings list does.
+		// Leaving the column is tab/esc, which is the one gesture that means
+		// "give the keyboard back" in every pane.
+		SideNext: key.NewBinding(key.WithKeys("right", "l"), key.WithHelp("→/l", "next option")),
+		SidePrev: key.NewBinding(key.WithKeys("left", "h"), key.WithHelp("←/h", "previous option")),
 
 		// Shift-a pairs with `a` (select all) and stays clear of every taken key;
 		// `u` reads as "update this one" and is the only free letter near it.
@@ -204,7 +217,7 @@ func (k KeyMap) ApplyHints() []key.Binding { return []key.Binding{k.Quit} }
 // with the way out, because a column that has taken the keyboard has to say how
 // to give it back.
 func (k KeyMap) SideHints() []key.Binding {
-	return []key.Binding{k.Collapse, k.Up, k.Down, k.ValueNext, k.ValuePrev, k.Quit}
+	return []key.Binding{k.FocusBack, k.Up, k.Down, k.SidePrev, k.SideNext, k.Quit}
 }
 
 // HelpHints are the only keys the help dialog reads. A footer advertising the
@@ -291,11 +304,10 @@ func (k KeyMap) HelpSections() []HelpSection {
 			helpPair("move between the bar's stops", k.BarPrev, k.BarNext),
 			helpEntry(k.FocusPrev),
 			helpPair("move between the column's fields", k.Up, k.Down),
+			helpPair("step the options of the column's field", k.SidePrev, k.SideNext),
 			helpPair("change the setting under the cursor", k.ValueNext, k.ValuePrev),
-			// Each pane leaves in the direction it sits from the list. That is the
-			// whole rule, and it is worth spelling out rather than leaving to be
-			// discovered once per pane.
-			{Keys: k.Collapse.Help().Key, Desc: "out of the column (it is to the right)"},
+			// The bar still leaves in the direction it sits from the list; the
+			// column does not, because its arrows are spent on its options.
 			{Keys: k.Down.Help().Key, Desc: "off the bar (it is above)"},
 			{Keys: k.Up.Help().Key, Desc: "onto the bar, from the top of the list"},
 			helpEntry(k.FocusBack),

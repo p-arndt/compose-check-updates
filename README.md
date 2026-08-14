@@ -98,15 +98,17 @@ Each stop also names the key that does the same thing, so the bar teaches the
 shortcut rather than replacing it.
 
 `tab` answers one question: what is the cursor on? On an image it opens the
-detail column beside the list, and `tab` there comes straight back. On a file or
+detail column beside the list, and `tab` (or `esc`) there comes straight back. On a file or
 directory header — which describes no image — it goes up to the bar instead.
 
-`→`/`l` and `←`/`h` are navigation: on an image, right opens the detail column
-and left closes it again; on a header they walk the tree. On the bar they move
-between stops. Each pane leaves in the direction it sits from the list — the
-column is to its right, so `←` leaves it; the bar is above it, so `↓` does — and
-`↑` at the top of the list goes back up onto it. `esc` works from either, and
-only ever means "back": quitting is `q`, never `esc`.
+`→`/`l` and `←`/`h` follow the pane they are pressed in: on a header they walk
+the tree, on an image right opens the detail column, on the bar they move between
+stops, and **inside the detail column they step the options of the field under
+the cursor** — `↑`/`↓` pick the field, `←`/`→` pick its value. The column is
+therefore left with `tab` or `esc` rather than with `←`. The bar still sits above
+the list, so `↓` leaves it and `↑` at the top of the list goes back up onto it.
+`esc` works from either, and only ever means "back": quitting is `q`, never
+`esc`.
 
 `m` is the bar's own key: it reaches the bar from anywhere, and each further
 press moves one stop along.
@@ -127,7 +129,7 @@ affected Compose files should be restarted with `docker compose up -d`.
 | ------------------ | ------------------------------------------------- |
 | `↑`/`↓` or `k`/`j` | Move the cursor. At the top of the list, `↑` carries on into the bar; on the bar, `↓` comes back |
 | `pgup`/`pgdn`      | Page up / down (`home`/`end` for first / last)    |
-| `←`/`h`, `→`/`l`   | On a header: collapse / expand. On an image: close / open the details. On the bar: previous / next stop |
+| `←`/`h`, `→`/`l`   | On a header: collapse / expand. On an image: open the details. In the details column: previous / next option. On the bar: previous / next stop |
 | `space` / `enter`  | Act on what has the focus: select the row, step a setting, press a button |
 | `-`                | Step the focused setting backwards                |
 | `z`                | Fold/unfold the node under the cursor             |
@@ -136,7 +138,7 @@ affected Compose files should be restarted with `docker compose up -d`.
 | `ctrl+a` / `ctrl+n`| Select / deselect the whole list                  |
 | `f`                | Cycle the display filter (which rows are shown)   |
 | `t`                | Cycle the target level for **all** rows           |
-| `tab`              | On an image: the details column (`tab` again returns). Otherwise: the top bar |
+| `tab`              | On an image: the details column (`tab` or `esc` returns). Otherwise: the top bar |
 | `shift+tab`        | Step back along the bar                           |
 | `m`                | The top bar, from anywhere; again for the next stop |
 | `i`                | Show the issues logged during the scan            |

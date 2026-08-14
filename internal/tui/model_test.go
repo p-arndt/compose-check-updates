@@ -1415,9 +1415,32 @@ func TestRightOpensTheDetailColumnOnARow(t *testing.T) {
 	}
 }
 
-// ←/h in the column is the way back out, so left means one thing in both panes.
-func TestLeftLeavesTheDetailColumn(t *testing.T) {
-	for _, k := range []string{"left", "h"} {
+// ←/→ in the column step the options of the field under the cursor. A column of
+// settings is walked along, not folded, so the arrows are worth more here than a
+// second way out — which tab and esc already are.
+func TestArrowsStepTheColumnsOptions(t *testing.T) {
+	for _, keys := range [][2]string{{"right", "left"}, {"l", "h"}} {
+		t.Run(keys[0], func(t *testing.T) {
+			m, _ := sidebarModel(t)
+			m = feed(t, m, keyMsg("tab"))
+			require.Equal(t, focusSide, m.focus)
+			before := m.currentRow().Update.LatestTag
+
+			m = feed(t, m, keyMsg(keys[0]))
+			assert.Equal(t, focusSide, m.focus, "the arrow must not leave the column")
+			assert.NotEqual(t, before, m.currentRow().Update.LatestTag, "→ steps to the next option")
+
+			m = feed(t, m, keyMsg(keys[1]))
+			assert.Equal(t, focusSide, m.focus)
+			assert.Equal(t, before, m.currentRow().Update.LatestTag, "← steps back")
+		})
+	}
+}
+
+// With the arrows spent on the options, tab and esc are the whole way out — and
+// both have to work, or a user who reaches for either is stuck in the column.
+func TestTabAndEscLeaveTheDetailColumn(t *testing.T) {
+	for _, k := range []string{"tab", "esc"} {
 		t.Run(k, func(t *testing.T) {
 			m, _ := sidebarModel(t)
 			m = feed(t, m, keyMsg("tab"))
