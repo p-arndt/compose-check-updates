@@ -38,6 +38,16 @@ func NewRegistry(registryURL string) *Registry {
 			Hostname: registryURL,
 			TLS:      config.TLSDisabled,
 		}))
+	} else if host := os.Getenv("CCU_REGISTRY_HOST"); host != "" {
+		// Demo/integration hook: point Docker Hub lookups at a local registry
+		// over plain HTTP, so a recording or an offline test run resolves
+		// invented tags instead of depending on the real hub. Image references
+		// keep reading as "nginx:1.2.3" — only where they are fetched changes.
+		opts = append(opts, regclient.WithConfigHost(config.Host{
+			Name:     config.DockerRegistry,
+			Hostname: host,
+			TLS:      config.TLSDisabled,
+		}))
 	} else {
 		// Default: use Docker Hub with credentials
 		opts = append(opts,

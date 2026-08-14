@@ -17,6 +17,16 @@ ccu check -u     # print and write the new tags
 Point it at a directory, it scans every Compose file below it, asks each registry
 what's newer, and — if you want — rewrites the tags for you.
 
+## 🎬 What it looks like
+
+<p align="center">
+  <img src="./assets/demo.gif" alt="ccu scanning four Compose stacks, retargeting traefik from a major bump to the latest 2.11.x, and writing the new tags" width="900">
+</p>
+
+Four stacks checked at once, `traefik` pointed at the newest `2.11.x` instead of
+the `v3` it was offered, everything else taken as it came — and a `.ccu` backup
+next to every file that was touched.
+
 ---
 
 # Install
@@ -66,8 +76,6 @@ Nothing is ever written unless you ask for it — `A` in the TUI, `-u` for `chec
 ccu                # scan the current directory
 ccu -d ./stacks    # scan somewhere else
 ```
-
-<!-- TODO: drop a screenshot or asciinema gif of the TUI here -->
 
 A full-screen terminal UI: updates grouped per Compose file, colour-coded by
 level, streaming in as the registries answer. Arrow keys to move, `space` to

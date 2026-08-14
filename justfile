@@ -88,3 +88,16 @@ release BUMP="patch":
 clean:
     -Remove-Item -Force ccu.exe -ErrorAction SilentlyContinue
     -Remove-Item -Recurse -Force dist, build, stage -ErrorAction SilentlyContinue
+
+# ---------------------------------------------------------------------------
+# Demo
+# ---------------------------------------------------------------------------
+
+# The recording runs against invented stacks and a fake registry — never the
+# real Docker Hub, never your own compose files. Pass --keep to inspect the
+# throwaway world it built. Watch the GIF afterwards: a zero exit code only
+# means vhs did not crash.
+#
+# Record assets/demo.gif from demo/ccu.tape (needs `vhs` and `node`).
+demo *ARGS:
+    node scripts/demo.mjs {{ARGS}}
