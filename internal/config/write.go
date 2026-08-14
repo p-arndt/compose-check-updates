@@ -214,26 +214,33 @@ func deleteMappingKey(node *yaml.Node, key string) bool {
 
 // writeDocument encodes doc over path. The file is written beside its target
 // and renamed into place, because a config half-replaced by an interrupted save
-// is a worse outcome than a save that failed and said so.
+// is a worse outcome than a save that failed and said so. A document left with
+// no keys at all is not written but removed: see below.
 func writeDocument(path string, doc *yaml.Node, mode fs.FileMode) error {
+	if root := documentRoot(doc); root != nil && len(root.Content) == 0 {
+		// Nothing is left to save. An empty file would still be a file the user
+		// never asked for, sitting in their project as if it configured
+		// something, so the save removes it instead.
+		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		return nil
+	}
+
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
 
 	var buf bytes.Buffer
-	if root := documentRoot(doc); root == nil || len(root.Content) > 0 {
-		enc := yaml.NewEncoder(&buf)
-		enc.SetIndent(2)
-		if err := enc.Encode(doc); err != nil {
-			return err
-		}
-		if err := enc.Close(); err != nil {
-			return err
-		}
+	enc := yaml.NewEncoder(&buf)
+	enc.SetIndent(2)
+	if err := enc.Encode(doc); err != nil {
+		return err
 	}
-	// A mapping with nothing left in it would encode as `{}`; an empty file says
-	// the same thing and is what a user who cleared their last setting expects.
+	if err := enc.Close(); err != nil {
+		return err
+	}
 
 	tmp, err := os.CreateTemp(dir, ".ccu-config-*")
 	if err != nil {

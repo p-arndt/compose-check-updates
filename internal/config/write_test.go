@@ -210,3 +210,22 @@ func TestSetImageMaxRejectsInvalidLevel(t *testing.T) {
 		t.Errorf("invalid level still wrote a file")
 	}
 }
+
+func TestClearImageMaxRemovesFileItCreated(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, ".ccu.yaml")
+
+	if err := SetImageMax(path, "library/traefik", LevelMinor); err != nil {
+		t.Fatalf("SetImageMax: %v", err)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("config was not written: %v", err)
+	}
+
+	if err := ClearImageMax(path, "library/traefik"); err != nil {
+		t.Fatalf("ClearImageMax: %v", err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Errorf("empty config file survived the last cap being cleared: %v", err)
+	}
+}
