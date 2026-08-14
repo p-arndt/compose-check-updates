@@ -193,6 +193,16 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// everything else straight back to the list below: a user who tabs across,
 	// changes a level and then presses `j` means to move down the list, not to
 	// be told that j does nothing over here.
+	// The bar and the detail column claim only what they need and hand the rest
+	// straight back to the list: a user who tabbed across, changed a level and
+	// then pressed `j` means to move down the list, not to be told that j does
+	// nothing over here.
+	if m.focus == focusBar {
+		if handled, model, cmd := m.handleBarKey(msg); handled {
+			return model, cmd
+		}
+	}
+
 	if m.focus == focusSide {
 		if handled, model, cmd := m.handleSideKey(msg); handled {
 			return model, cmd
@@ -213,6 +223,14 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	switch {
 	case key.Matches(msg, m.keys.Up):
+		// At the top of the list there is nowhere further up but the bar, which
+		// is drawn directly above it. The keypress would otherwise be swallowed
+		// by the clamp, and this is the same move the bar's own ↓ makes coming
+		// back — one gesture, both directions.
+		if m.cursor == 0 {
+			m.enterBar(0)
+			break
+		}
 		m.moveCursor(-1)
 	case key.Matches(msg, m.keys.Down):
 		m.moveCursor(1)
@@ -225,23 +243,22 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.End):
 		m.moveCursor(len(m.entries))
 	case key.Matches(msg, m.keys.Toggle):
-		// On any header — directory or file — space/enter folds that node; on a row
-		// it keeps its select meaning. e.path is the node key at whatever depth the
-		// header sits, so this needs no special case per level. A row with nothing
-		// at the current target has no tag to write, so it cannot be selected at
-		// all. Neither key ever writes: that is what A and u are for.
-		if e, ok := m.currentEntry(); ok && e.kind == entryHeader {
-			m.toggleGroup(e.path)
-			break
-		}
-		if r := m.currentRow(); r != nil && r.Actionable() {
-			r.Selected = !r.Selected
-		}
+		m.toggleCurrent()
+	case key.Matches(msg, m.keys.Bar):
+		m.openBar()
 	case key.Matches(msg, m.keys.ToggleGroup):
 		m.toggleGroup(m.cursorGroup())
 	case key.Matches(msg, m.keys.Collapse):
 		m.collapseOrParent()
 	case key.Matches(msg, m.keys.Expand):
+		// On a header this walks the tree, as it always has. On a row there is
+		// nothing to expand — it used to step to the next row of the same file,
+		// which is what `j` is for — so the key is free to mean the one thing
+		// that is to the right of a row: its detail column.
+		if m.currentRow() != nil && sidebarWidth(m.width) > 0 {
+			m.focus = focusSide
+			break
+		}
 		m.expandOrChild()
 	case key.Matches(msg, m.keys.CollapseAll):
 		m.setAllCollapsed(true)
@@ -256,29 +273,17 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.SelectNone):
 		m.setScopeSelected(m.cursorNode(), false)
 	case key.Matches(msg, m.keys.Filter):
-		m.filter = m.filter.Next()
-		m.rebuild(m.cursorKey())
-		m.syncScroll()
+		m.cycleFilter()
 	case key.Matches(msg, m.keys.Target):
-		next := m.target.Next()
-		m.setTarget(next)
-		m.setStatus(StatusInfo, fmt.Sprintf("target level: %s", next.Label()))
+		m.cycleTarget()
 	case key.Matches(msg, m.keys.Focus):
-		m.toggleFocus()
+		m.advanceFocus()
+	case key.Matches(msg, m.keys.FocusPrev):
+		m.retreatFocus()
 	case key.Matches(msg, m.keys.Issues):
-		// Nothing to browse is a no-op with an explanation, not an empty pane
-		// the user then has to find their way out of.
-		if len(m.scanErrs) == 0 {
-			m.setStatus(StatusInfo, "no issues were logged during the scan")
-			break
-		}
-		m.showIssues = true
-		m.issueCursor = 0
-		m.issueOffset = 0
-		m.syncIssueScroll()
+		m.openIssues()
 	case key.Matches(msg, m.keys.Help):
-		m.showHelp = !m.showHelp
-		m.syncScroll()
+		m.toggleHelp()
 	case key.Matches(msg, m.keys.Apply):
 		return m.handleApply()
 	case key.Matches(msg, m.keys.ApplyRow):
@@ -449,8 +454,12 @@ func (m Model) handleRestartKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // through to the list, so the sidebar never becomes a mode the user is stuck in.
 func (m Model) handleSideKey(msg tea.KeyMsg) (bool, tea.Model, tea.Cmd) {
 	switch {
-	case key.Matches(msg, m.keys.FocusBack):
+	case key.Matches(msg, m.keys.FocusBack), key.Matches(msg, m.keys.FocusPrev),
+		key.Matches(msg, m.keys.Collapse):
 		m.focus = focusList
+		return true, m, nil
+	case key.Matches(msg, m.keys.Bar):
+		m.openBar()
 		return true, m, nil
 	case key.Matches(msg, m.keys.Up):
 		m.sideField = m.stepField(-1)
@@ -466,20 +475,6 @@ func (m Model) handleSideKey(msg tea.KeyMsg) (bool, tea.Model, tea.Cmd) {
 		return true, m, nil
 	}
 	return false, m, nil
-}
-
-// toggleFocus hands the keyboard to the sidebar and back. There is nothing to
-// focus on a header — it describes no image — so the key stays in the list
-// there rather than moving onto a column showing nothing.
-func (m *Model) toggleFocus() {
-	if m.focus == focusSide {
-		m.focus = focusList
-		return
-	}
-	if m.currentRow() == nil || sidebarWidth(m.width) == 0 {
-		return
-	}
-	m.focus = focusSide
 }
 
 // stepField moves the sidebar cursor by delta, skipping any field that is not
@@ -503,4 +498,67 @@ func (m Model) fieldVisible(f sideField) bool {
 	}
 	r := m.currentRow()
 	return r != nil && r.Pin != ""
+}
+
+// The handlers below were inline cases in handleKey. They were lifted out so a
+// second way in — a bar, a panel, anything — triggers the same code the key
+// does rather than a copy of it free to drift.
+
+// toggleCurrent is space/enter: on any header — directory or file — it folds
+// that node; on a row it flips the selection. e.path is the node key at whatever
+// depth the header sits, so this needs no special case per level. A row with
+// nothing at the current target has no tag to write, so it cannot be selected at
+// all. Neither key ever writes: that is what A and u are for.
+func (m *Model) toggleCurrent() {
+	if e, ok := m.currentEntry(); ok && e.kind == entryHeader {
+		m.toggleGroup(e.path)
+		return
+	}
+	if r := m.currentRow(); r != nil && r.Actionable() {
+		r.Selected = !r.Selected
+	}
+}
+
+// cycleFilter steps the display filter forward.
+func (m *Model) cycleFilter() { m.setFilter(m.filter.Next()) }
+
+// setFilter is the same move with the value named rather than stepped. The
+// rebuild is what makes the new filter visible; the cursor key carries the
+// highlight across it.
+func (m *Model) setFilter(f Filter) {
+	m.filter = f
+	m.rebuild(m.cursorKey())
+	m.syncScroll()
+}
+
+// cycleTarget steps the level every row is pointed at, and says so — a change
+// this wide has to be announced or it reads as the list re-sorting itself.
+func (m *Model) cycleTarget() { m.setTargetAnnounced(m.target.Next()) }
+
+// setTargetAnnounced is setTarget plus the status line, so every way in leaves
+// the same trace.
+func (m *Model) setTargetAnnounced(t Target) {
+	m.setTarget(t)
+	m.setStatus(StatusInfo, fmt.Sprintf("target level: %s", t.Label()))
+}
+
+// openIssues shows the pane listing every skipped image and unreadable file.
+// Nothing to browse is a no-op with an explanation, not an empty pane the user
+// then has to find their way out of.
+func (m *Model) openIssues() {
+	if len(m.scanErrs) == 0 {
+		m.setStatus(StatusInfo, "no issues were logged during the scan")
+		return
+	}
+	m.showIssues = true
+	m.issueCursor = 0
+	m.issueOffset = 0
+	m.syncIssueScroll()
+}
+
+// toggleHelp opens or closes the help dialog. The scroll sync keeps the list's
+// window valid across the height the dialog takes from it.
+func (m *Model) toggleHelp() {
+	m.showHelp = !m.showHelp
+	m.syncScroll()
 }

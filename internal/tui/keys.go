@@ -22,34 +22,42 @@ type KeyMap struct {
 	// to the whole list, which a is no longer able to reach on its own.
 	SelectAllGlobal  key.Binding
 	SelectNoneGlobal key.Binding
-	// Fold keys. The list is a directory tree now, so ←/h and →/l were taken back
-	// from the row-target cycle and given the meaning every tree in every file
-	// browser already has: collapse-or-go-to-parent, expand-or-step-into-child.
-	// z/C/E stay as the keyboard-only shortcuts, because t/T target, and space, a,
-	// n, f, d are already selection, filter and detail.
+	// Fold keys. The list is a directory tree, so ←/h and →/l carry the meaning
+	// every tree in every file browser gives them: collapse-or-go-to-parent,
+	// expand-or-step-into-child. On a row, which has nothing to expand, →/l opens
+	// the detail column instead and ←/h closes it — the same gesture one level
+	// out. z/C/E stay as the keyboard-only shortcuts.
 	ToggleGroup key.Binding
 	Collapse    key.Binding
 	Expand      key.Binding
 	CollapseAll key.Binding
 	ExpandAll   key.Binding
 	// Issues opens the pane listing every skipped image and unreadable file.
-	// IssuesClose is read only while that pane is open, which is the one reason
-	// it may share esc with Quit.
+	// IssuesClose is esc, which now means one thing everywhere it is read: back
+	// out of whatever has the keyboard, never out of the program.
 	Issues      key.Binding
 	IssuesClose key.Binding
 	Filter      key.Binding
 	Target      key.Binding
-	// The sidebar decides one image at a time: which release it moves to and
-	// whether that is remembered. Focus moves there and back on tab, and the
-	// two values are changed with ←/→ once it is there — which is why the row
-	// target and the pin have no keys of their own any more.
+	// Three places can hold the keyboard: the list, the bar above it and the
+	// detail column beside it. Focus/FocusPrev/Bar reach them, FocusBack leaves
+	// the column, and each place is left in the direction it sits from the list.
 	Focus     key.Binding
+	FocusPrev key.Binding
 	FocusBack key.Binding
+	Bar       key.Binding
+	// ValueNext/ValuePrev act on whatever has the focus; BarNext/BarPrev move
+	// along the bar. Movement and change are separate keys everywhere, which is
+	// the rule the whole arrangement rests on.
 	ValueNext key.Binding
 	ValuePrev key.Binding
+	BarNext   key.Binding
+	BarPrev   key.Binding
 	// Apply writes the selection; ApplyRow writes only the row under the cursor.
 	// Both are deliberately off enter: enter is a reflex key, and a reflex key
-	// must not rewrite compose files.
+	// must not rewrite compose files. The one exception is the bar's apply
+	// button, which enter does press — but only once the keyboard has been
+	// walked onto it on purpose.
 	Apply    key.Binding
 	ApplyRow key.Binding
 	Help     key.Binding
@@ -79,8 +87,8 @@ func DefaultKeyMap() KeyMap {
 		SelectNoneGlobal: key.NewBinding(key.WithKeys("ctrl+n"), key.WithHelp("ctrl+n", "deselect all")),
 
 		ToggleGroup: key.NewBinding(key.WithKeys("z"), key.WithHelp("z", "fold node")),
-		Collapse:    key.NewBinding(key.WithKeys("left", "h"), key.WithHelp("←/h", "collapse/parent")),
-		Expand:      key.NewBinding(key.WithKeys("right", "l"), key.WithHelp("→/l", "expand/child")),
+		Collapse:    key.NewBinding(key.WithKeys("left", "h"), key.WithHelp("←/h", "collapse / back")),
+		Expand:      key.NewBinding(key.WithKeys("right", "l"), key.WithHelp("→/l", "expand / details")),
 		CollapseAll: key.NewBinding(key.WithKeys("C"), key.WithHelp("C", "collapse all")),
 		ExpandAll:   key.NewBinding(key.WithKeys("E"), key.WithHelp("E", "expand all")),
 
@@ -89,30 +97,47 @@ func DefaultKeyMap() KeyMap {
 
 		Filter: key.NewBinding(key.WithKeys("f"), key.WithHelp("f", "filter")),
 		Target: key.NewBinding(key.WithKeys("t"), key.WithHelp("t", "target level")),
-		// tab moves between the two halves of the frame, which is the one thing
-		// every split layout already means by it. esc leaves the sidebar as well,
-		// sharing the key with Quit the way IssuesClose does, and for the same
-		// reason: while the sidebar is focused, esc means "back".
-		Focus:     key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "details")),
+		// tab asks what the cursor is on: an image has a detail column to open, a
+		// header has not, so there it goes to the bar. tab and esc both leave the
+		// column again.
+		Focus:     key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "details / bar")),
 		FocusBack: key.NewBinding(key.WithKeys("tab", "esc"), key.WithHelp("tab/esc", "back to list")),
-		// ←/→ walk the tree in the list, so they are free to change a value once
-		// the sidebar has the focus; h/l come along for the same reason.
-		ValueNext: key.NewBinding(key.WithKeys("right", "l", "+"), key.WithHelp("→", "next value")),
-		ValuePrev: key.NewBinding(key.WithKeys("left", "h", "-"), key.WithHelp("←", "previous value")),
+
+		// One rule, everywhere: the arrows move, space and enter act on whatever
+		// has the focus. In the list that is the row, so they select; on the bar
+		// and in the detail column it is the setting under the cursor, so they
+		// step it. Nothing has to be remembered per pane — which is what every
+		// earlier arrangement here failed at.
+		ValueNext: key.NewBinding(key.WithKeys(" ", "enter", "+"), key.WithHelp("space/enter", "change")),
+		ValuePrev: key.NewBinding(key.WithKeys("-"), key.WithHelp("-", "step back")),
+
+		// ←/→ move between the bar's stops, the way ↑/↓ move between the column's
+		// fields. They no longer change anything: an arrow that navigates in one
+		// pane and edits in another is the confusion this rule exists to end.
+		BarNext: key.NewBinding(key.WithKeys("right", "l"), key.WithHelp("→", "next stop")),
+		BarPrev: key.NewBinding(key.WithKeys("left", "h"), key.WithHelp("←", "previous stop")),
 
 		// Shift-a pairs with `a` (select all) and stays clear of every taken key;
 		// `u` reads as "update this one" and is the only free letter near it.
 		Apply:    key.NewBinding(key.WithKeys("A"), key.WithHelp("A", "apply selected")),
 		ApplyRow: key.NewBinding(key.WithKeys("u"), key.WithHelp("u", "apply row")),
 
-		// p is the only free letter that reads as "pin"; g is free as well and is
-		// the initial of the scope it answers for, so neither answer needs a key
-		// the user has to be told twice.
-
 		Help: key.NewBinding(key.WithKeys("?"), key.WithHelp("?", "help")),
-		Quit: key.NewBinding(key.WithKeys("q", "esc", "ctrl+c"), key.WithHelp("q", "quit")),
+		// esc is not on here. It means "back" in every pane that can take the
+		// keyboard, and a key that goes back four times and quits the fifth is a
+		// key you learn to distrust. Quitting is `q`, deliberately and only.
+		Quit: key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
 		Yes:  key.NewBinding(key.WithKeys("y"), key.WithHelp("y", "yes")),
 		No:   key.NewBinding(key.WithKeys("n"), key.WithHelp("n", "no")),
+
+		// Backwards along the bar, so a stop overshot costs one keypress rather
+		// than a lap.
+		FocusPrev: key.NewBinding(key.WithKeys("shift+tab"), key.WithHelp("shift+tab", "previous")),
+
+		// tab lands on the bar only when the cursor is on no image at all, so `m`
+		// is what reaches it from a row — and pressing it again walks it, which
+		// tab cannot do there without contradicting what it says about the row.
+		Bar: key.NewBinding(key.WithKeys("m"), key.WithHelp("m", "bar / next stop")),
 	}
 }
 
@@ -122,7 +147,7 @@ func (k KeyMap) Bindings() []key.Binding {
 		k.Up, k.Down, k.PageUp, k.PageDown, k.Home, k.End,
 		k.Toggle, k.SelectAll, k.SelectNone, k.SelectAllGlobal, k.SelectNoneGlobal,
 		k.ToggleGroup, k.Collapse, k.Expand, k.CollapseAll, k.ExpandAll,
-		k.Filter, k.Target, k.Focus, k.ValueNext, k.ValuePrev, k.Issues, k.Apply, k.ApplyRow, k.Help, k.Quit,
+		k.Filter, k.Target, k.Focus, k.Bar, k.BarNext, k.BarPrev, k.ValueNext, k.ValuePrev, k.Issues, k.Apply, k.ApplyRow, k.Help, k.Quit,
 	}
 }
 
@@ -136,7 +161,7 @@ func (k KeyMap) FullHelp() [][]key.Binding {
 		{k.Toggle, k.SelectAll, k.SelectNone, k.SelectAllGlobal, k.SelectNoneGlobal},
 		{k.Filter, k.Issues},
 		{k.ToggleGroup, k.Collapse, k.Expand, k.CollapseAll, k.ExpandAll},
-		{k.Focus, k.ValuePrev, k.ValueNext, k.Target},
+		{k.Focus, k.Bar, k.ValuePrev, k.ValueNext, k.Target},
 		{k.Apply, k.ApplyRow, k.Help, k.Quit},
 	}
 }
@@ -167,7 +192,7 @@ func (k KeyMap) IssueHints() []key.Binding {
 // the cheapest ones to lose to truncation.
 func (k KeyMap) BrowseHints() []key.Binding {
 	return []key.Binding{
-		k.Up, k.Down, k.Toggle, k.Apply, k.ApplyRow, k.Focus,
+		k.Up, k.Down, k.Toggle, k.Apply, k.ApplyRow, k.Focus, k.Bar,
 		k.Collapse, k.Expand, k.Filter, k.Target, k.Issues, k.Help, k.Quit,
 	}
 }
@@ -179,13 +204,22 @@ func (k KeyMap) ApplyHints() []key.Binding { return []key.Binding{k.Quit} }
 // with the way out, because a column that has taken the keyboard has to say how
 // to give it back.
 func (k KeyMap) SideHints() []key.Binding {
-	return []key.Binding{k.FocusBack, k.Up, k.Down, k.ValuePrev, k.ValueNext, k.Quit}
+	return []key.Binding{k.Collapse, k.Up, k.Down, k.ValueNext, k.ValuePrev, k.Quit}
 }
 
 // HelpHints are the only keys the help dialog reads. A footer advertising the
 // list keys while a dialog is covering the list would name keys that phase
 // throws away, which is the one thing the footer must never do.
 func (k KeyMap) HelpHints() []key.Binding { return []key.Binding{k.Help, k.IssuesClose, k.Quit} }
+
+// BarHints are the keys the bar reads while it has the focus. It leads with the
+// way out, the way the issues pane and the detail column do, and for the same
+// reason: anything that has taken the keyboard has to say how to give it back.
+// It stays one line — the footer feeds listHeight, and a taller hint set would
+// resize the list.
+func (k KeyMap) BarHints() []key.Binding {
+	return []key.Binding{k.IssuesClose, k.BarPrev, k.BarNext, k.ValueNext, k.Quit}
+}
 
 // RestartHints are the only two answers the restart question accepts.
 func (k KeyMap) RestartHints() []key.Binding { return []key.Binding{k.Yes, k.No, k.Quit} }
@@ -251,12 +285,20 @@ func (k KeyMap) HelpSections() []HelpSection {
 			helpEntry(k.SelectAllGlobal),
 			helpEntry(k.SelectNoneGlobal),
 		}},
-		{Title: "DETAILS", Entries: []HelpEntry{
+		{Title: "BAR & DETAILS", Entries: []HelpEntry{
 			helpEntry(k.Focus),
+			helpEntry(k.Bar),
+			helpPair("move between the bar's stops", k.BarPrev, k.BarNext),
+			helpEntry(k.FocusPrev),
+			helpPair("move between the column's fields", k.Up, k.Down),
+			helpPair("change the setting under the cursor", k.ValueNext, k.ValuePrev),
+			// Each pane leaves in the direction it sits from the list. That is the
+			// whole rule, and it is worth spelling out rather than leaving to be
+			// discovered once per pane.
+			{Keys: k.Collapse.Help().Key, Desc: "out of the column (it is to the right)"},
+			{Keys: k.Down.Help().Key, Desc: "off the bar (it is above)"},
+			{Keys: k.Up.Help().Key, Desc: "onto the bar, from the top of the list"},
 			helpEntry(k.FocusBack),
-			helpPair("change the value", k.ValuePrev, k.ValueNext),
-			helpPair("move between fields", k.Up, k.Down),
-			helpEntry(k.Target),
 		}},
 		{Title: "APPLY", Entries: []HelpEntry{
 			helpEntry(k.Apply),

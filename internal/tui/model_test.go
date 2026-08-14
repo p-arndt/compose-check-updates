@@ -662,17 +662,17 @@ func TestRowTargetCyclingStaysWithinAvailableTargets(t *testing.T) {
 	// Forward from major wraps to patch, skipping the minor level it has no
 	// release for.
 	m.width = 200
-	m = feed(t, m, keyMsg("tab"), keyMsg("right"))
+	m = feed(t, m, keyMsg("tab"), keyMsg("+"))
 	assert.Equal(t, "2.9.4", m.currentRow().Update.LatestTag)
 	assert.Equal(t, "patch", m.currentRow().Level)
 
-	m = feed(t, m, keyMsg("right"))
+	m = feed(t, m, keyMsg("+"))
 	assert.Equal(t, "3.7.8", m.currentRow().Update.LatestTag)
 	assert.Equal(t, "major", m.currentRow().Level)
 
 	// Backwards, too — and never onto a level the image does not have.
 	for i := 0; i < 5; i++ {
-		m = feed(t, m, keyMsg("left"))
+		m = feed(t, m, keyMsg("-"))
 		require.Contains(t, avail, string(m.currentRow().Target))
 		require.False(t, m.currentRow().NoTarget)
 	}
@@ -690,7 +690,7 @@ func TestRowTargetCyclingRecoversARowWithNoGlobalTarget(t *testing.T) {
 	// Per-image control is the point of the feature: the row can be pointed back
 	// at the only level it actually has.
 	m.width = 200
-	m = feed(t, m, keyMsg("j"), keyMsg("tab"), keyMsg("right"))
+	m = feed(t, m, keyMsg("j"), keyMsg("tab"), keyMsg("+"))
 	assert.False(t, m.rows[0].NoTarget)
 	assert.Equal(t, TargetMajor, m.rows[0].Target)
 	assert.Equal(t, "16", m.rows[0].Update.LatestTag)
@@ -706,7 +706,7 @@ func TestRowTargetIsANoopForDigestOnlyRows(t *testing.T) {
 
 	// No levels to choose between: the row must survive both keys unchanged.
 	m.width = 200
-	m = feed(t, m, keyMsg("j"), keyMsg("t"), keyMsg("tab"), keyMsg("right"))
+	m = feed(t, m, keyMsg("j"), keyMsg("t"), keyMsg("tab"), keyMsg("+"))
 	assert.False(t, m.rows[0].NoTarget)
 	assert.Equal(t, "digest", m.rows[0].Level)
 	assert.Equal(t, "latest", m.rows[0].Update.LatestTag)
@@ -767,11 +767,16 @@ func TestFooterIsPinnedToTheLastRow(t *testing.T) {
 	lines := strings.Split(m.View(), "\n")
 	require.Len(t, lines, 40)
 
-	// The hints are the final row and the legend the one above it, however tall
-	// the terminal is: the frame pads between the boxes and the bottom chrome
-	// rather than letting the chrome float in the middle of the screen.
+	// The hints are the final row however tall the terminal is: the frame pads
+	// between the boxes and the bottom chrome rather than letting the chrome
+	// float in the middle of the screen.
 	assert.Contains(t, plainText(lines[39]), "q quit")
-	assert.Contains(t, plainText(lines[38]), "target")
+
+	// And the bar is the third row, pinned under the title and the status line.
+	// It is fixed chrome, not part of the pane: a bar that scrolled with the
+	// list would be a bar you could lose.
+	assert.Contains(t, plainText(lines[2]), "target")
+	assert.Contains(t, plainText(lines[2]), "show")
 }
 
 // Two bindings answering the same key in the same phase means one of them
@@ -786,6 +791,7 @@ func TestNoKeyIsBoundTwiceInTheBrowsingPhase(t *testing.T) {
 		"collapse": {k.Collapse}, "expand": {k.Expand},
 		"filter": {k.Filter}, "target": {k.Target}, "focus": {k.Focus}, "issues": {k.Issues},
 		"apply": {k.Apply}, "applyRow": {k.ApplyRow}, "help": {k.Help}, "quit": {k.Quit},
+		"bar": {k.Bar}, "focusPrev": {k.FocusPrev},
 	}
 
 	owner := map[string]string{}
@@ -805,6 +811,10 @@ func TestNoKeyIsBoundTwiceInTheBrowsingPhase(t *testing.T) {
 	assert.Equal(t, []string{"E"}, k.ExpandAll.Keys())
 	assert.Equal(t, []string{"i"}, k.Issues.Keys())
 
+	// `m` reaches the bar from anywhere, so it has to be free everywhere the
+	// browsing keys are read — the map above is what proves it still is.
+	assert.Equal(t, []string{"m"}, k.Bar.Keys())
+
 	// ←/h and →/l walk the tree while the list has the focus, which is the only
 	// place this test's uniqueness rule applies: ValueNext/ValuePrev share those
 	// keys deliberately, and are read only once the sidebar has taken over.
@@ -820,9 +830,11 @@ func TestNoKeyIsBoundTwiceInTheBrowsingPhase(t *testing.T) {
 	assert.Equal(t, []string{"a"}, k.SelectAll.Keys())
 	assert.NotContains(t, k.Apply.Keys(), "enter", "enter must never write to disk")
 
-	// IssuesClose is read only while the issues pane is open, where the browsing
-	// keys above are not — the one reason it may share esc with Quit.
+	// esc means "back" wherever it is read, and nothing else: it must never be
+	// one of the keys that ends the program.
 	assert.Equal(t, []string{"esc"}, k.IssuesClose.Keys())
+	assert.NotContains(t, k.Quit.Keys(), "esc", "esc goes back, it does not quit")
+	assert.Equal(t, []string{"q", "ctrl+c"}, k.Quit.Keys())
 
 	// Yes/No live in the restart phase only, where none of the above are read —
 	// which is the one reason `n` may also mean SelectNone while browsing.
@@ -841,9 +853,10 @@ func TestKeyHintFooterIsAlwaysVisible(t *testing.T) {
 	v := plainText(m.View())
 	assert.Contains(t, v, "space/enter toggle")
 	// The tree is only usable if the keys that walk it are on screen; ←/h and →/l
-	// are what the footer leads with now that the list has depth.
-	assert.Contains(t, v, "collapse/parent")
-	assert.Contains(t, v, "expand/child")
+	// are what the footer leads with now that the list has depth. They say what
+	// they do on a row as well as on a header, since that is where they differ.
+	assert.Contains(t, v, "collapse / back")
+	assert.Contains(t, v, "expand / details")
 	assert.Contains(t, v, "A apply selected")
 	assert.Contains(t, v, "u apply row")
 	assert.Contains(t, v, "? help")
@@ -1145,26 +1158,31 @@ func TestTabMovesFocusToTheSidebarAndBack(t *testing.T) {
 	assert.Equal(t, focusList, m.focus, "tab again gives it back")
 }
 
-// A header describes no image, so there is nothing beside it to focus. Tabbing
-// there has to stay in the list rather than move onto a column showing nothing.
-func TestTabOnAHeaderKeepsTheFocusInTheList(t *testing.T) {
+// A header describes no image, so there is nothing beside it to focus. tab goes
+// up to the bar instead, which acts on the whole list and is just as meaningful
+// standing on a directory as on a row.
+func TestTabOnAHeaderGoesToTheBar(t *testing.T) {
 	m, _ := sidebarModel(t)
 	m.cursor = 0
 	require.Nil(t, m.currentRow(), "this test needs the cursor on a header")
 
 	m = feed(t, m, keyMsg("tab"))
-	assert.Equal(t, focusList, m.focus)
+	assert.Equal(t, focusBar, m.focus)
+	assert.Equal(t, 0, m.barStop)
 }
 
-// A terminal too narrow for two columns has no sidebar to focus, and tab must
-// not put the keyboard somewhere the user cannot see.
-func TestTabDoesNothingWhenTheSidebarIsTooNarrowToDraw(t *testing.T) {
+// A terminal too narrow for two columns has no sidebar to focus, and the
+// keyboard must not land somewhere the user cannot see. The bar is drawn at any
+// width, so tab still has somewhere to go — which is the point of putting the
+// list-wide controls there rather than in a column that can vanish.
+func TestTabGoesToTheBarWhenTheSidebarIsTooNarrowToDraw(t *testing.T) {
 	m, _ := sidebarModel(t)
 	m.width = sidebarMinTotal - 1
 	require.Zero(t, sidebarWidth(m.width))
 
 	m = feed(t, m, keyMsg("tab"))
-	assert.Equal(t, focusList, m.focus)
+	assert.Equal(t, focusBar, m.focus)
+	assert.NotEqual(t, focusSide, m.focus)
 }
 
 // With no cap set there is no scope to choose, so the field is not drawn and
@@ -1187,7 +1205,7 @@ func TestSidebarSkipsTheScopeFieldUntilACapExists(t *testing.T) {
 
 func TestSidebarReachesTheScopeFieldOnceACapIsSet(t *testing.T) {
 	m, _ := sidebarModel(t)
-	m = feed(t, m, keyMsg("tab"), keyMsg("j"), keyMsg("right"))
+	m = feed(t, m, keyMsg("tab"), keyMsg("j"), keyMsg("+"))
 	require.NotEmpty(t, m.currentRow().Pin, "the cap should be set now")
 
 	m = feed(t, m, keyMsg("j"))
@@ -1199,7 +1217,7 @@ func TestSidebarTargetFieldRetargetsTheRow(t *testing.T) {
 	m = feed(t, m, keyMsg("tab"))
 	before := m.currentRow().Update.LatestTag
 
-	m = feed(t, m, keyMsg("right"))
+	m = feed(t, m, keyMsg("+"))
 	assert.NotEqual(t, before, m.currentRow().Update.LatestTag, "→ on the target field picks another release")
 	assert.Empty(t, rec.writes, "changing the target alone writes nothing to disk")
 }
@@ -1212,19 +1230,19 @@ func TestSidebarCapFieldStepsThroughLevelsIndependentOfTheTarget(t *testing.T) {
 	m = feed(t, m, keyMsg("tab"))
 	require.Equal(t, TargetMajor, m.currentRow().Target, "this test needs the target on major")
 
-	m = feed(t, m, keyMsg("j"), keyMsg("right"))
+	m = feed(t, m, keyMsg("j"), keyMsg("+"))
 	require.Len(t, rec.writes, 1)
 	assert.Equal(t, config.LevelPatch, rec.writes[0].level, "first step off is patch, not the target's major")
 	assert.Equal(t, pinProject, rec.writes[0].scope, "a new cap goes to the narrower file")
 	assert.Equal(t, "library/traefik", rec.writes[0].image)
 	assert.Equal(t, StatusSuccess, m.statusKind)
 
-	m = feed(t, m, keyMsg("right"))
+	m = feed(t, m, keyMsg("+"))
 	assert.Equal(t, config.LevelMinor, rec.writes[len(rec.writes)-1].level)
 
 	// Nothing in semver sits above major, so capping at it would say exactly what
 	// no cap says. The cycle wraps back to off instead of offering a no-op.
-	m = feed(t, m, keyMsg("right"))
+	m = feed(t, m, keyMsg("+"))
 	assert.Equal(t, config.Level(""), rec.writes[len(rec.writes)-1].level)
 }
 
@@ -1251,19 +1269,19 @@ func TestSettingACapPullsTheTargetDownToIt(t *testing.T) {
 	m = feed(t, m, keyMsg("tab"))
 	require.Equal(t, TargetMajor, m.currentRow().Target)
 
-	m = feed(t, m, keyMsg("j"), keyMsg("right")) // cap -> patch
+	m = feed(t, m, keyMsg("j"), keyMsg("+")) // cap -> patch
 	assert.Equal(t, TargetPatch, m.currentRow().Target)
 	assert.Equal(t, "2.9.4", m.currentRow().Update.LatestTag)
 }
 
 func TestSidebarScopeFieldMovesAnExistingCap(t *testing.T) {
 	m, rec := sidebarModel(t)
-	m = feed(t, m, keyMsg("tab"), keyMsg("j"), keyMsg("right")) // cap on, project
-	m = feed(t, m, keyMsg("j"))                                 // onto the scope field
+	m = feed(t, m, keyMsg("tab"), keyMsg("j"), keyMsg("+")) // cap on, project
+	m = feed(t, m, keyMsg("j"))                             // onto the scope field
 	require.Equal(t, fieldScope, m.sideField)
 
 	rec.writes = nil
-	m = feed(t, m, keyMsg("right"))
+	m = feed(t, m, keyMsg("+"))
 
 	// Cleared where it was before being written where it is going, so the image
 	// is never capped in two files at once.
@@ -1279,10 +1297,10 @@ func TestSidebarCapCyclesBackToOff(t *testing.T) {
 	m, rec := sidebarModel(t)
 	m = feed(t, m, keyMsg("tab"), keyMsg("j"))
 
-	m = feed(t, m, keyMsg("right"))
+	m = feed(t, m, keyMsg("+"))
 	require.NotEmpty(t, m.currentRow().Pin, "the row should now be capped")
 
-	m = feed(t, m, keyMsg("left"))
+	m = feed(t, m, keyMsg("-"))
 	assert.Empty(t, m.currentRow().Pin, "stepping back off the levels stops capping")
 	last := rec.writes[len(rec.writes)-1]
 	assert.Equal(t, config.Level(""), last.level)
@@ -1292,22 +1310,37 @@ func TestSidebarCapWriteFailureIsAStatusError(t *testing.T) {
 	m, rec := sidebarModel(t)
 	rec.err = errors.New("permission denied writing .ccu.yaml")
 
-	m = feed(t, m, keyMsg("tab"), keyMsg("j"), keyMsg("right"))
+	m = feed(t, m, keyMsg("tab"), keyMsg("j"), keyMsg("+"))
 
 	assert.Equal(t, StatusError, m.statusKind)
 	assert.Contains(t, plainText(m.statusLine()), "permission denied writing .ccu.yaml")
 	assert.Empty(t, m.currentRow().Pin, "a failed write must not leave the row looking capped")
 }
 
-// The sidebar claims only the keys it needs. A key it does not claim has to
-// reach the list, or tabbing across would trap the user in a mode.
+// The detail column claims only the keys it needs. A key it does not claim has
+// to reach the list, or tabbing across would trap the user in a mode.
 func TestSidebarPassesUnclaimedKeysToTheList(t *testing.T) {
 	m, _ := sidebarModel(t)
 	m = feed(t, m, keyMsg("tab"))
-	before := m.currentRow().Selected
+	require.Equal(t, focusSide, m.focus)
+	require.Empty(t, m.collapsed)
+
+	m = feed(t, m, keyMsg("C"))
+	assert.NotEmpty(t, m.collapsed, "collapse-all still reaches the list")
+	assert.Equal(t, focusSide, m.focus, "and the keyboard stays in the column")
+}
+
+// space acts on whatever has the focus. In the column that is the field under
+// the cursor, so it steps that setting rather than selecting the row.
+func TestSpaceInTheColumnStepsTheFieldNotTheRow(t *testing.T) {
+	m, _ := sidebarModel(t)
+	m = feed(t, m, keyMsg("tab"))
+	selected := m.currentRow().Selected
+	before := m.currentRow().Update.LatestTag
 
 	m = feed(t, m, keyMsg(" "))
-	assert.NotEqual(t, before, m.currentRow().Selected, "space still selects while the sidebar has the focus")
+	assert.Equal(t, selected, m.currentRow().Selected, "the row is not what has the focus")
+	assert.NotEqual(t, before, m.currentRow().Update.LatestTag, "the field is")
 }
 
 // The footer has to advertise the keys that actually work right now. While the
@@ -1340,10 +1373,10 @@ func TestSidebarRendersTheCurrentImage(t *testing.T) {
 // once the sidebar holds it, the footer names the same keys.
 func TestSidebarHintOnlyShowsWhileTheListHasFocus(t *testing.T) {
 	m, _ := sidebarModel(t)
-	assert.Contains(t, plainText(strings.Join(m.sidebarLines(40, 20), "\n")), "tab to change")
+	assert.Contains(t, plainText(strings.Join(m.sidebarLines(40, 20), "\n")), "→ to change")
 
 	m = feed(t, m, keyMsg("tab"))
-	assert.NotContains(t, plainText(strings.Join(m.sidebarLines(40, 20), "\n")), "tab to change")
+	assert.NotContains(t, plainText(strings.Join(m.sidebarLines(40, 20), "\n")), "→ to change")
 }
 
 func TestHelpDialogSwapsTheFooterHints(t *testing.T) {
@@ -1353,4 +1386,73 @@ func TestHelpDialogSwapsTheFooterHints(t *testing.T) {
 
 	assert.Equal(t, m.keys.BrowseHints(), m.hintBindings())
 	assert.Equal(t, m.keys.HelpHints(), feed(t, m, keyMsg("?")).hintBindings())
+}
+
+// →/l on a row is the way into the detail column. It used to step to the next
+// row of the same file, which is what `j` already does — a key spent on nothing.
+func TestRightOpensTheDetailColumnOnARow(t *testing.T) {
+	for _, k := range []string{"right", "l"} {
+		t.Run(k, func(t *testing.T) {
+			m, _ := sidebarModel(t)
+			require.NotNil(t, m.currentRow())
+
+			m = feed(t, m, keyMsg(k))
+			assert.Equal(t, focusSide, m.focus)
+		})
+	}
+}
+
+// ←/h in the column is the way back out, so left means one thing in both panes.
+func TestLeftLeavesTheDetailColumn(t *testing.T) {
+	for _, k := range []string{"left", "h"} {
+		t.Run(k, func(t *testing.T) {
+			m, _ := sidebarModel(t)
+			m = feed(t, m, keyMsg("tab"))
+			require.Equal(t, focusSide, m.focus)
+
+			m = feed(t, m, keyMsg(k))
+			assert.Equal(t, focusList, m.focus)
+		})
+	}
+}
+
+// On a header the tree keys still walk the tree: there is no column to open
+// beside a directory.
+func TestRightStillExpandsOnAHeader(t *testing.T) {
+	m, _ := sidebarModel(t)
+	m.cursor = 0
+	require.Nil(t, m.currentRow())
+	m = feed(t, m, keyMsg("z")) // fold it first, so there is something to expand
+	require.NotEmpty(t, m.collapsed)
+
+	m = feed(t, m, keyMsg("right"))
+	assert.NotEqual(t, focusSide, m.focus)
+	assert.False(t, m.collapsed[m.cursorGroup()], "→ on a header expands it")
+}
+
+// With no column to open, →/l falls back to walking the tree rather than
+// silently doing nothing.
+func TestRightWalksTheTreeWhenTheColumnIsTooNarrow(t *testing.T) {
+	m, _ := sidebarModel(t)
+	m.width = sidebarMinTotal - 1
+	require.Zero(t, sidebarWidth(m.width))
+	require.NotNil(t, m.currentRow())
+
+	m = feed(t, m, keyMsg("right"))
+	assert.Equal(t, focusList, m.focus)
+}
+
+// The values in the column moved off the arrows and onto +/-, which is what
+// freed ←/h and →/l to mean the same thing in both panes.
+func TestColumnValuesStepWithPlusAndMinus(t *testing.T) {
+	m, _ := sidebarModel(t)
+	m = feed(t, m, keyMsg("tab"))
+	require.Equal(t, focusSide, m.focus)
+	before := m.currentRow().Update.LatestTag
+
+	m = feed(t, m, keyMsg("+"))
+	assert.NotEqual(t, before, m.currentRow().Update.LatestTag, "+ steps the value")
+
+	m = feed(t, m, keyMsg("-"))
+	assert.Equal(t, before, m.currentRow().Update.LatestTag, "- steps it back")
 }

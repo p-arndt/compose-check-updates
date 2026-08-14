@@ -8,9 +8,11 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// topChrome is the fixed block above the pane: title, status, and the blank
-// line separating them from it.
-const topChrome = 3
+// topChrome is the fixed block above the pane: title, status, the bar, and the
+// blank line separating them from it. The bar is in here rather than in the
+// pane because it must never scroll and never change height — listHeight is
+// derived from this number, so a block that grew would shrink the list.
+const topChrome = 4
 
 // minViewHeight is the shortest frame we will draw. Bubble Tea renders once
 // before it delivers the first WindowSizeMsg, so height is legitimately 0 on
@@ -34,7 +36,7 @@ func (m Model) View() string {
 	}
 
 	top := make([]string, 0, topChrome+m.listHeight())
-	top = append(top, m.theme.Title(m.width), m.statusLine(), "")
+	top = append(top, m.theme.Title(m.width), m.statusLine(), m.barLine(m.width), "")
 	top = append(top, strings.Split(m.paneView(), "\n")...)
 
 	return strings.Join(m.frame(top, m.bottomBlock()), "\n")
@@ -72,7 +74,9 @@ func (m Model) frame(top, bottom []string) []string {
 }
 
 // bottomBlock is the chrome pinned to the last rows: a blank separator, the
-// detail pane, the legend, and the key hints.
+// detail pane, and the key hints. The legend used to sit here too, naming the
+// filter and the target; the bar says both at the top now, and saying it twice
+// on one frame cost a row of list to no purpose.
 func (m Model) bottomBlock() []string {
 	lines := []string{""}
 	if m.showDetail && !m.showIssues {
@@ -80,8 +84,6 @@ func (m Model) bottomBlock() []string {
 			lines = append(lines, strings.Split(d, "\n")...)
 		}
 	}
-	lines = append(lines, m.theme.Legend(m.filter, m.target, m.width))
-
 	// The hint line is unconditional: keys nobody can see are keys nobody uses.
 	// `?` opens the full listing as a dialog over the pane rather than growing
 	// the footer, which used to push the list up by however many groups there
@@ -138,6 +140,9 @@ func (m Model) listWidth() int {
 func (m Model) hintBindings() []key.Binding {
 	if m.showHelp {
 		return m.keys.HelpHints()
+	}
+	if m.focus == focusBar {
+		return m.keys.BarHints()
 	}
 	if m.focus == focusSide {
 		return m.keys.SideHints()

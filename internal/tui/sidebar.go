@@ -55,6 +55,7 @@ type focusArea int
 
 const (
 	focusList focusArea = iota
+	focusBar
 	focusSide
 )
 
@@ -134,7 +135,7 @@ func (m Model) sidebarLines(width, height int) []string {
 	// Only while the list still holds the keyboard: once the sidebar has it the
 	// footer names the same keys, and saying it twice on one frame is noise.
 	if m.focus == focusList && height >= len(out)+2 {
-		out = append(out, "", m.theme.dim().Render(fit("tab to change", width)))
+		out = append(out, "", m.theme.dim().Render(fit("→ to change", width)))
 	}
 
 	return out

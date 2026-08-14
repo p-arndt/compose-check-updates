@@ -350,33 +350,6 @@ func wrapPlain(s string, w int) []string {
 	return out
 }
 
-// Legend is the colour key and the state line for the two independent settings
-// the list has. They are labelled rather than merely styled because they are
-// easy to confuse: "show" only hides rows, "target" decides which version
-// the apply keys actually write.
-func (t Theme) Legend(active Filter, target Target, width int) string {
-	w := clampWidth(width)
-	dim := lipgloss.NewStyle().Foreground(t.Dim)
-
-	filters := []Filter{FilterAll, FilterMajor, FilterMinor, FilterPatch, FilterDigest}
-	parts := make([]string, 0, len(filters))
-	for _, f := range filters {
-		label := f.Label()
-		style := lipgloss.NewStyle().Foreground(t.LevelColor(label))
-		if f == active {
-			style = style.Bold(true).Underline(true)
-			label = "[" + label + "]"
-		}
-		parts = append(parts, style.Render(label))
-	}
-
-	line := dim.Render("show ") + strings.Join(parts, dim.Render(" · ")) +
-		dim.Render("  │  target ") +
-		lipgloss.NewStyle().Foreground(t.LevelColor(target.Label())).Bold(true).
-			Render("["+target.Label()+"]")
-	return fit(line, w)
-}
-
 // Status renders a one-line message; the symbol carries the meaning when the
 // terminal has no colour.
 func (t Theme) Status(kind StatusKind, text string) string {

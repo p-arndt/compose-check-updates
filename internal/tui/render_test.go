@@ -249,7 +249,6 @@ func TestRenderersSurviveDegenerateWidths(t *testing.T) {
 			th.FileHeader("some/deeply/nested/path/docker-compose.yml", 3, 5, w)
 			th.RowLine(r, true, w)
 			th.Detail(r.Update, "patch", w)
-			th.Legend(FilterMinor, TargetMajor, w)
 			th.Help(helpBindings, w)
 			th.Empty("no updates found", w)
 		}, "width %d", w)
@@ -258,7 +257,6 @@ func TestRenderersSurviveDegenerateWidths(t *testing.T) {
 		for name, out := range map[string]string{
 			"title":  th.Title(w),
 			"header": th.FileHeader("some/deeply/nested/path/docker-compose.yml", 3, 5, w),
-			"legend": th.Legend(FilterMinor, TargetMajor, w),
 			"help":   th.Help(helpBindings, w),
 			"empty":  th.Empty("no updates found", w),
 		} {
@@ -268,21 +266,13 @@ func TestRenderersSurviveDegenerateWidths(t *testing.T) {
 	}
 }
 
-func TestStatusAndLegendContent(t *testing.T) {
+func TestStatusContent(t *testing.T) {
 	th := DefaultTheme()
 
 	assert.Equal(t, "✓ applied 3 updates", plain(th.Status(StatusSuccess, "applied 3 updates")))
 	assert.Equal(t, "✗ nope", plain(th.Status(StatusError, "nope")))
 	assert.Equal(t, "! careful", plain(th.Status(StatusWarn, "careful")))
 	assert.Equal(t, "• scanning", plain(th.Status(StatusInfo, "scanning")))
-
-	legend := plain(th.Legend(FilterMajor, TargetMinor, 200))
-	assert.Contains(t, legend, "[major]")
-	assert.Contains(t, legend, "minor")
-	// The filter and the target are two different settings; the legend has to
-	// name both or "[major]" is ambiguous.
-	assert.Contains(t, legend, "show ")
-	assert.Contains(t, legend, "target [minor]")
 }
 
 func TestFileHeaderShowsCounts(t *testing.T) {
@@ -299,7 +289,6 @@ func TestNoTrailingWhitespaceOnSingleLineRenderers(t *testing.T) {
 	for name, out := range map[string]string{
 		"header": th.FileHeader("tests/docker-compose.yml", 1, 2, 80),
 		"row":    th.RowLine(r, false, 80),
-		"legend": th.Legend(FilterAll, TargetMajor, 200),
 		"help":   th.Help(helpBindings, 80),
 		"status": th.Status(StatusInfo, "hi"),
 	} {
@@ -374,7 +363,7 @@ func TestPaneColumnsLineUpRegardlessOfStyling(t *testing.T) {
 // different renderings of it read as two different concepts.
 func TestSidebarValuesUseLevelBadges(t *testing.T) {
 	m, _ := sidebarModel(t)
-	m = feed(t, m, keyMsg("tab"), keyMsg("j"), keyMsg("right")) // cap -> patch
+	m = feed(t, m, keyMsg("tab"), keyMsg("j"), keyMsg("+")) // cap -> patch
 
 	side := strings.Join(m.sidebarLines(sidebarWidth(m.width)-boxChrome, 20), "\n")
 
@@ -415,7 +404,7 @@ func TestFocusedBoxIsDrawnHeavierThanTheUnfocusedOne(t *testing.T) {
 // out of reach with nothing on screen to say so.
 func TestSidebarKeepsItsFieldsWhenSpaceRunsOut(t *testing.T) {
 	m, _ := sidebarModel(t)
-	m = feed(t, m, keyMsg("tab"), keyMsg("j"), keyMsg("right")) // a cap, so all four lines exist
+	m = feed(t, m, keyMsg("tab"), keyMsg("j"), keyMsg("+")) // a cap, so all four lines exist
 
 	width := sidebarWidth(m.width) - boxChrome
 
@@ -435,7 +424,7 @@ func TestSidebarKeepsItsFieldsWhenSpaceRunsOut(t *testing.T) {
 // abbreviated, so the path is dropped instead.
 func TestSidebarScopeDropsThePathRatherThanTheChevron(t *testing.T) {
 	m, _ := sidebarModel(t)
-	m = feed(t, m, keyMsg("tab"), keyMsg("j"), keyMsg("right"))
+	m = feed(t, m, keyMsg("tab"), keyMsg("j"), keyMsg("+"))
 
 	// From the narrowest column the layout can actually produce upwards: the
 	// sidebar is only drawn at all past sidebarMinTotal, and fit refuses to

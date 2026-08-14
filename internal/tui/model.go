@@ -85,6 +85,10 @@ type Model struct {
 	// before there was a second column to lose them to.
 	focus focusArea
 
+	// barStop is which station on the bar has the keyboard, meaningful only while
+	// focus is focusBar.
+	barStop int
+
 	// sideField is the sidebar's own cursor, meaningful only while focus is
 	// focusSide.
 	sideField sideField

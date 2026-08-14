@@ -73,6 +73,36 @@ A full-screen terminal UI: updates grouped per Compose file, colour-coded by
 level, streaming in as the registries answer. Arrow keys to move, `space` to
 select, `A` to apply. Press `?` for everything else.
 
+Nothing has to be memorised to get started. A bar across the top holds the
+settings that apply to the whole run, and `tab` walks the keyboard through
+everything there is to reach:
+
+```
+ show ‹ all ›   target ‹ major ›   [ issues 1 ]   [ apply 2 ]
+```
+
+One rule holds everywhere: **the arrows move, `space` and `enter` act on
+whatever has the focus.** In the list that is the row, so they select it. On the
+bar it is the stop, so they step the setting or press the button. In the detail
+column it is the field. Nothing has to be remembered per pane.
+
+Each stop also names the key that does the same thing, so the bar teaches the
+shortcut rather than replacing it.
+
+`tab` answers one question: what is the cursor on? On an image it opens the
+detail column beside the list, and `tab` there comes straight back. On a file or
+directory header — which describes no image — it goes up to the bar instead.
+
+`→`/`l` and `←`/`h` are navigation: on an image, right opens the detail column
+and left closes it again; on a header they walk the tree. On the bar they move
+between stops. Each pane leaves in the direction it sits from the list — the
+column is to its right, so `←` leaves it; the bar is above it, so `↓` does — and
+`↑` at the top of the list goes back up onto it. `esc` works from either, and
+only ever means "back": quitting is `q`, never `esc`.
+
+`m` is the bar's own key: it reaches the bar from anywhere, and each further
+press moves one stop along.
+
 Nothing is written until you press `A`, and you decide per row which version gets
 written — so a major bump never sneaks in. Afterwards `ccu` asks once whether the
 affected Compose files should be restarted with `docker compose up -d`.
@@ -82,22 +112,25 @@ affected Compose files should be restarted with `docker compose up -d`.
 
 | Key                | Action                                            |
 | ------------------ | ------------------------------------------------- |
-| `↑`/`↓` or `k`/`j` | Move the cursor                                   |
+| `↑`/`↓` or `k`/`j` | Move the cursor. At the top of the list, `↑` carries on into the bar; on the bar, `↓` comes back |
 | `pgup`/`pgdn`      | Page up / down (`home`/`end` for first / last)    |
-| `←`/`h`, `→`/`l`   | Collapse or go to parent / expand or step in      |
+| `←`/`h`, `→`/`l`   | On a header: collapse / expand. On an image: close / open the details. On the bar: previous / next stop |
+| `space` / `enter`  | Act on what has the focus: select the row, step a setting, press a button |
+| `-`                | Step the focused setting backwards                |
 | `z`                | Fold/unfold the node under the cursor             |
 | `C` / `E`          | Collapse all / expand all                         |
-| `space` or `enter` | Toggle the row (or the whole node) under the cursor |
 | `a` / `n`          | Select / deselect everything under the cursor     |
 | `ctrl+a` / `ctrl+n`| Select / deselect the whole list                  |
 | `f`                | Cycle the display filter (which rows are shown)   |
 | `t`                | Cycle the target level for **all** rows           |
-| `tab`              | Focus the details sidebar (`tab`/`esc` to leave)  |
-| `←` / `→`          | Change the focused sidebar value (target, pin)    |
+| `tab`              | On an image: the details column (`tab` again returns). Otherwise: the top bar |
+| `shift+tab`        | Step back along the bar                           |
+| `m`                | The top bar, from anywhere; again for the next stop |
 | `i`                | Show the issues logged during the scan            |
 | `A`                | Apply the **selected** updates                    |
 | `u`                | Apply **only the highlighted row**                |
 | `y` / `n`          | Answer the restart prompt                         |
+| `esc`              | Back out of whatever has the keyboard (never quits) |
 | `?` / `q`          | Help / quit                                       |
 
 </details>
@@ -105,9 +138,9 @@ affected Compose files should be restarted with `docker compose up -d`.
 <details>
 <summary><strong>Filter vs. target</strong> — which version actually gets written</summary>
 
-`show` (`f`) only decides which rows are _visible_; `target` (`t`, or the
-sidebar's own target field) decides
-which version actually gets _written_. The target defaults to `major`, so out of
+`show` only decides which rows are _visible_; `target` decides which version
+actually gets _written_. Both sit on the top bar and both have a key (`f` and
+`t`); the row's own target lives in the detail column. The target defaults to `major`, so out of
 the box you are offered the highest available version. At target `minor`, an
 image on `traefik:v2.9.3` that has `3.7.8` available re-points to the latest
 `2.11.x` instead; at `patch`, to `2.9.4`.
