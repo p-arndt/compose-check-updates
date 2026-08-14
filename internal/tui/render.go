@@ -83,8 +83,8 @@ func (t Theme) RowLine(r Row, cursor bool, width int) string {
 		box = " ✗ "
 	}
 
-	// Failed rows replace the version delta with the reason, which is the only
-	// place the user can see why an apply did not take.
+	// Failed rows replace the version delta with the reason: the only place the
+	// user can see why an apply did not take.
 	tailPlain := rowTailPlain(r)
 	if r.State == RowFailed && r.Err != nil {
 		tailPlain = r.Err.Error()
@@ -108,8 +108,8 @@ func (t Theme) RowLine(r Row, cursor bool, width int) string {
 	nameStyle := lipgloss.NewStyle().Foreground(t.Text)
 	boxStyle := lipgloss.NewStyle().Foreground(t.Accent)
 	if r.NoTarget {
-		// Nothing to apply at the current target: dim the whole row so it reads
-		// as unavailable rather than as an update the user forgot to tick.
+		// Nothing to apply at the current target, so the row reads as unavailable
+		// rather than as an update the user forgot to tick.
 		nameStyle = lipgloss.NewStyle().Foreground(t.Dim)
 		boxStyle = lipgloss.NewStyle().Foreground(t.Dim)
 	}
@@ -154,17 +154,15 @@ func rowTailPlain(r Row) string {
 	}
 	s := plainDelta(r.Update.CurrentTag, r.Update.LatestTag)
 	if n := r.otherTargets(); n > 0 {
-		// The user's way of discovering that `T` would offer this image another
-		// version — without it, a row pointing at 2.9.4 looks like the only option.
+		// Without this, a row pointing at 2.9.4 looks like the only version `T`
+		// could offer.
 		s += fmt.Sprintf(" (+%d)", n)
 	}
 	return s + pinMarker(r)
 }
 
-// pinMarker is how a saved cap shows on the row. It spells the level out rather
-// than using a symbol: the whole point of the pin is which level was saved, and
-// a marker that only said "pinned" would send the user to the config file to
-// find out.
+// pinMarker is how a saved cap shows on the row. It spells the level out: which
+// level was saved is the whole point of the pin.
 func pinMarker(r Row) string {
 	if r.Pin == "" {
 		return ""
@@ -271,10 +269,9 @@ func (t Theme) Detail(u internal.UpdateInfo, level string, width int) string {
 	return strings.Join(lines, "\n")
 }
 
-// IssueEntry renders one captured scan issue as the lines it needs: the message
-// first, then one line per attribute, so the image and file a warning is about
-// are readable instead of being the part an ellipsis eats. Returns a slice
-// rather than a joined string because the pane scrolls by line.
+// IssueEntry renders one captured scan issue: the message, then one line per
+// attribute, so an ellipsis never eats the image and file it is about. Returns a
+// slice rather than a joined string because the pane scrolls by line.
 func (t Theme) IssueEntry(index int, msg string, attrs []string, cursor bool, width int) []string {
 	w := clampWidth(width)
 
@@ -370,9 +367,8 @@ func (t Theme) Status(kind StatusKind, text string) string {
 func (t Theme) Help(bindings []key.Binding, width int) string {
 	w := clampWidth(width)
 
-	// The hints are derived from the bindings themselves rather than written out
-	// here, so a rebound or removed key cannot leave the footer advertising a
-	// key that no longer does anything.
+	// Derived from the bindings themselves, so a rebound key cannot leave the
+	// footer advertising one that no longer does anything.
 	var hints [][2]string
 	for _, b := range bindings {
 		h := b.Help()
@@ -392,9 +388,8 @@ func (t Theme) Help(bindings []key.Binding, width int) string {
 		return ""
 	}
 
-	// The caller puts the way out last, so the final hint is budgeted first and
-	// the rest fill what remains: a narrow terminal drops middle hints rather
-	// than the one key telling the user how to leave.
+	// The caller puts the way out last and it is budgeted first, so a narrow
+	// terminal drops middle hints rather than the key that says how to leave.
 	last := hints[len(hints)-1]
 	reserved := cost(last)
 
@@ -435,8 +430,7 @@ const helpGutter = 3
 const helpMinColumn = 28
 
 // helpSection draws one group: a heading with a rule running out to the column
-// edge — the rule is what makes six groups read as six groups rather than as
-// one long list — and then its entries in two aligned columns.
+// edge, so the groups read as groups, then its entries in two aligned columns.
 func (t Theme) helpSection(s HelpSection, keyW, width int) []string {
 	head := lipgloss.NewStyle().Foreground(t.Accent).Bold(true).Render(s.Title)
 	if n := width - len([]rune(s.Title)) - 1; n > 0 {
@@ -482,10 +476,9 @@ func (t Theme) helpColumn(sections []HelpSection, width int, spaced bool) []stri
 }
 
 // helpDistribute splits the sections across n columns, keeping their order and
-// making the tallest column as short as it can be. The split is by line count
-// rather than by section count: six groups of wildly different sizes divided
-// three-and-three would leave one column twice the height of the other, and
-// the dialog is exactly as tall as its tallest column.
+// making the tallest column as short as it can be. Splitting by line count
+// rather than by section count matters because the groups differ wildly in size
+// and the dialog is as tall as its tallest column.
 func helpDistribute(sections []HelpSection, n int) [][]HelpSection {
 	n = min(max(n, 1), len(sections))
 
@@ -497,9 +490,8 @@ func helpDistribute(sections []HelpSection, n int) [][]HelpSection {
 		return h
 	}
 
-	// Exhaustive over the split points, which is affordable because there are a
-	// handful of groups and a handful of columns, and exact where a greedy pass
-	// was not: greedy overfills the first columns and strands the rest.
+	// Exhaustive over the split points: affordable at this size, and exact where
+	// a greedy pass overfills the first columns.
 	type state struct{ from, cols int }
 	tallest, cutAt := map[state]int{}, map[state]int{}
 	var best func(from, cols int) int
@@ -531,9 +523,8 @@ func helpDistribute(sections []HelpSection, n int) [][]HelpSection {
 	return append(out, sections[from:])
 }
 
-// helpHeight is how many lines a set of columns needs: the tallest of them.
-// The blank line between groups is the first thing a cramped terminal gives up,
-// so the height has to be answerable both ways.
+// helpHeight is how many lines a set of columns needs: the tallest of them. The
+// blank line between groups is optional, so it is answerable both ways.
 func helpHeight(cols [][]HelpSection, spaced bool) int {
 	gap := 0
 	if spaced {
@@ -550,11 +541,9 @@ func helpHeight(cols [][]HelpSection, spaced bool) int {
 	return h
 }
 
-// HelpPanel lays the sections out for the `?` dialog. It takes the roomiest
-// layout that fits the height it is given — fewest columns first, and the blank
-// line between groups given up only once columns have run out — because a
-// dialog whose last groups fall off the bottom of a short terminal is hiding
-// exactly the keys the user opened it to find.
+// HelpPanel lays the sections out for the `?` dialog, taking the roomiest layout
+// that fits: fewest columns first, and the blank line between groups given up
+// only once columns have run out. Nothing may fall off the bottom.
 func (t Theme) HelpPanel(sections []HelpSection, width, maxHeight int) []string {
 	if len(sections) == 0 {
 		return nil

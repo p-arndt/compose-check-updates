@@ -13,9 +13,8 @@ import (
 	"github.com/p-arndt/compose-check-updates/internal/scanner"
 )
 
-// phase is the stage of the session. The UI is one program that walks forward
-// through these; there is no way back, which keeps the key handling per phase
-// small enough to read in one screen.
+// phase is the stage of the session. It only ever walks forward, which keeps
+// the per-phase key handling small.
 type phase int
 
 const (
@@ -60,29 +59,25 @@ type Model struct {
 	// which carry the scanner's path rather than the normalised key).
 	nodeByKey  map[string]int
 	nodeByFile map[string]int
-	// collapsed folds a level of the tree away. It is keyed by node key — any
-	// path prefix, not only a file — rather than by index so it survives the
-	// re-sorts a streaming scan causes, and it is display-only: a folded row
-	// keeps its selection and is still applied.
+	// collapsed folds a level of the tree away, keyed by node key rather than by
+	// index so it survives the re-sorts a streaming scan causes. Display-only: a
+	// folded row keeps its selection and is still applied.
 	collapsed map[string]bool
 	// target is the level every row is pointed at unless the user has moved that
 	// row individually. Filter hides rows; target changes what gets written.
 	target Target
 
-	// pins are the caps already recorded on disk, kept one Config per scope
-	// rather than merged: a pin is toggled inside the scope the user picks, so
-	// clearing a project cap must not be talked out of it by a global file that
-	// happens to say the same thing.
+	// pins are the caps already recorded on disk, one Config per scope rather
+	// than merged: a pin is toggled inside the scope the user picked, so clearing
+	// a project cap must not be blocked by a global file saying the same thing.
 	pins map[pinScope]config.Config
 
-	// setCap writes a pin. It is a field rather than a direct call on the config
-	// package so a test can observe what would be written without touching the
-	// user's files. An empty level means "remove the cap for this image".
+	// setCap writes a pin; a field rather than a direct config call so a test can
+	// observe writes. An empty level means "remove the cap for this image".
 	setCap func(scope pinScope, image string, max config.Level) error
 
-	// focus is which half of the frame the keyboard is talking to. The list
-	// holds it by default: every reflex key has to keep meaning what it meant
-	// before there was a second column to lose them to.
+	// focus is which half of the frame the keyboard is talking to. The list holds
+	// it by default, so every reflex key keeps its old meaning.
 	focus focusArea
 
 	// barStop is which station on the bar has the keyboard, meaningful only while
@@ -106,9 +101,8 @@ type Model struct {
 	showDetail bool
 	showHelp   bool
 
-	// The issues pane browses scanErrs in full. It takes over the middle of the
-	// screen and keeps its own cursor, so returning to the list lands the user
-	// exactly where they left it.
+	// The issues pane browses scanErrs in full. It keeps its own cursor, so
+	// returning to the list lands where the user left it.
 	showIssues  bool
 	issueCursor int
 	issueOffset int
@@ -152,8 +146,7 @@ func NewModel(opts scanner.Options) Model {
 		cancel:    cancel,
 		filter:    FilterAll,
 		collapsed: make(map[string]bool),
-		// Major preserves the behaviour of every earlier release: the highest
-		// available version is what a fresh session offers.
+		// The highest available version is what a fresh session offers.
 		target: TargetMajor,
 		width:  80,
 		height: 24,
@@ -233,9 +226,8 @@ func (m *Model) refreshPins() {
 		r := &m.rows[i]
 		r.Pin = m.capFor(r.Update.ImageName)
 
-		// The cap is a ceiling on this image, so it has to bind the selection
-		// too. Leaving a row aimed at a release its own cap forbids would let
-		// `A` write exactly the version the user just said never to take.
+		// The cap binds the selection too: a row left aimed above its own cap
+		// would let `A` write the version the user just forbade.
 		r.Update.Cap = string(r.Pin)
 		if r.Pin != "" && !r.Update.AllowsLevel(string(r.Target)) {
 			m.retarget(r, Target(r.Pin))
@@ -316,9 +308,8 @@ func (m Model) cursorKey() string {
 	return m.entryKey(e)
 }
 
-// rebuild recomputes the visible set and the rendered entries, then puts the
-// cursor back on what it was on before, so inserting or filtering never moves
-// the selection to a different image under the user's hands.
+// rebuild recomputes the visible set and the rendered entries, then restores the
+// cursor, so inserting or filtering never moves it to a different image.
 func (m *Model) rebuild(keepKey string) {
 	m.visible = m.visible[:0]
 	for i, r := range m.rows {
@@ -327,9 +318,8 @@ func (m *Model) rebuild(keepKey string) {
 		}
 	}
 
-	// The tree is derived purely from the visible rows, so a filter that empties
-	// a directory removes that directory's headers too rather than leaving the
-	// user folds that open onto nothing.
+	// The tree is derived purely from the visible rows, so a filter that empties a
+	// directory removes its headers too instead of leaving empty folds.
 	paths := make([]string, 0, len(m.visible))
 	seen := make(map[string]bool, len(m.visible))
 	for _, ri := range m.visible {
@@ -347,10 +337,9 @@ func (m *Model) rebuild(keepKey string) {
 		}
 	}
 
-	// One header per node in depth-first order, then a file node's rows unless
-	// it is folded. A collapsed node keeps its own header — only its subtree
-	// goes — so its content is never silently gone from the list. Parents always
-	// precede their children, so hiding propagates in this single pass.
+	// One header per node in depth-first order, then a file node's rows unless it
+	// is folded. A collapsed node keeps its own header, so nothing vanishes
+	// silently. Parents precede children, so hiding propagates in one pass.
 	m.entries = m.entries[:0]
 	hidden := make([]bool, len(m.nodes))
 	for i, n := range m.nodes {
@@ -374,9 +363,8 @@ func (m *Model) rebuild(keepKey string) {
 				return
 			}
 		}
-		// The entry is gone — folded away, or filtered out. Landing on the
-		// nearest header still on screen keeps the cursor where the user was
-		// looking instead of on whatever row the old index now points at.
+		// The entry is gone — folded away or filtered out. The nearest surviving
+		// header keeps the cursor where the user was looking.
 		if i := m.ancestorHeader(keyGroup(keepKey)); i >= 0 {
 			m.cursor = i
 		}
@@ -385,9 +373,8 @@ func (m *Model) rebuild(keepKey string) {
 }
 
 // ancestorHeader is the entry index of the deepest header still drawn for a
-// path — the node itself when it survived, otherwise the closest ancestor of
-// it. The prefix search is what makes this work for a path whose node is gone
-// entirely, which is the case a filter change produces.
+// path: the node itself when it survived, otherwise its closest ancestor. The
+// prefix search covers the case a filter change produces, where the node is gone.
 func (m Model) ancestorHeader(path string) int {
 	if path == "" {
 		return -1
@@ -477,9 +464,8 @@ func (m *Model) toggleGroup(key string) {
 	m.syncScroll()
 }
 
-// setAllCollapsed folds or unfolds every node at every depth at once. Directory
-// levels are included, so collapsing all leaves just the roots — which is the
-// whole point of the key on a deep tree.
+// setAllCollapsed folds or unfolds every node at every depth at once, directory
+// levels included, so collapsing all leaves just the roots.
 func (m *Model) setAllCollapsed(v bool) {
 	if m.collapsed == nil {
 		m.collapsed = make(map[string]bool)
@@ -509,13 +495,10 @@ func (m *Model) moveCursor(delta int) {
 	m.syncScroll()
 }
 
-// retarget points one row at its tag for the given level. Rows that have no
-// release at that level are marked NoTarget and deselected rather than quietly
-// keeping the higher tag they were showing — applying a version the user did
-// not pick is the one outcome this feature must never produce.
-//
-// Rows with no levels at all (a digest move, or a tag semver cannot read) are
-// left untouched: there is nothing to choose between for them.
+// retarget points one row at its tag for the given level. A row with no release
+// at that level is marked NoTarget and deselected rather than quietly keeping
+// the higher tag it was showing. Rows with no levels at all — a digest move, or
+// a tag semver cannot read — are left untouched.
 func (m *Model) retarget(r *Row, target Target) {
 	if r.State != RowPending || len(r.Update.AvailableTargets()) == 0 {
 		return
@@ -615,8 +598,7 @@ func (m *Model) setStatus(kind StatusKind, text string) {
 	m.statusText = text
 }
 
-// moveIssueCursor walks the issues pane by whole issues, not by wrapped lines,
-// so a long entry is never something the user has to scroll through blind.
+// moveIssueCursor walks the issues pane by whole issues, not by wrapped lines.
 func (m *Model) moveIssueCursor(delta int) {
 	if len(m.scanErrs) == 0 {
 		m.issueCursor, m.issueOffset = 0, 0

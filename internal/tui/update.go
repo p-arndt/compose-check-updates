@@ -44,8 +44,7 @@ func (m Model) startScan() tea.Msg {
 }
 
 // waitForEvent reads exactly one event and re-arms itself from Update. Draining
-// the channel in a goroutine instead would mean rows only appear once the scan
-// is over, which is the whole thing the streaming scanner exists to avoid.
+// the channel in a goroutine instead would only show rows once the scan is over.
 func waitForEvent(events <-chan scanner.Event) tea.Cmd {
 	return func() tea.Msg {
 		ev, ok := <-events
@@ -173,9 +172,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleRestartKey(msg)
 	}
 
-	// The help dialog owns the keyboard: it covers the pane, so every key that
-	// would act on a row it is hiding has to be inert, and esc has to close the
-	// dialog rather than quit the program behind it.
+	// The help dialog covers the pane, so keys acting on hidden rows are inert and
+	// esc closes the dialog rather than quitting behind it.
 	if m.showHelp {
 		if key.Matches(msg, m.keys.Help) || key.Matches(msg, m.keys.IssuesClose) || key.Matches(msg, m.keys.Quit) {
 			m.showHelp = false
@@ -189,14 +187,9 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleIssuesKey(msg)
 	}
 
-	// The sidebar owns only the keys it needs while focused, and hands
-	// everything else straight back to the list below: a user who tabs across,
-	// changes a level and then presses `j` means to move down the list, not to
-	// be told that j does nothing over here.
-	// The bar and the detail column claim only what they need and hand the rest
-	// straight back to the list: a user who tabbed across, changed a level and
-	// then pressed `j` means to move down the list, not to be told that j does
-	// nothing over here.
+	// The bar and the detail column claim only the keys they need and hand the
+	// rest back to the list: a user who tabs across, changes a level and then
+	// presses `j` means to move down the list.
 	if m.focus == focusBar {
 		if handled, model, cmd := m.handleBarKey(msg); handled {
 			return model, cmd
@@ -223,10 +216,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	switch {
 	case key.Matches(msg, m.keys.Up):
-		// At the top of the list there is nowhere further up but the bar, which
-		// is drawn directly above it. The keypress would otherwise be swallowed
-		// by the clamp, and this is the same move the bar's own ↓ makes coming
-		// back — one gesture, both directions.
+		// At the top of the list the only thing further up is the bar, and this is
+		// the reverse of the ↓ that comes back down from it.
 		if m.cursor == 0 {
 			m.enterBar(0)
 			break
@@ -251,10 +242,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.Collapse):
 		m.collapseOrParent()
 	case key.Matches(msg, m.keys.Expand):
-		// On a header this walks the tree, as it always has. On a row there is
-		// nothing to expand — it used to step to the next row of the same file,
-		// which is what `j` is for — so the key is free to mean the one thing
-		// that is to the right of a row: its detail column.
+		// On a header this walks the tree. A row has nothing to expand, so the key
+		// means the one thing to the right of it: its detail column.
 		if m.currentRow() != nil && m.sidebarAvailable() {
 			m.focus = focusSide
 			break
@@ -293,22 +282,14 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 // setScopeSelected drives a/n, which pass the cursor's node, and ctrl+a/ctrl+n,
-// which pass -1 for the whole list — on a tree several directories wide the
-// subtree keys cannot reach every row, so the global pair has to exist.
-// Within its scope it stays deliberately collapse-blind: folding is a display
-// operation, so both keys act on every row the *filter* keeps under the node,
-// folded or not. Each collapsed header reports "(N updates, M selected)", which
-// is what keeps the outcome visible rather than surprising. The status line
-// names the scope because it is no longer obviously global — four rows changing
-// somewhere off screen has to be explained, not just done. An empty or fully
-// filtered list has no node to scope to, and there falls back to the old sweep.
+// which pass -1 for the whole list. It is collapse-blind — folding is display
+// only, so both keys act on every row the filter keeps under the node — and the
+// status line names the scope, since rows may change off screen. An empty or
+// fully filtered list has no node to scope to and falls back to a full sweep.
 //
-// The two directions are deliberately not symmetric about the filter. Selecting
-// only ever adds rows the filter is showing, so `a` cannot arm an update the
-// user has narrowed away. Deselecting sweeps the scope regardless of the filter,
-// because the one thing this pair must never do is leave a row selected that no
-// header can report: `n` has to mean the selection here is gone, not gone except
-// for what you filtered out.
+// The two directions are deliberately asymmetric about the filter: selecting only
+// adds rows the filter shows, while deselecting sweeps the scope regardless, so
+// `n` can never leave a selected row that no header reports.
 func (m *Model) setScopeSelected(node int, v bool) {
 	verb := "deselected"
 	if v {
@@ -328,8 +309,8 @@ func (m *Model) setScopeSelected(node int, v bool) {
 	n := 0
 	for _, ri := range idxs {
 		r := &m.rows[ri]
-		// Only actionable rows can be selected, but anything already selected can
-		// be cleared — otherwise a row that lost its target would stay stuck on.
+		// Only actionable rows can be selected, but anything already selected can be
+		// cleared, or a row that lost its target would stay stuck on.
 		if (v && !r.Actionable()) || r.Selected == v {
 			continue
 		}
@@ -344,11 +325,8 @@ func (m *Model) setScopeSelected(node int, v bool) {
 	m.setStatus(StatusInfo, fmt.Sprintf("%s %d update(s) under %s", verb, n, scope))
 }
 
-// scopeRowsUnfiltered is subtreeRows without the filter: every row belonging to
-// a compose file under the node, whether the current filter shows it or not.
-// Only deselection uses it, and only so that clearing a scope really clears it.
-// A node index below zero means there is no tree to scope to, and the scope is
-// then every row there is.
+// scopeRowsUnfiltered is subtreeRows without the filter, so deselection really
+// clears a scope. A node index below zero means every row there is.
 func (m Model) scopeRowsUnfiltered(node int) []int {
 	if node < 0 {
 		idxs := make([]int, len(m.rows))
@@ -412,9 +390,8 @@ func (m Model) handleApply() (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-// handleApplyRow writes just the row under the cursor. It reads no selection and
-// sets none, so it is the escape hatch for "this one, now" without disturbing a
-// selection built up for A.
+// handleApplyRow writes just the row under the cursor, reading and setting no
+// selection, so it never disturbs one built up for A.
 func (m Model) handleApplyRow() (tea.Model, tea.Cmd) {
 	r := m.currentRow()
 	if r == nil {
@@ -450,8 +427,8 @@ func (m Model) handleRestartKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 // handleSideKey reads the keys the sidebar claims while it has the focus. The
-// bool reports whether it consumed the key; anything it does not claim falls
-// through to the list, so the sidebar never becomes a mode the user is stuck in.
+// bool reports whether it consumed the key; anything else falls through to the
+// list, so the sidebar never becomes a mode the user is stuck in.
 func (m Model) handleSideKey(msg tea.KeyMsg) (bool, tea.Model, tea.Cmd) {
 	switch {
 	case key.Matches(msg, m.keys.FocusBack), key.Matches(msg, m.keys.FocusPrev):
@@ -460,10 +437,8 @@ func (m Model) handleSideKey(msg tea.KeyMsg) (bool, tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.Bar):
 		m.openBar()
 		return true, m, nil
-	// ←/→ step the options of the field under the cursor rather than closing the
-	// column. A column of settings is walked along, not folded, and tab/esc is
-	// the way out of every pane anyway — so the arrows are free to do the one
-	// thing the fields need.
+	// ←/→ step the field's options rather than closing the column; tab/esc is the
+	// way out of every pane anyway.
 	case key.Matches(msg, m.keys.SidePrev):
 		m.cycleSideValue(-1)
 		return true, m, nil
@@ -486,9 +461,8 @@ func (m Model) handleSideKey(msg tea.KeyMsg) (bool, tea.Model, tea.Cmd) {
 	return false, m, nil
 }
 
-// stepField moves the sidebar cursor by delta, skipping any field that is not
-// on screen — the scope has nothing to answer until a cap exists, and stopping
-// on a line the user cannot see reads as a dead keypress.
+// stepField moves the sidebar cursor by delta, skipping fields that are not on
+// screen — the scope has nothing to answer until a cap exists.
 func (m Model) stepField(delta int) sideField {
 	f := m.sideField
 	for i := 0; i < int(sideFieldCount); i++ {
@@ -509,15 +483,9 @@ func (m Model) fieldVisible(f sideField) bool {
 	return r != nil && r.Pin != ""
 }
 
-// The handlers below were inline cases in handleKey. They were lifted out so a
-// second way in — a bar, a panel, anything — triggers the same code the key
-// does rather than a copy of it free to drift.
-
-// toggleCurrent is space/enter: on any header — directory or file — it folds
-// that node; on a row it flips the selection. e.path is the node key at whatever
-// depth the header sits, so this needs no special case per level. A row with
-// nothing at the current target has no tag to write, so it cannot be selected at
-// all. Neither key ever writes: that is what A and u are for.
+// toggleCurrent is space/enter: on a header it folds that node, on a row it flips
+// the selection. A row with nothing at the current target has no tag to write and
+// cannot be selected. Neither key ever writes — that is what A and u are for.
 func (m *Model) toggleCurrent() {
 	if e, ok := m.currentEntry(); ok && e.kind == entryHeader {
 		m.toggleGroup(e.path)
@@ -531,9 +499,7 @@ func (m *Model) toggleCurrent() {
 // cycleFilter steps the display filter forward.
 func (m *Model) cycleFilter() { m.setFilter(m.filter.Next()) }
 
-// setFilter is the same move with the value named rather than stepped. The
-// rebuild is what makes the new filter visible; the cursor key carries the
-// highlight across it.
+// setFilter is the same move with the value named rather than stepped.
 func (m *Model) setFilter(f Filter) {
 	m.filter = f
 	m.rebuild(m.cursorKey())
@@ -552,8 +518,7 @@ func (m *Model) setTargetAnnounced(t Target) {
 }
 
 // openIssues shows the pane listing every skipped image and unreadable file.
-// Nothing to browse is a no-op with an explanation, not an empty pane the user
-// then has to find their way out of.
+// Nothing to browse is a no-op with an explanation rather than an empty pane.
 func (m *Model) openIssues() {
 	if len(m.scanErrs) == 0 {
 		m.setStatus(StatusInfo, "no issues were logged during the scan")

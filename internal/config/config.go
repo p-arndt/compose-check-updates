@@ -96,14 +96,10 @@ func Load(root, explicit string) (Loaded, error) {
 }
 
 // globalDirs lists the per-user config directories to try, in preference order.
-// ~/.config/ccu comes first because config.yaml is a file people edit by hand,
-// and that is where a command line tool's dotfile is looked for — including on
-// macOS, where os.UserConfigDir points at Application Support. That location is
-// still accepted, because it is where ccu already keeps its update-check state,
-// and someone who put their config next to it should not have to move it.
-//
-// An empty list means there is no home to look in, which is not an error: the
-// run simply has no global config.
+// ~/.config/ccu comes first, that being where a CLI's hand-edited dotfile is
+// looked for — including on macOS, where os.UserConfigDir points at Application
+// Support. That location is still accepted, since ccu keeps its update-check
+// state there. An empty list means there is no home, which is not an error.
 func globalDirs() []string {
 	// The tests' way in, and an escape hatch for anyone keeping their config
 	// somewhere else entirely.

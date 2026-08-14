@@ -321,10 +321,9 @@ func TestRowLineMarksAPinnedImage(t *testing.T) {
 }
 
 // A styled line is several runes wider than it is columns wide, so measuring it
-// with len() under-pads it by however much colour it carries — which used to
-// bend the divider into a ragged edge that moved per row. Boxed, the same bug
-// shows up as a right-hand frame that does not close: every pane line has to
-// render to one width, with the second box starting on one column.
+// with len() under-pads it by however much colour it carries. Boxed, that shows
+// up as a right-hand frame that does not close: every pane line has to render to
+// one width, with the second box starting on one column.
 func TestPaneColumnsLineUpRegardlessOfStyling(t *testing.T) {
 	for _, width := range []int{96, 118, 160, 240} {
 		m := newTestModel()
@@ -359,8 +358,7 @@ func TestPaneColumnsLineUpRegardlessOfStyling(t *testing.T) {
 }
 
 // The cap and target values carry the same coloured chip the row carries in the
-// list: the level being set and the level being shown are one thing, and two
-// different renderings of it read as two different concepts.
+// list, so the level being set and the level being shown read as one thing.
 func TestSidebarValuesUseLevelBadges(t *testing.T) {
 	m, _ := sidebarModel(t)
 	m = feed(t, m, keyMsg("tab"), keyMsg("j"), keyMsg("+")) // cap -> patch
@@ -378,9 +376,8 @@ func TestSidebarValuesUseLevelBadges(t *testing.T) {
 	assert.Less(t, lipgloss.Width(m.theme.BadgeTight("patch")), badgeWidth)
 }
 
-// Colour alone is easy to miss, and invisible on a terminal told not to use
-// any, so the focused box changes weight too. Both borders are one cell wide,
-// so the swap must not move anything either.
+// Colour alone is invisible on a terminal told not to use any, so the focused
+// box changes weight too. Both borders are one cell wide, so nothing moves.
 func TestFocusedBoxIsDrawnHeavierThanTheUnfocusedOne(t *testing.T) {
 	th := DefaultTheme()
 
@@ -399,9 +396,8 @@ func TestFocusedBoxIsDrawnHeavierThanTheUnfocusedOne(t *testing.T) {
 	}
 }
 
-// A terminal too short for everything must keep what can be changed and drop
-// what is only context: a sidebar that hid the cap field would put the setting
-// out of reach with nothing on screen to say so.
+// A terminal too short for everything keeps what can be changed and drops what
+// is only context: hiding the cap field would put the setting out of reach.
 func TestSidebarKeepsItsFieldsWhenSpaceRunsOut(t *testing.T) {
 	m, _ := sidebarModel(t)
 	m = feed(t, m, keyMsg("tab"), keyMsg("j"), keyMsg("+")) // a cap, so all four lines exist
@@ -419,9 +415,8 @@ func TestSidebarKeepsItsFieldsWhenSpaceRunsOut(t *testing.T) {
 	assert.NotContains(t, tight, "now ", "context is what gives way, not the fields")
 }
 
-// The chevrons are what say a value can be stepped. A path that pushed the
-// closing one off the line would make the field look broken rather than
-// abbreviated, so the path is dropped instead.
+// The chevrons say a value can be stepped, so the path is dropped rather than
+// truncated: a missing closing chevron looks broken, not abbreviated.
 func TestSidebarScopeDropsThePathRatherThanTheChevron(t *testing.T) {
 	m, _ := sidebarModel(t)
 	m = feed(t, m, keyMsg("tab"), keyMsg("j"), keyMsg("+"))

@@ -57,12 +57,10 @@ func NewExcludeMatcher(exclude []string) *ExcludeMatcher {
 	return m
 }
 
-// isAbsEntry reports whether an entry names an absolute location. A leading
-// slash counts on every platform, not just where filepath.IsAbs says so: config
-// files are written in slash form and get shared between machines, and on
-// Windows "/mnt/backups" would otherwise be filed as a path relative to the
-// scan root — which is not a thing the user could have meant, and which would
-// silently exclude nothing at all.
+// isAbsEntry reports whether an entry names an absolute location. A leading slash
+// counts on every platform, not just where filepath.IsAbs says so: config files
+// are written in slash form and shared between machines, and on Windows
+// "/mnt/backups" would otherwise be read as relative to the scan root.
 func isAbsEntry(e string) bool {
 	return strings.HasPrefix(e, "/") || filepath.IsAbs(filepath.FromSlash(e))
 }
@@ -133,10 +131,9 @@ func resolve(path string) string {
 	return path
 }
 
-// matches applies one pattern. filepath.Match only reports an error for a
-// malformed pattern, and a pattern nothing can match is the same as no match at
-// all, so the error is deliberately not propagated: a stray bracket in a config
-// file should not abort the scan.
+// matches applies one pattern. filepath.Match only errors on a malformed
+// pattern, which is the same as no match, so a stray bracket in a config file
+// does not abort the scan.
 func matches(pattern, name string) bool {
 	if pattern == name {
 		return true

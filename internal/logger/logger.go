@@ -114,7 +114,6 @@ func colorizeChangedSegments(current, latest, updateLevel string) string {
 	}
 	reset := "\033[0m"
 
-	// Preserve a leading 'v' prefix on the latest tag
 	prefix := ""
 	if strings.HasPrefix(latest, "v") {
 		prefix = "v"
@@ -125,7 +124,6 @@ func colorizeChangedSegments(current, latest, updateLevel string) string {
 	currentParts := strings.Split(currentNorm, ".")
 	latestParts := strings.Split(latestNorm, ".")
 
-	// Find the index of the first segment that differs
 	diffIdx := 0
 	for diffIdx < len(currentParts) && diffIdx < len(latestParts) {
 		if currentParts[diffIdx] != latestParts[diffIdx] {
@@ -135,11 +133,10 @@ func colorizeChangedSegments(current, latest, updateLevel string) string {
 	}
 
 	if diffIdx == 0 {
-		// All segments changed (major bump from the very first segment)
+		// Every segment changed, so there is no unchanged prefix to keep white.
 		return color + prefix + latestNorm + reset
 	}
 
-	// Keep the unchanged leading segments white, color the rest
 	unchanged := prefix + strings.Join(latestParts[:diffIdx], ".") + "."
 	changed := strings.Join(latestParts[diffIdx:], ".")
 	return unchanged + color + changed + reset
@@ -147,14 +144,12 @@ func colorizeChangedSegments(current, latest, updateLevel string) string {
 
 // WithAttrs returns a new handler with the given attributes.
 func (h *CustomHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
-	// Create a new handler with the additional attributes
 	newHandler := *h
 	return &newHandler
 }
 
 // WithGroup returns a new handler with the given group.
 func (h *CustomHandler) WithGroup(name string) slog.Handler {
-	// Create a new handler with the group name
 	newHandler := *h
 	return &newHandler
 }

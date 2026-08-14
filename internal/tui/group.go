@@ -7,10 +7,9 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// GroupInfo is everything a collapsible header shows, at any depth of the
-// directory tree. Selected is counted over every row beneath the node,
-// including ones this header is currently hiding: collapsing must never make a
-// pending selection invisible, or the user would apply more than they can see.
+// GroupInfo is everything a collapsible header shows, at any depth of the tree.
+// Selected counts every row beneath the node, hidden ones included: collapsing
+// must never make a pending selection invisible.
 type GroupInfo struct {
 	Path      string // the node key — full path prefix, used for identity only
 	Label     string // what the header prints: the node's compressed segment(s)
@@ -23,9 +22,8 @@ type GroupInfo struct {
 	Cursor    bool
 }
 
-// groupInfo gathers the counts for one tree node's header. Directories
-// aggregate over their whole subtree and files over their own rows, which is
-// the same walk either way: a file node's subtree is just itself.
+// groupInfo gathers the counts for one tree node's header. Directories aggregate
+// over their subtree and files over their own rows — the same walk either way.
 func (m Model) groupInfo(nodeIdx int, cursor bool) GroupInfo {
 	if nodeIdx < 0 || nodeIdx >= len(m.nodes) {
 		return GroupInfo{Cursor: cursor}
@@ -40,9 +38,8 @@ func (m Model) groupInfo(nodeIdx int, cursor bool) GroupInfo {
 		Cursor:    cursor,
 	}
 
-	// The counts come from m.rows filtered by the subtree's files rather than
-	// from subtreeRows: that helper already honours the filter, and Total has to
-	// see the rows the filter hides so the header can say "2 of 7 updates".
+	// From m.rows rather than subtreeRows, which already honours the filter: Total
+	// has to see the hidden rows so the header can say "2 of 7 updates".
 	files := make(map[string]struct{})
 	for _, f := range m.subtreeFiles(nodeIdx) {
 		files[f] = struct{}{}
@@ -82,25 +79,21 @@ func (t Theme) GroupHeader(g GroupInfo, width int) string {
 	indent := strings.Repeat("  ", max(g.Depth, 0))
 	count := fmt.Sprintf("  (%s, %d selected)", groupCountText(g.Shown, g.Total), g.Selected)
 
-	// A directory is spelled with a trailing slash. The colour below says the same
-	// thing, but this is the only cue that survives a monochrome terminal or a
-	// copied-out screenshot, and telling a directory from a compose file is the
-	// whole point of the two being different rows.
+	// A trailing slash marks a directory. The colour below says the same, but this
+	// is the cue that survives a monochrome terminal or a copied-out screenshot.
 	label := g.Label
 	if g.IsDir {
 		label += "/"
 	}
 
-	// Directories carry the plain text colour and files the accent, so the eye
-	// can tell a container apart from the compose file that actually owns rows
-	// without relying on the indent alone. Both stay bold: they are headers.
+	// Directories carry the plain text colour and files the accent, so the two are
+	// distinguishable without relying on the indent. Both stay bold: they are headers.
 	labelStyle := lipgloss.NewStyle().Foreground(t.Accent).Bold(true)
 	if g.IsDir {
 		labelStyle = lipgloss.NewStyle().Foreground(t.Text).Bold(true)
 	}
-	// The arrow occupies the slot a row uses for its cursor marker, so the
-	// cursor is carried by the underline (visible without colour) and the
-	// highlight background instead of a second marker glyph.
+	// The arrow occupies the slot a row uses for its cursor marker, so the cursor
+	// is carried by the underline and the highlight background instead.
 	if g.Cursor {
 		labelStyle = labelStyle.Underline(true)
 	}

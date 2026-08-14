@@ -24,9 +24,8 @@ func tabMsg() tea.KeyMsg { return tea.KeyMsg{Type: tea.KeyTab} }
 // shiftTabMsg steps back along the bar.
 func shiftTabMsg() tea.KeyMsg { return tea.KeyMsg{Type: tea.KeyShiftTab} }
 
-// focusStop walks the focus onto the named bar stop with `m`. tab is no use
-// here: on a row it opens the detail column, which is the whole point of `m`
-// existing.
+// focusStop walks the focus onto the named bar stop with `m`; tab is no use
+// here, since on a row it opens the detail column.
 func focusStop(t *testing.T, m Model, label string) Model {
 	t.Helper()
 	for i := 0; i < 12; i++ {
@@ -40,9 +39,8 @@ func focusStop(t *testing.T, m Model, label string) Model {
 	return m
 }
 
-// The bar is one line, inside its width, whatever the terminal does. It lives
-// in the fixed block above the pane, so a second line would silently take one
-// from the list.
+// The bar is one line, inside its width, whatever the terminal does: a second
+// line would silently take one from the list.
 func TestBarLineStaysOnOneLineWithinItsWidth(t *testing.T) {
 	withColor(t)
 	m := barModel(t)
@@ -66,9 +64,8 @@ func TestBarLineHasNoTrailingWhitespace(t *testing.T) {
 	assert.Equal(t, out, strings.TrimRight(out, " "))
 }
 
-// The focused stop has to actually look different. This is the assertion the
-// eye cannot make reliably: a background that gets cut short by a nested style
-// reset still "renders", it just does not read as focus.
+// The focused stop has to actually look different: a background cut short by a
+// nested style reset still "renders", it just does not read as focus.
 func TestBarMarksTheFocusedStop(t *testing.T) {
 	withColor(t)
 	m := barModel(t)
@@ -147,8 +144,7 @@ func TestBarChangesTheTarget(t *testing.T) {
 	assert.Equal(t, "3.7.8", m.currentRow().Update.LatestTag)
 }
 
-// ←/→ move along the bar without touching anything. An arrow that navigates in
-// one pane and edits in another is the confusion this rule exists to end.
+// ←/→ move along the bar without changing any value.
 func TestBarArrowsMoveBetweenStopsWithoutChangingAnything(t *testing.T) {
 	m := focusStop(t, barModel(t), "show")
 	filter, target := m.filter, m.target
@@ -207,9 +203,8 @@ func TestBarApplyButtonDoesNothingWithoutASelection(t *testing.T) {
 	assert.Nil(t, cmd)
 }
 
-// The bar claims the arrows, tab and the acting keys, and nothing else. A key
-// it does not read still reaches the list underneath, so tabbing across never
-// becomes a mode you are stuck in.
+// The bar claims the arrows, tab and the acting keys, and nothing else: anything
+// else reaches the list, so tabbing across is never a mode you are stuck in.
 func TestBarPassesUnclaimedKeysToTheList(t *testing.T) {
 	m := focusStop(t, barModel(t), "show")
 	require.Empty(t, m.collapsed)
@@ -230,8 +225,8 @@ func TestBarSpaceActsOnTheStopNotOnTheRow(t *testing.T) {
 	assert.NotEqual(t, FilterAll, m.filter, "the stop is")
 }
 
-// Every stop names the key that does the same thing, and it has to be the key
-// the map actually binds — the bar is meant to teach the shortcut.
+// Every stop names the key that does the same thing, and it has to be the one
+// the map actually binds.
 func TestBarHintsMatchTheKeyMap(t *testing.T) {
 	m := barModel(t)
 	k := DefaultKeyMap()
@@ -268,8 +263,7 @@ func TestBarIsDrawnWhenTheColumnIsNot(t *testing.T) {
 	assert.Contains(t, plain(m.barLine(m.width)), "show")
 }
 
-// The way out has to be one keypress. Tabbing round every remaining stop to get
-// home would make leaving the bar cost more than arriving on it.
+// The way out has to be one keypress, not a lap round the remaining stops.
 func TestBarLeavesOnEsc(t *testing.T) {
 	m := focusStop(t, barModel(t), "show")
 	require.Equal(t, focusBar, m.focus)
@@ -280,9 +274,8 @@ func TestBarLeavesOnEsc(t *testing.T) {
 	assert.Equal(t, cursor, m.cursor, "leaving is not moving: the place in the list is kept")
 }
 
-// The vertical arrows go back down into the list, which is where they point.
-// Letting them fall through was the confusing part: the keyboard said it was on
-// the bar while the list scrolled underneath it.
+// The vertical arrows go back down into the list. Letting them fall through
+// scrolled the list while the keyboard said it was on the bar.
 func TestBarVerticalArrowsReturnToTheList(t *testing.T) {
 	for _, k := range []tea.KeyMsg{{Type: tea.KeyDown}, {Type: tea.KeyUp}} {
 		m := focusStop(t, barModel(t), "show")
@@ -302,8 +295,7 @@ func TestBarHintsLeadWithTheWayOut(t *testing.T) {
 	assert.Equal(t, k.IssuesClose.Help().Key, hints[0].Help().Key, "esc comes first")
 }
 
-// `m` reaches the bar whatever the cursor is on, including from inside the
-// detail column — the list-wide settings are never more than one key away.
+// `m` reaches the bar whatever the cursor is on, the detail column included.
 func TestBarIsReachableWithMFromAnywhere(t *testing.T) {
 	m := barModel(t)
 	require.NotNil(t, m.currentRow(), "this test starts on an image")
@@ -319,8 +311,8 @@ func TestBarIsReachableWithMFromAnywhere(t *testing.T) {
 	assert.Equal(t, focusBar, m.focus, "and m gets to the bar from there too")
 }
 
-// tab on an image opens the detail column and comes straight back — the bar is
-// not on the way, so it never ends up focused when the details were the point.
+// tab on an image opens the detail column and comes straight back; the bar is
+// not on the way.
 func TestTabOnAnImageOpensTheColumnAndBack(t *testing.T) {
 	m := barModel(t)
 
@@ -389,8 +381,7 @@ func TestTabGoesToDetailsAfterLeavingTheBarOntoAnImage(t *testing.T) {
 	assert.Equal(t, focusSide, m.focus, "tab follows the cursor, not the focus")
 }
 
-// Up at the top of the list carries on into the bar, which is drawn directly
-// above it. The keypress had nowhere to go before — the clamp ate it.
+// Up at the top of the list carries on into the bar drawn directly above it.
 func TestUpAtTheTopOfTheListEntersTheBar(t *testing.T) {
 	m := barModel(t)
 	m.cursor = 0

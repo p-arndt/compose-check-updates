@@ -269,7 +269,6 @@ func (u *UpdateInfo) Backup() error {
 		return err
 	}
 
-	// Do a backup of the original file
 	err = os.WriteFile(u.FilePath+".ccu", input, 0644)
 	if err != nil {
 		return err
@@ -299,11 +298,9 @@ func (u *UpdateInfo) Update() error {
 	updateMu.Lock()
 	defer updateMu.Unlock()
 
-	// check if a backup file exists
 	_, err := os.Stat(u.FilePath + ".ccu")
 	if err != nil {
 		if os.IsNotExist(err) {
-			// if the file does not exist, create a backup
 			err = u.Backup()
 			if err != nil {
 				return err

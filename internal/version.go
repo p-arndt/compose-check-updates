@@ -20,7 +20,6 @@ type versionTag struct {
 func candidateVersions(tags []string) []versionTag {
 	var versionTags []versionTag
 
-	// Collect valid semantic versions (accept tags prefixed with 'v' and allow "non-strict" semver like "1.1")
 	for _, tag := range tags {
 		candidate := strings.TrimPrefix(tag, "v")
 		normalized, ok := normalizeSemver(candidate)

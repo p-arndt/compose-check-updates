@@ -17,11 +17,10 @@ func applyCmd(r Row) tea.Cmd {
 	key := rowKey(r)
 	info := r.Update
 	return func() tea.Msg {
-		// Re-pointing a row at another target level clears its resolved digest,
-		// and Update() refuses to write a tag/digest pair that no longer belongs
-		// together. Resolving here — inside the command, off the UI thread — keeps
-		// the network call out of the render loop. It is a no-op for images that
-		// are not digest-pinned.
+		// Re-pointing a row clears its resolved digest, and Update() refuses a
+		// tag/digest pair that no longer belongs together. Resolving inside the
+		// command keeps the network call off the UI thread; a no-op for images
+		// that are not digest-pinned.
 		if info.CurrentDigest != "" {
 			if err := info.ResolveDigest(internal.NewRegistry("")); err != nil {
 				return applyResultMsg{key: key, err: err}
@@ -32,9 +31,8 @@ func applyCmd(r Row) tea.Cmd {
 }
 
 // beginApply queues the given pending rows and starts up to applyConcurrency of
-// them. Returns nil when there is nothing to do. Both apply keys funnel through
-// here so the digest resolve, the concurrency budget and the restart prompt are
-// written once rather than once per entry point.
+// them, returning nil when there is nothing to do. Both apply keys funnel through
+// here, so the digest resolve, the budget and the restart prompt exist once.
 func (m *Model) beginApply(rows []Row) tea.Cmd {
 	if len(rows) == 0 {
 		return nil
@@ -120,8 +118,8 @@ func (m *Model) finishApply() tea.Cmd {
 }
 
 // affectedFiles is the deduplicated set of compose files that actually changed,
-// in list order. The restart question is asked once for this set, not once per
-// image, because `docker compose up -d` acts on the whole file anyway.
+// in list order. The restart question is asked once for the set, since
+// `docker compose up -d` acts on the whole file anyway.
 func (m Model) affectedFiles() []internal.UpdateInfo {
 	seen := make(map[string]bool)
 	var out []internal.UpdateInfo

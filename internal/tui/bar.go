@@ -9,20 +9,11 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// The bar is where the decisions that are not about any one row live: what the
-// list shows, what level every row is pointed at, and the two things you do to
-// the run as a whole. They used to be keys and nothing else — f, t, i, A — which
-// is fine once you know them and invisible until you do.
-//
-// It is on screen from the first frame. That is the whole point: there is
-// nothing to open, so there is no key standing between a user and finding out
-// what this program can do. Every stop still names its key, because the bar is
-// meant to teach the shortcut, not to replace it.
-//
-// It follows the same rule as everything else here: the arrows move, space and
-// enter act on the stop under the cursor. ←/→ walk the stops, ↑/↓ go back down
-// into the list, space and enter step a value or press a button. Every key it
-// does not claim falls straight through to the list.
+// The bar holds the decisions that are not about any one row: the filter, the
+// global target level, and the two run-wide buttons. It is always on screen so
+// those settings are discoverable, and every stop names its key so it teaches
+// the shortcut rather than replacing it. ←/→ walk the stops, ↑/↓ return to the
+// list, space and enter act. Unclaimed keys fall through to the list.
 
 // barKind is what a stop does when it is acted on: a value steps, a button
 // fires.
@@ -62,12 +53,9 @@ type barStop struct {
 	off   bool   // shown, but pressing it would do nothing
 }
 
-// barStops is the bar as it stands. Everything that draws it or acts on it goes
-// through here, so what is on screen and what tab walks cannot disagree.
-//
-// The stops never come and go: a bar that dropped its issues button when there
-// was nothing to report would move every stop after it, and a row of controls
-// that shifts under the cursor is worse than one with a greyed-out entry.
+// barStops is the single definition of the bar, so what is drawn and what the
+// cursor walks cannot disagree. Stops are never dropped, only greyed out: a
+// disappearing stop would shift every stop after it under the cursor.
 func (m Model) barStops() []barStop {
 	n := m.selectedCount()
 	return []barStop{
@@ -96,22 +84,10 @@ func (m Model) barStops() []barStop {
 // does not bind.
 func hintFor(b key.Binding) string { return b.Help().Key }
 
-// --- focus --------------------------------------------------------------
-
-// tab answers one question, and it is always the same one: what is the cursor
-// on? On an image it opens the detail column, because that is what describes
-// the image. On anything else — a directory or file header — there is nothing
-// to describe, so it goes up to the bar. tab in the column comes back to the
-// list.
-//
-// It deliberately asks the cursor rather than the focus. Asking the focus meant
-// that arrowing onto an image while the bar had the keyboard left tab stepping
-// along the bar, when the thing under the cursor had plainly become a row with
-// details to show.
-//
-// Stepping along the bar is `m`'s job for the same reason: it is the key that
-// means "the bar", so pressing it again means "the next thing on it". That
-// works from a row, where tab is busy answering about the row.
+// tab asks what the cursor is on, not where the focus is: an image opens the
+// detail column, anything else goes to the bar. Asking the focus instead left
+// tab stepping the bar while the cursor sat on a row with details to show.
+// Walking the bar is `m`'s job, which stays available from a row.
 
 // advanceFocus is what tab does, from wherever the keyboard currently is.
 func (m *Model) advanceFocus() {
@@ -132,8 +108,7 @@ func (m *Model) advanceFocus() {
 func (m *Model) openBar() { m.stepBarFocus() }
 
 // stepBarFocus enters the bar, or moves to the next stop when it is already
-// there. Entering is all tab and `m` have to do now: once the keyboard is on
-// the bar, ←/→ are what move along it.
+// there.
 func (m *Model) stepBarFocus() {
 	if m.focus != focusBar {
 		m.enterBar(0)
@@ -169,15 +144,10 @@ func (m *Model) enterBar(stop int) {
 
 // --- keys ---------------------------------------------------------------
 
-// handleBarKey reads the keys the bar claims while it has the focus.
-//
-// It claims both arrows now. Horizontal ones move between stops; vertical ones
-// go back down into the list, which is where they point. Letting them fall
-// through was the confusing part: the keyboard said it was on the bar while the
-// list scrolled underneath, so the cursor ended up somewhere the user had not
-// watched it go.
-//
-// Everything it does not claim still reaches the list.
+// handleBarKey reads the keys the bar claims while it has the focus: ←/→ move
+// between stops, ↑/↓ go back down into the list. Letting the vertical ones fall
+// through scrolled the list while the keyboard said it was on the bar.
+// Everything unclaimed still reaches the list.
 func (m Model) handleBarKey(msg tea.KeyMsg) (bool, tea.Model, tea.Cmd) {
 	switch {
 	case key.Matches(msg, m.keys.Focus), key.Matches(msg, m.keys.BarNext):
@@ -200,9 +170,8 @@ func (m Model) handleBarKey(msg tea.KeyMsg) (bool, tea.Model, tea.Cmd) {
 	return false, m, nil
 }
 
-// stepStop moves along the bar, wrapping at both ends. Wrapping rather than
-// falling off is what makes ←/→ read as movement within one strip: the way out
-// is ↓ and esc, and having three ways out would only blur what each one means.
+// stepStop moves along the bar, wrapping at both ends: ←/→ move within the
+// strip, and the only ways out are ↓ and esc.
 func (m *Model) stepStop(delta int) {
 	stops := m.barStops()
 	if len(stops) == 0 {
@@ -295,16 +264,10 @@ func (m Model) barLine(width int) string {
 	return fit(" "+line, width)
 }
 
-// barStopText renders one stop.
-//
-// The focus is carried by colour, weight and an underline rather than by a
-// background. A background does not survive here: every segment of a stop is
-// styled on its own — dim brackets, a bright value — and each of those emits a
-// reset that ends the background the moment it closes, leaving the highlight
-// smeared across the first bracket and nothing else. Merging the focus into
-// each segment's own style is the only composition that holds, and an
-// underlined accent reads as selected on a light terminal as well as a dark
-// one, which a hardcoded highlight colour does not.
+// barStopText renders one stop. Focus is carried by colour, weight and an
+// underline merged into each segment's own style: a background would be ended
+// by the reset every segment emits, and an underlined accent reads as selected
+// on light and dark terminals alike.
 func (m Model) barStopText(s barStop, focused bool) string {
 	edge := m.theme.dim()
 	label := m.theme.dim()

@@ -166,13 +166,10 @@ func TestParse(t *testing.T) {
 			origArgs := os.Args
 			defer func() { os.Args = origArgs }()
 
-			// Set the command-line arguments for the test
 			os.Args = append([]string{"cmd"}, tt.args...)
 
-			// Reset the flags to their default state
 			flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ContinueOnError)
 
-			// Parse the flags
 			exitCode := 0
 			flag.CommandLine.Usage = func() {
 				exitCode = 2

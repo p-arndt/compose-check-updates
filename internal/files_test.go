@@ -43,14 +43,12 @@ func TestGetComposeFilePaths(t *testing.T) {
 }
 
 func TestGetComposeFilePathsWithExclude(t *testing.T) {
-	// Create a temporary directory structure for testing
 	tmpDir, err := os.MkdirTemp("", "ccu-test-*")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
 	defer os.RemoveAll(tmpDir)
 
-	// Create test structure
 	// tmpDir/
 	//   docker-compose.yml
 	//   subdir/
@@ -106,7 +104,6 @@ func TestGetComposeFilePathsWithExclude(t *testing.T) {
 		t.Errorf("GetComposeFilePathsWithExclude(['excluded']) = %v, want 3 files", len(result))
 	}
 
-	// Verify the excluded file is not in the results
 	excludedFile := filepath.Join(excluded, "docker-compose.yml")
 	found := false
 	for _, path := range result {
@@ -150,7 +147,6 @@ func TestGetComposeFilePathsIgnoresPermissionDenied(t *testing.T) {
 		t.Fatalf("Failed to create subdir: %v", err)
 	}
 
-	// Create a compose file that should be found when permissions are normal
 	if err := os.WriteFile(filepath.Join(tmpDir, "docker-compose.yml"), []byte("version: '3'"), 0644); err != nil {
 		t.Fatalf("Failed to create file: %v", err)
 	}

@@ -9,28 +9,22 @@ import (
 	"github.com/p-arndt/compose-check-updates/internal/config"
 )
 
-// The sidebar is the one place a single image is decided: which release it
-// moves to, and whether that choice is remembered past this run. It replaces
-// the keys those two questions used to have — a key each for stepping the
-// target, another for pinning, another for the scope — because a decision with
-// three visible fields needs no keys of its own beyond a cursor.
-//
-// It follows the list rather than being opened: the row under the cursor is
-// what it describes, so there is never a question of which image is meant.
+// The sidebar is where a single image is decided: which release it moves to, and
+// whether that choice is remembered past this run. Three visible fields and a
+// cursor replace the three keys those questions used to need. It follows the
+// list rather than being opened, so which image is meant is never in question.
 
-// sidebarMinTotal is the terminal width below which the two columns stop
-// fitting side by side. Two columns narrower than this leave the list too
-// cramped to read a path in, and the list is the half that cannot be given up.
+// sidebarMinTotal is the terminal width below which the two columns stop fitting
+// side by side, leaving the list too cramped to read a path in.
 const sidebarMinTotal = 96
 
-// sidebarMinStacked is the width below which even a full-width panel has no
-// room to say anything. Under it there is genuinely nothing to draw.
+// sidebarMinStacked is the width below which even a full-width panel has no room
+// to say anything.
 const sidebarMinStacked = 34
 
-// sidebarPlacement is where the sidebar goes in the frame. It is not a question
-// of whether the sidebar exists: the cap and the per-image target have no keys
-// of their own, so a layout that dropped the sidebar would put them out of
-// reach entirely. A narrow terminal moves it under the list instead.
+// sidebarPlacement is where the sidebar goes in the frame — never whether it
+// exists: the cap and the per-image target have no keys of their own, so
+// dropping it would put them out of reach. A narrow terminal stacks it below.
 type sidebarPlacement int
 
 const (
@@ -54,14 +48,12 @@ func placeSidebar(total int) sidebarPlacement {
 // sidebarPlacement is placeSidebar for the current frame.
 func (m Model) sidebarPlacement() sidebarPlacement { return placeSidebar(m.width) }
 
-// sidebarAvailable reports whether there is a sidebar for the focus to move
-// into. Every caller that used to ask `sidebarWidth(m.width) > 0` means this.
+// sidebarAvailable reports whether there is a sidebar for the focus to move into.
 func (m Model) sidebarAvailable() bool { return m.sidebarPlacement() != sidebarNowhere }
 
 // stackedSidebarHeight is how many rows the stacked panel takes off the list,
-// its border included. Only the fields go in it — a narrow terminal is usually
-// a short one too, and the path and the hint are the parts the list already
-// says or the footer can.
+// its border included. Only the fields go in it: the path and the hint are
+// already covered by the list and the footer.
 func (m Model) stackedSidebarHeight() int {
 	if m.sidebarPlacement() != sidebarStacked {
 		return 0
@@ -117,9 +109,8 @@ const (
 	sideFieldCount
 )
 
-// focusArea is which half of the frame the keyboard is talking to. The list
-// keeps the focus until it is deliberately handed over, so every reflex key
-// still means what it meant before the sidebar existed.
+// focusArea is which half of the frame the keyboard is talking to. The list keeps
+// it until deliberately handed over, so every reflex key keeps its meaning.
 type focusArea int
 
 const (
@@ -128,21 +119,13 @@ const (
 	focusSide
 )
 
-// capChoicesFor are the values the cap field steps through for one image. The
-// cap names a level in its own right rather than borrowing whatever the target
-// field happens to show: the target is what this run does, the cap is what every
-// run from now on may not exceed, and reading one off the other made it
-// impossible to set a cap without first moving a target the user did not want
-// moved.
+// capChoicesFor are the values the cap field steps through for one image. The cap
+// names a level of its own rather than borrowing the target's: the target is what
+// this run does, the cap is what every future run may not exceed.
 //
-// Levels the image has no release for are still offered — a cap is a policy
-// about the future, and an image with no major today may publish one tomorrow.
-//
-// Major is the exception, and only appears when it would mean something. On its
-// own it is the same as no cap at all, since nothing in semver sits above it.
-// It earns its place only when a global cap exists: the project file overrides
-// the global one, so "major" there is how a project says the global ceiling does
-// not apply to it.
+// Levels the image has no release for are still offered — a cap is a policy about
+// the future. Major is the exception: it means nothing on its own, and appears
+// only when a global cap exists, where it is how a project waives that ceiling.
 func (m Model) capChoicesFor(image string) []config.Level {
 	choices := []config.Level{"", config.LevelPatch, config.LevelMinor}
 	if m.capInScope(pinGlobal, image) != "" {
@@ -155,13 +138,10 @@ func (m Model) capChoicesFor(image string) []config.Level {
 // steps through them.
 var scopeChoices = []pinScope{pinProject, pinGlobal}
 
-// sidebarLines renders the right column for the row under the cursor, within
-// the height it is given.
-//
-// The fields come first when space runs out. A short terminal that dropped the
-// cap field would leave the setting unreachable, whereas dropping the file path
-// only costs a fact the user can see in the list anyway — so the lines are
-// added in priority order rather than top to bottom.
+// sidebarLines renders the right column for the row under the cursor, within the
+// height it is given. Lines are added in priority order rather than top to
+// bottom: dropping a field would make a setting unreachable, whereas dropping the
+// file path only costs a fact the list already shows.
 func (m Model) sidebarLines(width, height int) []string {
 	r := m.currentRow()
 	if r == nil {
@@ -170,16 +150,14 @@ func (m Model) sidebarLines(width, height int) []string {
 
 	u := r.Update
 
-	// Everything here has to survive, in this order: the image being described,
-	// then each thing that can be changed about it.
+	// Everything here has to survive: the image, then what can be changed about it.
 	fields := []string{
 		m.theme.sideTitle(u.ImageName, width),
 		m.theme.sideValue("target", m.targetValue(r), m.focused(fieldTarget), width),
 		m.theme.sideValue("cap", m.capValue(r), m.focused(fieldCap), width),
 	}
 	if r.Pin != "" {
-		// The scope only exists once there is a cap to put somewhere. Showing it
-		// permanently would ask the user to answer a question with no subject.
+		// The scope only exists once there is a cap to put somewhere.
 		fields = append(fields, m.theme.sideValue("save to", m.scopeValue(r, width), m.focused(fieldScope), width))
 	}
 
@@ -187,9 +165,8 @@ func (m Model) sidebarLines(width, height int) []string {
 		return fields[:max(height, 1)]
 	}
 
-	// Room to spare, so the context and the spacing go back in — the path first,
-	// because it is the one that says which of two identically named services
-	// this is.
+	// Room to spare, so the context and the spacing go back in, path first: it is
+	// what tells two identically named services apart.
 	out := []string{fields[0]}
 	rest := fields[1:]
 
@@ -201,8 +178,8 @@ func (m Model) sidebarLines(width, height int) []string {
 	}
 	out = append(out, rest...)
 
-	// Only while the list still holds the keyboard: once the sidebar has it the
-	// footer names the same keys, and saying it twice on one frame is noise.
+	// Only while the list still holds the keyboard; once the sidebar has it, the
+	// footer names the same keys.
 	if m.focus == focusList && height >= len(out)+2 {
 		out = append(out, "", m.theme.dim().Render(fit("→ to change", width)))
 	}
@@ -222,13 +199,12 @@ func (m Model) targetValue(r *Row) string {
 	if r.NoTarget || len(r.Update.AvailableTargets()) == 0 {
 		return m.theme.sideText("—", focused)
 	}
-	// The same badge the row carries in the list, so the level the field is set
-	// to and the level the row shows are recognisably one thing.
+	// The same badge the row carries in the list, so field and row read as one.
 	return m.theme.BadgeTight(r.Target.Label()) + " " + m.theme.sideText(r.Update.LatestTag, focused)
 }
 
-// capValue is the ceiling this image may never move past, phrased so the line
-// reads as the rule it is rather than as a version number.
+// capValue is the ceiling this image may never move past, phrased as a rule
+// rather than as a version number.
 func (m Model) capValue(r *Row) string {
 	focused := m.focused(fieldCap)
 	if r.Pin == "" {
@@ -237,9 +213,8 @@ func (m Model) capValue(r *Row) string {
 
 	value := m.theme.BadgeTight(string(r.Pin))
 
-	// The one case where "major" is not a no-op is worth spelling out, because
-	// on its own the word says nothing: it is only there to lift a ceiling the
-	// global file set.
+	// Spelled out because "major" only means something here: it lifts a ceiling
+	// the global file set.
 	if r.Pin == config.LevelMajor {
 		value += m.theme.dim().Render("  lifts the global cap")
 	}
@@ -247,12 +222,9 @@ func (m Model) capValue(r *Row) string {
 }
 
 // scopeValue names the file the cap is remembered in, with the path beside it:
-// "project" and "global" only mean something once you can see which file each
-// one is.
-// scopeValue names the file the cap is remembered in. The path is a hint rather
-// than the answer, so it is dropped when the column is too narrow to hold it —
-// a truncated line would eat the closing chevron and make the field look broken
-// rather than abbreviated.
+// "project" and "global" only mean something once the file is visible. The path
+// is dropped rather than truncated when the column is too narrow, since a cut
+// line would eat the closing chevron and make the field look broken.
 func (m Model) scopeValue(r *Row, width int) string {
 	focused := m.focused(fieldScope)
 
@@ -261,8 +233,7 @@ func (m Model) scopeValue(r *Row, width int) string {
 		name, path = "global", "  ~/.config/ccu"
 	}
 
-	// The label, the chevrons and their spaces: what sideValue puts around the
-	// value, and therefore what the value may not use.
+	// What sideValue puts around the value, and therefore what it may not use.
 	const chrome = 8 + 4
 	if lipgloss.Width(name+path)+chrome > width {
 		path = ""
@@ -281,7 +252,7 @@ func (m Model) pinScopeOf(image string) pinScope {
 }
 
 // cycleSideValue changes the focused field by delta. It is the only way the
-// sidebar writes anything, so every question goes through one place.
+// sidebar writes anything.
 func (m *Model) cycleSideValue(delta int) {
 	r := m.currentRow()
 	if r == nil {
@@ -298,8 +269,7 @@ func (m *Model) cycleSideValue(delta int) {
 	}
 }
 
-// cycleCap steps the ceiling and writes it immediately. Writing on the keypress
-// rather than on leaving the pane is what makes the field honest: what it shows
+// cycleCap steps the ceiling and writes it immediately, so what the field shows
 // is what is on disk, with no unsaved state to lose.
 func (m *Model) cycleCap(r *Row, delta int) {
 	image := r.Update.ImageName
@@ -354,9 +324,8 @@ func (m *Model) cycleScope(r *Row, delta int) {
 		return
 	}
 
-	// Cleared from the file it is leaving before being written to the new one,
-	// or the image ends up capped in both and the field can no longer say which
-	// one it is showing.
+	// Cleared from the old file before being written to the new one, or the image
+	// ends up capped in both and the field cannot say which it shows.
 	if err := m.setCap(from, image, ""); err != nil {
 		m.setStatus(StatusError, fmt.Sprintf("could not update %s: %v", image, err))
 		return
@@ -399,8 +368,7 @@ func scopeLabel(s pinScope) string {
 }
 
 // applyPin records the new cap in the in-memory layers and restamps the rows, so
-// the marker and the field agree with what was just written without re-reading
-// the file.
+// marker and field agree with the file without re-reading it.
 func (m *Model) applyPin(image string, level config.Level, scope pinScope) {
 	for s := range m.pins {
 		cfg := m.pins[s]
@@ -422,9 +390,8 @@ func (m *Model) applyPin(image string, level config.Level, scope pinScope) {
 	m.refreshPins()
 }
 
-// shortPath trims a compose file path to its last two segments. The sidebar has
-// no room for an absolute path, and the two segments that identify a stack are
-// the directory and the file name.
+// shortPath trims a compose file path to its last two segments — the directory
+// and the file name are what identify a stack.
 func shortPath(p string) string {
 	parts := strings.Split(strings.ReplaceAll(p, "\\", "/"), "/")
 	if len(parts) <= 2 {
@@ -433,9 +400,8 @@ func shortPath(p string) string {
 	return strings.Join(parts[len(parts)-2:], "/")
 }
 
-// joinColumns places the two boxes side by side. Both are drawn to the same
-// height so their borders close level with each other; a shorter box would look
-// like the taller one had lost its bottom edge.
+// joinColumns places the two boxes side by side, drawn to the same height so
+// their borders close level with each other.
 func (m Model) joinColumns(left, right []string, leftInner, height int) string {
 	inner := height - 2
 	if inner < 1 {
@@ -465,7 +431,6 @@ func (m Model) joinColumns(left, right []string, leftInner, height int) string {
 	return strings.Join(out, "\n")
 }
 
-// sidebarGutter is the single blank column between the two boxes. Their own
-// borders do the separating, so one space is all that is needed to keep them
-// from touching.
+// sidebarGutter is the single blank column between the two boxes; their own
+// borders do the separating.
 const sidebarGutter = 1

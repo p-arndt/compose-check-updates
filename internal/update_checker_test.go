@@ -86,7 +86,6 @@ image: library/ubuntu
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Create a temporary file with the test data
 			file, err := os.CreateTemp("", "testfile.yaml")
 			assert.NoError(t, err)
 			defer os.Remove(file.Name())
@@ -95,14 +94,11 @@ image: library/ubuntu
 			assert.NoError(t, err)
 			file.Close()
 
-			// Update the expected FilePath to match the temporary file name
 			for i := range tt.expected {
 				tt.expected[i].FilePath = file.Name()
 			}
 
-			// Create an UpdateChecker instance with mock server
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				// Handle Docker Hub API style requests
 				if strings.Contains(r.URL.Path, "/v2/repositories/") {
 					w.WriteHeader(http.StatusOK)
 					w.Write([]byte(`{"count": 4, "results": [
@@ -113,7 +109,6 @@ image: library/ubuntu
 					],"next": null}`))
 					return
 				}
-				// Handle OCI registry v2 API style requests
 				if strings.Contains(r.URL.Path, "/tags/list") {
 					w.WriteHeader(http.StatusOK)
 					w.Write([]byte(`{"name":"library/ubuntu","tags":["1.18.0","1.18.1","1.19.0","1.20.0"]}`))
@@ -127,20 +122,16 @@ image: library/ubuntu
 			registry := NewRegistry(serverURL.Host)
 			updateChecker := NewUpdateChecker(file.Name(), registry)
 
-			// Call createUpdateInfos
 			updateInfos, err := updateChecker.createUpdateInfos()
 			assert.NoError(t, err)
 
-			// Verify the results
 			assert.Equal(t, tt.expected, updateInfos)
 		})
 	}
 }
 
 func TestUpdateCheckerCheck(t *testing.T) {
-	// Create an UpdateChecker instance with mock server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Handle OCI registry v2 API style requests
 		if strings.Contains(r.URL.Path, "/tags/list") {
 			w.WriteHeader(http.StatusOK)
 			w.Write([]byte(`{"name":"library/myimage","tags":["1.18.0","1.18.1","1.19.0","1.20.0"]}`))
@@ -178,7 +169,6 @@ image: %s/library/myimage:1.19.0
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Create a temporary file with the test data
 			file, err := os.CreateTemp("", "testfile.yaml")
 			assert.NoError(t, err)
 			defer os.Remove(file.Name())
@@ -187,7 +177,6 @@ image: %s/library/myimage:1.19.0
 			assert.NoError(t, err)
 			file.Close()
 
-			// Update the expected FilePath to match the temporary file name
 			for i := range tt.expected {
 				tt.expected[i].FilePath = file.Name()
 			}
@@ -195,11 +184,9 @@ image: %s/library/myimage:1.19.0
 			registry := NewRegistry(serverURL.Host)
 			updateChecker := NewUpdateChecker(file.Name(), registry)
 
-			// Call Check
 			result, err := updateChecker.Check(true, true, true)
 			assert.NoError(t, err)
 
-			// Verify the results
 			assert.Equal(t, tt.expected, result)
 		})
 	}

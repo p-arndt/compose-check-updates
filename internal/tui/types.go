@@ -71,9 +71,8 @@ const (
 	TargetMajor Target = "major"
 )
 
-// targetOrder is the cycle order, lowest-risk first. Major is last so the
-// default (TargetMajor, which preserves the historical behaviour) wraps round
-// to the most conservative choice on the first press.
+// targetOrder is the cycle order, lowest-risk first. Major is last so the default
+// wraps round to the most conservative choice on the first press.
 var targetOrder = []Target{TargetPatch, TargetMinor, TargetMajor}
 
 // Next cycles to the following target, wrapping around at the end.
@@ -113,17 +112,15 @@ type Row struct {
 	State    RowState
 	Err      error // set when State is RowFailed
 
-	// Target is the level this row's LatestTag currently points at. NoTarget is
-	// set when the image has no release at that level at all: the row keeps its
-	// old LatestTag internally but must be presented and treated as having no
-	// update, or applying would write a version the user never chose.
+	// Target is the level this row's LatestTag currently points at. NoTarget means
+	// the image has no release at that level: the row keeps its old LatestTag
+	// internally but must be treated as having no update.
 	Target   Target
 	NoTarget bool
 
-	// Pin is the cap recorded for this image in the user's config, or "" when
-	// there is none. It is carried on the row rather than looked up while
-	// rendering so the list line stays a pure function of the row, the way the
-	// (+N) hint already is.
+	// Pin is the cap recorded for this image, or "" when there is none. Carried on
+	// the row rather than looked up while rendering, so the list line stays a pure
+	// function of the row.
 	Pin config.Level
 }
 
@@ -146,9 +143,9 @@ func (r Row) otherTargets() int {
 	return n - 1
 }
 
-// pinScope is the config file a cap is written to. The user picks one per pin
-// rather than the program guessing: a cap on an image used in one project is a
-// different statement from a cap on that image everywhere.
+// pinScope is the config file a cap is written to. The user picks one per pin:
+// capping an image in one project says something different from capping it
+// everywhere.
 type pinScope int
 
 const (
@@ -164,8 +161,8 @@ func (s pinScope) Label() string {
 	return "project"
 }
 
-// entryKind distinguishes the two things a list line — and therefore the cursor
-// — can be since file groups became collapsible.
+// entryKind distinguishes the two things a list line, and therefore the cursor,
+// can be.
 type entryKind int
 
 const (
@@ -173,9 +170,9 @@ const (
 	entryRow
 )
 
-// entry is one rendered line of the list. Headers are entries in their own
-// right so the cursor can land on a level of the tree and fold it, which also
-// makes the rendered line index and the cursor index the same number.
+// entry is one rendered line of the list. Headers are entries in their own right
+// so the cursor can land on a level of the tree and fold it, which also keeps the
+// rendered line index and the cursor index the same number.
 type entry struct {
 	kind entryKind
 	// path is the node key for a header — any prefix of the tree, not only a

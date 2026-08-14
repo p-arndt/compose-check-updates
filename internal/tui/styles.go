@@ -6,9 +6,8 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// minWidth is the narrowest layout the renderers will attempt. Callers hand us
-// whatever the terminal reports, including 0 during the first frame before
-// Bubble Tea has delivered a WindowSizeMsg, so every entry point clamps first
+// minWidth is the narrowest layout the renderers will attempt. Terminal width is
+// legitimately 0 before the first WindowSizeMsg, so every entry point clamps
 // rather than guarding each arithmetic step against negative budgets.
 const minWidth = 20
 
@@ -68,10 +67,8 @@ func (t Theme) Badge(level string) string {
 		Render(body)
 }
 
-// BadgeTight is the same chip without the fixed width. The padding in Badge
-// exists to keep the columns after it lined up in the list; nothing lines up
-// after a badge in the sidebar, where the trailing blanks only open a gap
-// before whatever follows.
+// BadgeTight is the same chip without the fixed width. Nothing lines up after a
+// badge in the sidebar, where the padding would only open a gap.
 func (t Theme) BadgeTight(level string) string {
 	label := strings.ToUpper(strings.TrimSpace(level))
 	if label == "" {
@@ -166,10 +163,8 @@ func padRight(s string, w int) string {
 }
 
 // padDisplay pads to a width the terminal will actually show. padRight counts
-// runes, which is right for plain text and wrong for anything styled: an escape
-// sequence is several runes and zero columns wide, so a coloured line comes out
-// short by however much styling it carries. Any layout that has to line two
-// columns up has to measure the rendered width instead.
+// runes, which is wrong for styled text: an escape sequence is several runes and
+// zero columns wide, so a coloured line comes out short.
 func padDisplay(s string, w int) string {
 	if n := w - lipgloss.Width(s); n > 0 {
 		return s + strings.Repeat(" ", n)
@@ -200,9 +195,8 @@ func shortDigest(d string) string {
 	return algo + ":" + hex[:12] + "…"
 }
 
-// The sidebar's own styles. They deliberately stay quieter than the list's: the
-// list is what the eye scans, and a right column shouting for attention would
-// pull it off the rows.
+// The sidebar's own styles, deliberately quieter than the list's: the list is
+// what the eye scans.
 
 func (t Theme) dim() lipgloss.Style {
 	return lipgloss.NewStyle().Foreground(t.Dim)
@@ -228,12 +222,10 @@ func (t Theme) sideField(label, value string, width int) string {
 // one column of padding inside each of them, so text never touches the frame.
 const boxChrome = 4
 
-// Box frames a block of lines. The frame is the only thing on screen that says
-// which half the keyboard is talking to, so the focused box changes both colour
-// and weight: colour alone is easy to miss, and impossible to see at all on a
-// terminal that has been told not to use any.
-//
-// Both borders are one cell wide, so switching between them moves nothing.
+// Box frames a block of lines. The frame is the only thing saying which half the
+// keyboard is talking to, so the focused box changes colour *and* weight: colour
+// alone is invisible on a terminal told not to use any. Both borders are one cell
+// wide, so switching between them moves nothing.
 //
 // The returned lines are innerH+2 of them, each innerW+boxChrome wide, so a
 // caller can place two boxes side by side without measuring anything itself.
@@ -262,12 +254,9 @@ func (t Theme) Box(content []string, innerW, innerH int, focused bool) []string 
 }
 
 // sideValue is one editable field: a label, and its value between chevrons. The
-// chevrons are the affordance — they say the value steps sideways — and they
-// only light up on the field the arrow keys would actually change.
-//
-// The value arrives already styled, so a field can put a level badge where its
-// value goes and have it look like the same level does in the list. Restyling
-// it here would flatten the badge back into text.
+// chevrons say the value steps sideways, and only light up on the field the arrow
+// keys would change. The value arrives already styled so a field can put a level
+// badge where its value goes; restyling here would flatten it back into text.
 func (t Theme) sideValue(label, value string, focused bool, width int) string {
 	name := t.dim().Render(padRight(label, 8))
 	chevron := t.dim()

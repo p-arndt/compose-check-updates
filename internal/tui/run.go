@@ -18,13 +18,11 @@ import (
 )
 
 // logCapture is a slog.Handler that keeps records in memory instead of writing
-// them anywhere. The default handler main.go installs writes to os.Stdout, and
-// internal logs a warning for every image whose tags cannot be fetched — those
-// writes land on top of the rendered frame and scroll the UI away. While the
-// TUI owns the screen nothing may reach the terminal except the frame itself.
+// them anywhere: while the TUI owns the screen, nothing may reach the terminal
+// except the rendered frame.
 //
-// Every field is guarded by mu: the scan logs from one goroutine per image, and
-// the UI drains from the Bubble Tea loop, all concurrently.
+// Every field is guarded by mu — the scan logs from one goroutine per image
+// while the UI drains from the Bubble Tea loop.
 type logCapture struct {
 	mu      sync.Mutex
 	records []capturedLog
@@ -70,9 +68,8 @@ func (c *logCapture) Handle(_ context.Context, r slog.Record) error {
 	return nil
 }
 
-// WithAttrs and WithGroup return the receiver: the scan does not use grouped or
-// pre-bound loggers, and inheriting the same store keeps every record in one
-// ordered list.
+// WithAttrs and WithGroup return the receiver, so every record stays in one
+// ordered list. The scan uses neither grouped nor pre-bound loggers.
 func (c *logCapture) WithAttrs([]slog.Attr) slog.Handler { return c }
 func (c *logCapture) WithGroup(string) slog.Handler      { return c }
 
@@ -105,9 +102,8 @@ func captureSlog(min slog.Level) (*logCapture, func()) {
 // Run starts the interactive UI and blocks until the user is done. Any restarts
 // the user asked for happen after the program has returned, never during it.
 //
-// project and global are the two config layers as they were read from disk, kept
-// apart rather than merged: a pin is written to one scope, and the UI has to
-// know which scope a cap already came from to be able to remove it again.
+// project and global are the two config layers as read from disk, kept apart
+// rather than merged: removing a pin needs to know which scope it came from.
 func Run(opts scanner.Options, project, global config.Config) error {
 	fd := os.Stdout.Fd()
 	if !isatty.IsTerminal(fd) && !isatty.IsCygwinTerminal(fd) {

@@ -239,14 +239,12 @@ func TestUpdateConcurrent(t *testing.T) {
 }
 
 func TestBackup(t *testing.T) {
-	// Create a temporary file
 	tmpFile, err := os.CreateTemp("", "testfile")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer os.Remove(tmpFile.Name())
 
-	// Write some content to the file
 	content := []byte("test content")
 	if _, err := tmpFile.Write(content); err != nil {
 		t.Fatal(err)
@@ -258,21 +256,18 @@ func TestBackup(t *testing.T) {
 		t.Errorf("Backup() error = %v", err)
 	}
 
-	// Check if backup file exists
 	if _, err := os.Stat(tmpFile.Name() + ".ccu"); os.IsNotExist(err) {
 		t.Errorf("Backup file does not exist")
 	}
 }
 
 func TestUpdate(t *testing.T) {
-	// Create a temporary file
 	tmpFile, err := os.CreateTemp("", "testfile")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer os.Remove(tmpFile.Name())
 
-	// Write some content to the file
 	content := []byte("image: myapp:1.0.0")
 	if _, err := tmpFile.Write(content); err != nil {
 		t.Fatal(err)
@@ -290,7 +285,6 @@ func TestUpdate(t *testing.T) {
 		t.Errorf("Update() error = %v", err)
 	}
 
-	// Check if the file content is updated
 	updatedContent, err := os.ReadFile(tmpFile.Name())
 	if err != nil {
 		t.Fatal(err)

@@ -39,15 +39,10 @@ var plainOnlyFlags = map[string]bool{
 	"u": true, "r": true, "f": true, "major": true, "minor": true, "patch": true,
 }
 
-// splitSubcommand pulls a leading subcommand off the argument list. These
-// actions each pick a mode of their own — `check` the non-interactive report,
-// the rest something about ccu itself rather than about the user's compose
-// files — and they ignore the options the other modes read, so a subcommand
-// states the shape of the invocation better than a flag that silently coexists
-// with flags it will not read.
-//
-// Anything else is handed back untouched, which keeps an unrecognised bare
-// argument doing exactly what it did before: nothing.
+// splitSubcommand pulls a leading subcommand off the argument list. Each picks a
+// mode of its own and ignores the options the other modes read, so a subcommand
+// states the shape of an invocation better than a flag would. Anything else is
+// handed back untouched.
 func splitSubcommand(argv []string) (sub string, rest []string) {
 	if len(argv) == 0 || strings.HasPrefix(argv[0], "-") {
 		return "", argv
@@ -77,11 +72,9 @@ func Parse(version string) CCUFlags {
 	flag.BoolVar(&args.Minor, "minor", false, "Update to the latest minor version")
 	flag.BoolVar(&args.Patch, "patch", true, "Update to the latest patch version")
 	flag.BoolVar(&args.Version, "v", false, "Show version information")
-	// The subcommand spellings are the documented ones; these two flags stay
-	// registered so the invocations in existing scripts and cron entries keep
-	// working, and are hidden from the usage text so only one form is taught.
-	// Unlike -v and -h below, neither is handled here: they talk to the network
-	// and can fail, and Parse has no way to report that.
+	// Kept registered so existing scripts keep working, hidden from the usage text
+	// so only the subcommand form is taught. Unlike -v and -h below, neither is
+	// handled here: they talk to the network and Parse cannot report a failure.
 	flag.BoolVar(&args.SelfUpdate, "self-update", false, "")
 	flag.BoolVar(&args.CheckUpdate, "check-update", false, "")
 	flag.StringVar(&args.ExcludeStr, "exclude", "", "Comma-separated list of directories to exclude from search")
@@ -91,10 +84,8 @@ func Parse(version string) CCUFlags {
 	flag.Usage = func() { usage(flag.CommandLine.Output()) }
 	flag.CommandLine.Parse(rest)
 
-	// A word that reached here is not one of the subcommands above, and flag
-	// parsing stopped at it — so `ccu nonsense -d /srv` would silently have
-	// ignored the -d as well. Now that there is a command surface to mistype,
-	// say so instead of scanning the wrong directory.
+	// Not a subcommand, and flag parsing stopped at it — `ccu nonsense -d /srv`
+	// would otherwise silently ignore the -d and scan the wrong directory.
 	if flag.NArg() > 0 {
 		fmt.Fprintf(os.Stderr, "unknown command %q\n\n", flag.Arg(0))
 		usage(os.Stderr)
@@ -116,21 +107,18 @@ func Parse(version string) CCUFlags {
 		args.Version = true
 	}
 
-	// A report-only flag without `check` is what every pre-TUI-default script
-	// looks like. Launching the TUI at it would be worse than useless — `ccu -u`
-	// in a cron entry would hang on a terminal that is not there — so the mode
-	// those flags imply is honoured, and main says once which spelling replaced
-	// it. Not for -i: that one means the TUI, which is now the default anyway.
+	// A report-only flag without `check` is what every pre-TUI-default script looks
+	// like, and `ccu -u` in a cron entry would hang on a terminal that is not
+	// there. So the implied mode is honoured and main names the new spelling once.
+	// Not for -i, which means the TUI and is the default anyway.
 	if !args.Check {
 		flag.Visit(func(f *flag.Flag) {
 			if plainOnlyFlags[f.Name] {
 				args.Check, args.LegacyPlain = true, true
 			}
 			// -format only ever describes the report, so asking for one names the
-			// mode as plainly as `check` does — and unlike the flags above it is
-			// not a spelling anything used to have, so there is nothing to warn
-			// about. Without this, `ccu -format=json` on a terminal would open the
-			// TUI and quietly ignore what was asked for.
+			// mode as plainly as `check` does, and there is no old spelling to warn
+			// about. Without this, `ccu -format=json` would open the TUI instead.
 			if f.Name == "format" && args.Format != "auto" {
 				args.Check = true
 			}
@@ -153,10 +141,8 @@ func Parse(version string) CCUFlags {
 		args.Patch = true
 	}
 
-	// Process exclude flag - split comma-separated string into slice
 	if args.ExcludeStr != "" {
 		args.Exclude = strings.Split(args.ExcludeStr, ",")
-		// Trim whitespace from each exclude path
 		for i := range args.Exclude {
 			args.Exclude[i] = strings.TrimSpace(args.Exclude[i])
 		}

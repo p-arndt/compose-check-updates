@@ -291,14 +291,13 @@ func (u *UpdateChecker) getNameTagAndDigest(imageName string) (string, string, s
 		}
 	}
 
-	// Only consider a tag if it is explicitly provided (i.e., after the last '/').
+	// A colon after the last slash introduces a tag; one before it is a port.
 	lastSlash := strings.LastIndex(remainder, "/")
 	lastColon := strings.LastIndex(remainder, ":")
 	hasTag := lastColon > lastSlash
 
 	rRef, err := ref.New(imageName)
 	if err != nil {
-		// Fallback to naive parsing if the reference can't be parsed
 		name, tag := u.naiveParsing(remainder)
 		return name, tag, dgst
 	}

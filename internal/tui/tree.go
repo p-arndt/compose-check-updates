@@ -2,11 +2,9 @@ package tui
 
 import "strings"
 
-// node is one foldable level of the path tree that backs the list headers. The
-// tree exists because compose files are usually nested several directories deep
-// and folding only at file level still leaves the list unreadable: a stack of
-// twenty `.NOT_RUNNING/<app>/docker-compose.yml` headers says nothing the user
-// can navigate by.
+// node is one foldable level of the path tree that backs the list headers.
+// Compose files nest several directories deep, and folding only at file level
+// leaves a stack of near-identical headers nobody can navigate by.
 type node struct {
 	// key is the full path prefix down to this node and is what collapse state
 	// is keyed by. It stays stable across re-sorts and across compression, which
@@ -24,11 +22,10 @@ type node struct {
 	parent int
 }
 
-// pathSegments splits a compose file path into its segments. The scanner walks
-// with filepath.Walk, so on Windows the same run can produce both separators;
-// normalising here is what keeps node keys — and therefore collapse state —
-// identical no matter which one a path arrived with. A leading separator is
-// folded into the first segment so an absolute path does not lose its root.
+// pathSegments splits a compose file path into its segments. On Windows one walk
+// can produce both separators, so normalising here keeps node keys — and thus
+// collapse state — stable. A leading separator is folded into the first segment
+// so an absolute path does not lose its root.
 func pathSegments(path string) []string {
 	p := strings.ReplaceAll(path, "\\", "/")
 	abs := strings.HasPrefix(p, "/")
@@ -46,10 +43,8 @@ func pathSegments(path string) []string {
 }
 
 // treeNode is the mutable trie the tree is assembled in before it is flattened
-// into the []node the model serves. Children are kept in a slice as well as a
-// map so insertion order — which is the caller's sorted path order — survives,
-// giving a deterministic tree with directories and files interleaved exactly as
-// the sorted paths dictate.
+// into the []node the model serves. Children are kept in a slice as well as a map
+// so the caller's sorted path order survives, giving a deterministic tree.
 type treeNode struct {
 	seg      string
 	key      string
@@ -117,12 +112,11 @@ func buildTree(paths []string) (nodes []node, byKey map[string]int, byPath map[s
 	return nodes, byKey, byPath
 }
 
-// compress collapses single-child chains into one row: a directory that holds
-// exactly one child and no rows of its own is not a fold the user can make a
-// decision about, it is just a line to scroll past. The merged row keeps the
-// deeper node's key so collapse state survives a directory gaining a second
-// child mid-scan, and it keeps the shallower node's depth so the tree does not
-// indent for levels that are no longer drawn.
+// compress collapses single-child chains into one row: a directory with exactly
+// one child and no rows of its own is a line to scroll past, not a fold worth
+// making. The merged row keeps the deeper node's key, so collapse state survives
+// that directory gaining a second child mid-scan, and the shallower node's depth,
+// so the tree does not indent for levels no longer drawn.
 func compress(n *treeNode) *treeNode {
 	for i, c := range n.children {
 		n.children[i] = compress(c)
@@ -174,9 +168,8 @@ func (m Model) cursorNode() int {
 	return m.fileNode(e.path)
 }
 
-// subtreeRows is every row under a node, filter included — it is drawn from
-// m.visible, so a key acting on a directory acts on exactly what that directory
-// currently shows, folded or not.
+// subtreeRows is every row under a node, filter included: drawn from m.visible,
+// so a key acting on a directory acts on what it currently shows.
 func (m Model) subtreeRows(nodeIdx int) []int {
 	out := []int{}
 	if nodeIdx < 0 || nodeIdx >= len(m.nodes) {
@@ -260,9 +253,8 @@ func (m *Model) collapseOrParent() {
 }
 
 // expandOrChild is the mirror image: unfold what the cursor is on, or step into
-// it. The step is one line down and only inside the node's own subtree, so it
-// never leaks into the next sibling — on an expanded leaf's last row there is
-// nothing further in, and the key does nothing.
+// it. The step stays inside the node's own subtree, so it never leaks into the
+// next sibling.
 func (m *Model) expandOrChild() {
 	n := m.cursorNode()
 	if n < 0 {

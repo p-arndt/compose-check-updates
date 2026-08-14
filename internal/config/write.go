@@ -19,8 +19,7 @@ const configFileMode fs.FileMode = 0o644
 // SetImageMax records max as the cap for image in the config file at path,
 // creating the file (and its directory) when it does not exist yet. An existing
 // file is edited in place, keeping its comments, key order and formatting: it is
-// a file the user writes by hand, and a rewrite that reflows it would be a worse
-// outcome than not saving at all.
+// a file the user writes by hand.
 func SetImageMax(path, image string, max Level) error {
 	// Refuse before touching the file rather than writing a value the next Parse
 	// would reject: a config ccu itself wrote should never fail to load.
@@ -212,15 +211,13 @@ func deleteMappingKey(node *yaml.Node, key string) bool {
 	return false
 }
 
-// writeDocument encodes doc over path. The file is written beside its target
-// and renamed into place, because a config half-replaced by an interrupted save
-// is a worse outcome than a save that failed and said so. A document left with
-// no keys at all is not written but removed: see below.
+// writeDocument encodes doc over path. The file is written beside its target and
+// renamed into place, so an interrupted save cannot leave a half-replaced config.
+// A document left with no keys at all is removed rather than written: see below.
 func writeDocument(path string, doc *yaml.Node, mode fs.FileMode) error {
 	if root := documentRoot(doc); root != nil && len(root.Content) == 0 {
-		// Nothing is left to save. An empty file would still be a file the user
-		// never asked for, sitting in their project as if it configured
-		// something, so the save removes it instead.
+		// Nothing left to save, and an empty file would still sit in the project
+		// looking as though it configured something.
 		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
