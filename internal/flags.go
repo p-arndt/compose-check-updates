@@ -28,6 +28,7 @@ type CCUFlags struct {
 	Exclude     []string // Directories to exclude from search
 	ExcludeStr  string   // Comma-separated list of directories to exclude from search (flag only)
 	Config      string   // Explicit config file to read instead of searching for one
+	Format      string   // Output format of the report: auto, pretty or json
 	ShowConfig  bool     // Print the resolved configuration and where it came from
 }
 
@@ -85,6 +86,7 @@ func Parse(version string) CCUFlags {
 	flag.BoolVar(&args.CheckUpdate, "check-update", false, "")
 	flag.StringVar(&args.ExcludeStr, "exclude", "", "Comma-separated list of directories to exclude from search")
 	flag.StringVar(&args.Config, "config", "", "Read this config file instead of searching for one")
+	flag.StringVar(&args.Format, "format", "auto", "Report output format: auto, pretty or json")
 
 	flag.Usage = func() { usage(flag.CommandLine.Output()) }
 	flag.CommandLine.Parse(rest)
@@ -123,6 +125,14 @@ func Parse(version string) CCUFlags {
 		flag.Visit(func(f *flag.Flag) {
 			if plainOnlyFlags[f.Name] {
 				args.Check, args.LegacyPlain = true, true
+			}
+			// -format only ever describes the report, so asking for one names the
+			// mode as plainly as `check` does — and unlike the flags above it is
+			// not a spelling anything used to have, so there is nothing to warn
+			// about. Without this, `ccu -format=json` on a terminal would open the
+			// TUI and quietly ignore what was asked for.
+			if f.Name == "format" && args.Format != "auto" {
+				args.Check = true
 			}
 		})
 	}

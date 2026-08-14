@@ -2,56 +2,77 @@ package modes
 
 import (
 	"context"
-	"log/slog"
 
 	"github.com/p-arndt/compose-check-updates/internal"
+	"github.com/p-arndt/compose-check-updates/internal/report"
 	"github.com/p-arndt/compose-check-updates/internal/scanner"
 )
+
+// Outcome is what the run found, so the caller can turn it into an exit code
+// without parsing its own output back.
+type Outcome struct {
+	Updates int  // images with an update available
+	Pending int  // updates still to be made after this run: everything not applied
+	Failed  bool // at least one non-fatal error was reported
+}
 
 // Default checks every compose file below opts.Root and reports — or applies —
 // the updates the scanner finds. Events already arrive from concurrent workers,
 // so handling them inline here keeps the output ordering the scanner produced;
 // Update() serializes its own writes.
-func Default(ctx context.Context, opts scanner.Options, ccuFlags internal.CCUFlags) error {
+func Default(ctx context.Context, opts scanner.Options, ccuFlags internal.CCUFlags, out report.Writer) (Outcome, error) {
+	var outcome Outcome
+
 	events, err := scanner.Scan(ctx, opts)
 	if err != nil {
-		return err
+		return outcome, err
 	}
 
 	for event := range events {
 		switch event.Kind {
 		case scanner.EventError:
-			slog.Error("Error checking for updates", "error", event.Err)
+			outcome.Failed = true
+			out.Error(event.Path, event.Err)
 
 		case scanner.EventUpdate:
 			i := event.Update
+			outcome.Updates++
 
-			if !ccuFlags.Update && !ccuFlags.Restart {
-				// If no flags are provided, just print the new version
-				attrs := []any{"image", i.ImageName, "current", i.CurrentTag, "latest", i.LatestTag, "file", i.FilePath, "update_level", i.UpdateLevel()}
-				if i.IsDigestUpdate() {
-					attrs = append(attrs, "current_digest", i.CurrentDigest, "latest_digest", i.LatestDigest)
-				}
-				slog.Info("New version", attrs...)
+			res := report.Result{
+				ApplyRequested:   ccuFlags.Update,
+				RestartRequested: ccuFlags.Restart,
 			}
 
 			if ccuFlags.Update {
 				if err := i.Update(); err != nil {
-					slog.Error("error updating file", "error", err)
-					continue
+					outcome.Failed = true
+					out.Error(i.FilePath, err)
+				} else {
+					res.Applied = true
 				}
-				slog.Info("Updated file", "file", i.FilePath, "image", i.ImageName, "latest", i.LatestTag)
 			}
 
-			if ccuFlags.Restart {
+			// A restart only follows a write that happened; restarting a service
+			// onto the image it is already running would report progress that was
+			// never made.
+			if ccuFlags.Restart && (!ccuFlags.Update || res.Applied) {
 				if err := i.Restart(); err != nil {
-					slog.Error("error restarting service", "error", err)
-					continue
+					outcome.Failed = true
+					out.Error(i.FilePath, err)
+				} else {
+					res.Restarted = true
 				}
-				slog.Info("Compose file restarted", "file", i.FilePath)
 			}
+
+			// An update the run was never asked to apply is still pending, which
+			// is exactly what a CI check wants to hear about.
+			if !res.Applied {
+				outcome.Pending++
+			}
+
+			out.Update(i, i.UpdateLevel(), res)
 		}
 	}
 
-	return nil
+	return outcome, out.Close()
 }

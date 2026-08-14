@@ -255,7 +255,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// nothing to expand — it used to step to the next row of the same file,
 		// which is what `j` is for — so the key is free to mean the one thing
 		// that is to the right of a row: its detail column.
-		if m.currentRow() != nil && sidebarWidth(m.width) > 0 {
+		if m.currentRow() != nil && m.sidebarAvailable() {
 			m.focus = focusSide
 			break
 		}

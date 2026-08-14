@@ -42,7 +42,7 @@ func NewExcludeMatcher(exclude []string) *ExcludeMatcher {
 		}
 
 		switch {
-		case filepath.IsAbs(filepath.FromSlash(e)):
+		case isAbsEntry(e):
 			// Resolved once, here, so an entry naming /tmp still matches a scan
 			// that walked in through /private/tmp — the two are the same
 			// directory, and only one of the spellings would otherwise match.
@@ -55,6 +55,16 @@ func NewExcludeMatcher(exclude []string) *ExcludeMatcher {
 	}
 
 	return m
+}
+
+// isAbsEntry reports whether an entry names an absolute location. A leading
+// slash counts on every platform, not just where filepath.IsAbs says so: config
+// files are written in slash form and get shared between machines, and on
+// Windows "/mnt/backups" would otherwise be filed as a path relative to the
+// scan root — which is not a thing the user could have meant, and which would
+// silently exclude nothing at all.
+func isAbsEntry(e string) bool {
+	return strings.HasPrefix(e, "/") || filepath.IsAbs(filepath.FromSlash(e))
 }
 
 // Empty reports whether the matcher would exclude nothing, so a caller can skip

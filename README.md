@@ -111,6 +111,11 @@ only ever means "back": quitting is `q`, never `esc`.
 `m` is the bar's own key: it reaches the bar from anywhere, and each further
 press moves one stop along.
 
+On a terminal too narrow for two columns the detail column moves **below** the
+list instead of disappearing — the per-image target and the cap have no keys of
+their own, so the column is the only way to reach them and it has to survive the
+narrow layout. `tab` still opens it.
+
 Nothing is written until you press `A`, and you decide per row which version gets
 written — so a major bump never sneaks in. Afterwards `ccu` asks once whether the
 affected Compose files should be restarted with `docker compose up -d`.
@@ -165,7 +170,8 @@ The TUI always resolves **all** update levels, regardless of `-patch`, `-minor`,
 > [!TIP]
 > The TUI needs a real terminal. When stdout is piped or redirected, `ccu` runs
 > the `check` report instead and says so on stderr — so an old cron entry or CI
-> job keeps working either way.
+> job keeps working either way. Piped, that report is JSON (see
+> [Output format](#output-format)).
 
 ## `ccu check` — the non-interactive report
 
@@ -191,6 +197,58 @@ also apply to the TUI, which picks levels in the UI instead.
 | `-major`   | Only suggest major version updates                       | `false` |
 | `-minor`   | Only suggest minor version updates                       | `false` |
 | `-patch`   | Only suggest patch version updates                       | `true`  |
+| `-format`  | Output format: `auto`, `pretty` or `json`                | `auto`  |
+
+### Output format
+
+The report is written for whoever is reading it. On a terminal that is the
+aligned, colour-coded listing; in a pipe it is **JSON Lines** — one JSON object
+per line, written as the scan resolves, so `jq` and friends can read it
+streaming.
+
+```bash
+ccu check            # terminal -> pretty, piped -> json
+ccu check -u | jq .  # same, with the writes reported in the stream
+```
+
+```json
+{"kind":"update","image":"library/traefik","reference":"traefik:v2.9.3","services":["proxy"],"file":"proxy/compose.yaml","current":"v2.9.3","latest":"v3.2.0","level":"major","targets":{"minor":"v2.11.4","major":"v3.2.0"}}
+{"kind":"error","file":"data/docker-compose.yml","error":"fetching tags: 429"}
+```
+
+| Key | On | Meaning |
+| --- | -- | ------- |
+| `kind` | every line | `update` or `error` — dispatch on this |
+| `image` / `reference` | update | the image name, and the reference as the Compose file writes it |
+| `services` | update | the Compose services that declare it; a list, because identical references are reported once |
+| `file` | both | the Compose file involved |
+| `current` / `latest` | update | the tag now, and the one this run picked |
+| `level` | update | `major`, `minor`, `patch` or `digest` |
+| `current_digest` / `latest_digest` | digest-pinned images | only present when the digest actually moved |
+| `targets` | update | the tag available at each level, so you can pick a different one |
+| `cap` | capped images | the ceiling recorded in your config |
+| `applied` / `restarted` | with `-u` / `-r` | whether the write or restart succeeded — `false` says it was asked for and failed |
+| `error` | error | the failure, as text |
+
+`--format=pretty` forces the human listing into a pipe (useful for CI logs that
+render colour), and `--format=json` forces JSON on a terminal.
+
+Only the report itself goes to stdout. Warnings, per-image lookup failures and
+the "a newer ccu exists" notice all go to **stderr**, so a pipe stays parseable.
+
+### Exit codes
+
+| Code | Meaning |
+| ---- | ------- |
+| `0`  | nothing left to do — no updates found, or `-u` wrote all of them |
+| `1`  | updates are available and were not applied |
+| `2`  | something failed: a bad flag, an unreadable config, a registry error, a write that did not land |
+
+So a CI step gates on the result without parsing anything:
+
+```bash
+ccu check -f || echo "images are behind"
+```
 
 ## All commands
 
@@ -317,7 +375,7 @@ _(This might change in the future behind an additional flag.)_
 
 `ccu` falls back to the `check` report when stdout is not a terminal — inside a
 pipe (`ccu | less`), a redirect (`ccu > out.txt`), or a CI job. The stderr line
-tells you when that happened. Run `ccu` with its output attached to the terminal
-to get the UI.
+tells you when that happened, and the report comes out as JSON. Run `ccu` with
+its output attached to the terminal to get the UI.
 
 </details>

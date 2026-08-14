@@ -11,8 +11,12 @@ import (
 )
 
 type UpdateInfo struct {
-	FilePath      string
-	RawLine       string
+	FilePath string
+	RawLine  string
+	// Services names the compose services that declare this image. It is a list
+	// because identical references are collapsed into one entry: two services on
+	// the same image are one update to make, but both names are worth reporting.
+	Services      []string
 	ImageName     string
 	FullImageName string
 	CurrentTag    string

@@ -149,7 +149,9 @@ func (u *UpdateChecker) checkDigest(info *UpdateInfo) {
 
 func (u *UpdateChecker) createUpdateInfos() ([]UpdateInfo, error) {
 	var updateInfos []UpdateInfo
-	uniqueImages := make(map[string]struct{})
+	// Index rather than a set: a repeated reference has to find the entry it
+	// duplicates so its service name can be added to it.
+	byImage := make(map[string]int)
 
 	file, err := os.Open(u.path)
 	if err != nil {
@@ -158,31 +160,115 @@ func (u *UpdateChecker) createUpdateInfos() ([]UpdateInfo, error) {
 
 	defer file.Close()
 
-	imageNamePattern := regexp.MustCompile(`^\s*image:\s*(\S+)\s*$`)
+	tracker := newServiceTracker()
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		line := scanner.Text()
-		matches := imageNamePattern.FindStringSubmatch(line)
-		if len(matches) > 1 {
-			imageName := matches[1]
-			name, tag, dgst := u.getNameTagAndDigest(imageName)
-			imageKey := name + ":" + tag + "@" + dgst
+		service := tracker.observe(line)
 
-			if _, exists := uniqueImages[imageKey]; !exists {
-				uniqueImages[imageKey] = struct{}{}
-				updateInfos = append(updateInfos, UpdateInfo{
-					FilePath:      u.path,
-					RawLine:       line,
-					FullImageName: imageName,
-					ImageName:     name,
-					CurrentTag:    tag,
-					CurrentDigest: dgst,
-				})
-			}
+		matches := imageNamePattern.FindStringSubmatch(line)
+		if len(matches) <= 1 {
+			continue
 		}
+
+		imageName := matches[1]
+		name, tag, dgst := u.getNameTagAndDigest(imageName)
+		imageKey := name + ":" + tag + "@" + dgst
+
+		if i, exists := byImage[imageKey]; exists {
+			updateInfos[i].Services = appendService(updateInfos[i].Services, service)
+			continue
+		}
+
+		byImage[imageKey] = len(updateInfos)
+		updateInfos = append(updateInfos, UpdateInfo{
+			FilePath:      u.path,
+			RawLine:       line,
+			Services:      appendService(nil, service),
+			FullImageName: imageName,
+			ImageName:     name,
+			CurrentTag:    tag,
+			CurrentDigest: dgst,
+		})
 	}
 
 	return updateInfos, nil
+}
+
+// appendService adds name to services unless it is empty or already there. An
+// image declared outside any service — a top-level x- block, say — simply
+// contributes no name rather than an empty one.
+func appendService(services []string, name string) []string {
+	if name == "" {
+		return services
+	}
+	for _, s := range services {
+		if s == name {
+			return services
+		}
+	}
+	return append(services, name)
+}
+
+var (
+	imageNamePattern = regexp.MustCompile(`^\s*image:\s*(\S+)\s*$`)
+	// A mapping key, with whatever it may carry on the same line. Only the
+	// indentation and the key itself matter here.
+	yamlKeyPattern = regexp.MustCompile(`^(\s*)([^\s#][^:]*):(\s|$)`)
+	servicesKey    = regexp.MustCompile(`^(\s*)services:\s*$`)
+)
+
+// serviceTracker follows which service block the scanner is currently inside,
+// by indentation alone. Parsing the file as YAML would answer this properly, but
+// the rest of the checker works line by line so it can rewrite the exact line it
+// read; this keeps that property and is enough for the shapes compose files
+// actually take.
+type serviceTracker struct {
+	servicesIndent int // indentation of the `services:` key, -1 when outside it
+	serviceIndent  int // indentation of the service names below it, -1 until seen
+	current        string
+}
+
+func newServiceTracker() *serviceTracker {
+	return &serviceTracker{servicesIndent: -1, serviceIndent: -1}
+}
+
+// observe feeds one line to the tracker and returns the service the line belongs
+// to, empty when it belongs to none.
+func (t *serviceTracker) observe(line string) string {
+	if strings.TrimSpace(line) == "" || strings.HasPrefix(strings.TrimSpace(line), "#") {
+		return t.current
+	}
+
+	if m := servicesKey.FindStringSubmatch(line); m != nil {
+		t.servicesIndent, t.serviceIndent, t.current = len(m[1]), -1, ""
+		return ""
+	}
+
+	m := yamlKeyPattern.FindStringSubmatch(line)
+	if m == nil {
+		return t.current
+	}
+	indent := len(m[1])
+
+	// Nothing below `services:` has been seen yet, or the block has ended.
+	if t.servicesIndent < 0 {
+		return ""
+	}
+	if indent <= t.servicesIndent {
+		t.servicesIndent, t.serviceIndent, t.current = -1, -1, ""
+		return ""
+	}
+
+	// The first key inside the block fixes the depth service names live at.
+	if t.serviceIndent < 0 {
+		t.serviceIndent = indent
+	}
+	if indent == t.serviceIndent {
+		t.current = strings.TrimSpace(m[2])
+	}
+
+	return t.current
 }
 
 func (u *UpdateChecker) naiveParsing(imageName string) (string, string) {

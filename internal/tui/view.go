@@ -109,6 +109,19 @@ func (m Model) paneView() string {
 		return m.issuesView()
 	}
 
+	// Below the two-column width the sidebar goes under the list rather than
+	// away: it is the only way to reach a per-image target or a cap, so losing
+	// it would cost the feature, not just the layout.
+	if m.sidebarPlacement() == sidebarStacked {
+		lines := strings.Split(m.listView(), "\n")
+		// Padded to the height the list was given, so the panel sits on the same
+		// row whatever the list happens to hold.
+		for len(lines) < m.listHeight() {
+			lines = append(lines, "")
+		}
+		return strings.Join(append(lines, m.stackedSidebar()...), "\n")
+	}
+
 	side := sidebarWidth(m.width)
 	if side == 0 {
 		return m.listView()
@@ -171,6 +184,9 @@ func (m Model) helpDialog() string {
 	if sidebarWidth(m.width) > 0 {
 		h += 2 // the boxed pane's own frame rows, which the dialog occupies too
 	}
+	// The dialog replaces the whole pane, the stacked panel included, so those
+	// rows are its to use.
+	h += m.stackedSidebarHeight()
 
 	// Sized to its contents rather than to a number picked in advance: the
 	// groups are as wide as their keys happen to be, and a fixed width silently
@@ -267,6 +283,9 @@ func (m Model) listHeight() int {
 	if sidebarWidth(m.width) > 0 {
 		h -= 2
 	}
+	// The stacked panel comes out of the same budget: it is drawn below the list
+	// inside the pane, so the rows it takes are rows the list cannot have.
+	h -= m.stackedSidebarHeight()
 	if h < 1 {
 		return 1
 	}

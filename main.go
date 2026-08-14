@@ -12,6 +12,7 @@ import (
 	"github.com/p-arndt/compose-check-updates/internal/config"
 	"github.com/p-arndt/compose-check-updates/internal/logger"
 	"github.com/p-arndt/compose-check-updates/internal/modes"
+	"github.com/p-arndt/compose-check-updates/internal/report"
 	"github.com/p-arndt/compose-check-updates/internal/scanner"
 	"github.com/p-arndt/compose-check-updates/internal/tui"
 	"github.com/p-arndt/compose-check-updates/internal/update"
@@ -23,9 +24,12 @@ func main() {
 	// first be deleted by a later process, i.e. this one, before anything else.
 	update.CleanupLeftovers()
 
-	// Set colorized logger
-	logger := slog.New(logger.NewCustomHandler(slog.LevelInfo, os.Stdout))
-	slog.SetDefault(logger)
+	// Set colorized logger. It starts on stderr, because until the output format
+	// is settled every line it carries is a diagnostic about ccu itself — a
+	// broken config, an unreadable flag — and a `ccu check | jq` must not be fed
+	// one of those. Only the pretty report, which is written through slog, moves
+	// it to stdout below.
+	setLogOutput(os.Stderr)
 
 	// Version metadata comes from internal/buildinfo, stamped at build time from
 	// the repo-root VERSION file via -ldflags; unstamped dev builds report "dev".
@@ -36,7 +40,7 @@ func main() {
 	if ccuFlags.SelfUpdate || ccuFlags.CheckUpdate {
 		if err := update.Run(os.Stdout, buildinfo.Version, ccuFlags.CheckUpdate); err != nil {
 			slog.Error("Error updating ccu", "error", err)
-			os.Exit(1)
+			os.Exit(exitError)
 		}
 		return
 	}
@@ -48,7 +52,7 @@ func main() {
 	cfg, err := config.Load(ccuFlags.Directory, ccuFlags.Config)
 	if err != nil {
 		slog.Error("Error reading config", "error", err)
-		os.Exit(1)
+		os.Exit(exitError)
 	}
 
 	// The command line adds to the config rather than replacing it: a directory
@@ -75,12 +79,19 @@ func main() {
 		Patch:   ccuFlags.Patch,
 	}
 
+	format, err := report.ParseFormat(ccuFlags.Format)
+	if err != nil {
+		slog.Error("Error reading flags", "error", err)
+		os.Exit(exitError)
+	}
+
 	// The TUI is what a bare `ccu` means; `ccu check` is the way to ask for the
 	// report instead. A piped or redirected stdout has no frame to draw on, so
 	// rather than fail at something the user never spelled out, the run falls
 	// back to the report — that is what `ccu | tee`, a CI job or a cron entry
 	// wants anyway.
-	if !ccuFlags.Check && !isTerminal(os.Stdout) {
+	stdoutIsTerminal := isTerminal(os.Stdout)
+	if !ccuFlags.Check && !stdoutIsTerminal {
 		slog.Warn("No terminal on stdout, running the non-interactive report instead of the TUI; use `ccu check` to select it explicitly")
 		ccuFlags.Check = true
 	}
@@ -93,7 +104,7 @@ func main() {
 
 		if err := tui.Run(opts, cfg.Project, cfg.Global); err != nil {
 			slog.Error("Error running interactive mode", "error", err)
-			os.Exit(1)
+			os.Exit(exitError)
 		}
 		return
 	}
@@ -104,14 +115,30 @@ func main() {
 		slog.Warn("Report-only flags now belong to the `check` subcommand; use `ccu check ...` — the bare form still works for this release")
 	}
 
+	// Resolved only now: -format speaks about the report, and until the fallback
+	// above has had its say it is not settled that there is one.
+	format = format.Resolve(stdoutIsTerminal)
+
+	// A warning from deep inside a registry lookup stays on stderr, where it
+	// cannot appear in the machine-readable stream as a line no JSON parser can
+	// read.
+	// The pretty report is written through slog, so for it — and only for it —
+	// the logger owns stdout.
+	if format == report.FormatPretty {
+		setLogOutput(os.Stdout)
+	}
+
 	// The TUI installs its own quit handling, so only the non-interactive path
 	// has to translate a Ctrl-C into a cancelled scan.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	if err := modes.Default(ctx, opts, ccuFlags); err != nil {
+	out := report.New(format, os.Stdout)
+
+	outcome, err := modes.Default(ctx, opts, ccuFlags, out)
+	if err != nil {
 		slog.Error("Error checking for updates", "error", err)
-		os.Exit(1)
+		os.Exit(exitError)
 	}
 
 	// Only the non-interactive path gets the notice. The TUI swaps out the slog
@@ -121,6 +148,35 @@ func main() {
 	// user just asked about would be pointless. Stderr rather than stdout, so
 	// piping ccu's report somewhere keeps it machine-readable.
 	update.NotifyIfAvailable(os.Stderr, buildinfo.Version)
+
+	os.Exit(exitCode(outcome))
+}
+
+// Exit codes, so a CI step can gate on the result without reading the report
+// back. A run that only reports is "successful" when there was nothing to
+// report: anything else is what the caller wanted to be told about.
+const (
+	exitUpToDate = 0
+	exitOutdated = 1
+	exitError    = 2
+)
+
+// exitCode maps a finished run onto those codes. A failure outranks a pending
+// update: the run could not see everything, so "1" would understate it.
+func exitCode(o modes.Outcome) int {
+	switch {
+	case o.Failed:
+		return exitError
+	case o.Pending > 0:
+		return exitOutdated
+	default:
+		return exitUpToDate
+	}
+}
+
+// setLogOutput points the default logger at f, colourised as before.
+func setLogOutput(f *os.File) {
+	slog.SetDefault(slog.New(logger.NewCustomHandler(slog.LevelInfo, f)))
 }
 
 // isTerminal reports whether f is attached to a terminal, used to tell a piped

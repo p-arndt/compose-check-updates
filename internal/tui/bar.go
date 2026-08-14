@@ -119,7 +119,7 @@ func (m *Model) advanceFocus() {
 		m.focus = focusList
 		return
 	}
-	if m.currentRow() != nil && sidebarWidth(m.width) > 0 {
+	if m.currentRow() != nil && m.sidebarAvailable() {
 		m.focus = focusSide
 		return
 	}

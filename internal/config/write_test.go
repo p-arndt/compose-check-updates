@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -88,8 +89,13 @@ func TestSetImageMaxCreatesFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stat: %v", err)
 	}
-	if got := info.Mode().Perm(); got != 0o644 {
-		t.Errorf("mode = %v, want 0644", got)
+	// Windows has no Unix permission bits: Go reports 0666 for any file that is
+	// not read-only, whatever mode it was created with. There is nothing for the
+	// assertion to check there, and checking it anyway only ever fails.
+	if runtime.GOOS != "windows" {
+		if got := info.Mode().Perm(); got != 0o644 {
+			t.Errorf("mode = %v, want 0644", got)
+		}
 	}
 
 	if got := parseConfig(t, path).MaxLevel("library/redis"); got != LevelPatch {

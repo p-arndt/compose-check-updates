@@ -1171,18 +1171,31 @@ func TestTabOnAHeaderGoesToTheBar(t *testing.T) {
 	assert.Equal(t, 0, m.barStop)
 }
 
-// A terminal too narrow for two columns has no sidebar to focus, and the
-// keyboard must not land somewhere the user cannot see. The bar is drawn at any
-// width, so tab still has somewhere to go — which is the point of putting the
-// list-wide controls there rather than in a column that can vanish.
+// A terminal with no room for the sidebar in any layout has none to focus, and
+// the keyboard must not land somewhere the user cannot see. The bar is drawn at
+// any width, so tab still has somewhere to go — which is the point of putting
+// the list-wide controls there rather than in a column that can vanish.
 func TestTabGoesToTheBarWhenTheSidebarIsTooNarrowToDraw(t *testing.T) {
 	m, _ := sidebarModel(t)
-	m.width = sidebarMinTotal - 1
-	require.Zero(t, sidebarWidth(m.width))
+	m.width = sidebarMinStacked - 1
+	require.Equal(t, sidebarNowhere, m.sidebarPlacement())
 
 	m = feed(t, m, keyMsg("tab"))
 	assert.Equal(t, focusBar, m.focus)
 	assert.NotEqual(t, focusSide, m.focus)
+}
+
+// Between the two widths the sidebar moves under the list rather than away. The
+// cap and the per-image target have no keys of their own, so a layout that
+// dropped it would take the settings with it.
+func TestTabReachesTheStackedSidebar(t *testing.T) {
+	m, _ := sidebarModel(t)
+	m.width = sidebarMinTotal - 1
+	require.Equal(t, sidebarStacked, m.sidebarPlacement())
+	require.Zero(t, sidebarWidth(m.width), "no room for a second column at this width")
+
+	m = feed(t, m, keyMsg("tab"))
+	assert.Equal(t, focusSide, m.focus)
 }
 
 // With no cap set there is no scope to choose, so the field is not drawn and
@@ -1434,8 +1447,8 @@ func TestRightStillExpandsOnAHeader(t *testing.T) {
 // silently doing nothing.
 func TestRightWalksTheTreeWhenTheColumnIsTooNarrow(t *testing.T) {
 	m, _ := sidebarModel(t)
-	m.width = sidebarMinTotal - 1
-	require.Zero(t, sidebarWidth(m.width))
+	m.width = sidebarMinStacked - 1
+	require.Equal(t, sidebarNowhere, m.sidebarPlacement())
 	require.NotNil(t, m.currentRow())
 
 	m = feed(t, m, keyMsg("right"))

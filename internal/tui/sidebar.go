@@ -18,10 +18,79 @@ import (
 // It follows the list rather than being opened: the row under the cursor is
 // what it describes, so there is never a question of which image is meant.
 
-// sidebarMinTotal is the terminal width below which the frame stays a single
-// column. Two columns narrower than this leave the list too cramped to read a
-// path in, and the list is the half that cannot be given up.
+// sidebarMinTotal is the terminal width below which the two columns stop
+// fitting side by side. Two columns narrower than this leave the list too
+// cramped to read a path in, and the list is the half that cannot be given up.
 const sidebarMinTotal = 96
+
+// sidebarMinStacked is the width below which even a full-width panel has no
+// room to say anything. Under it there is genuinely nothing to draw.
+const sidebarMinStacked = 34
+
+// sidebarPlacement is where the sidebar goes in the frame. It is not a question
+// of whether the sidebar exists: the cap and the per-image target have no keys
+// of their own, so a layout that dropped the sidebar would put them out of
+// reach entirely. A narrow terminal moves it under the list instead.
+type sidebarPlacement int
+
+const (
+	sidebarNowhere sidebarPlacement = iota // no room for it at all
+	sidebarStacked                         // a full-width panel below the list
+	sidebarBeside                          // the right-hand column
+)
+
+// placeSidebar decides the layout for a terminal width.
+func placeSidebar(total int) sidebarPlacement {
+	switch {
+	case total >= sidebarMinTotal:
+		return sidebarBeside
+	case clampWidth(total) >= sidebarMinStacked:
+		return sidebarStacked
+	default:
+		return sidebarNowhere
+	}
+}
+
+// sidebarPlacement is placeSidebar for the current frame.
+func (m Model) sidebarPlacement() sidebarPlacement { return placeSidebar(m.width) }
+
+// sidebarAvailable reports whether there is a sidebar for the focus to move
+// into. Every caller that used to ask `sidebarWidth(m.width) > 0` means this.
+func (m Model) sidebarAvailable() bool { return m.sidebarPlacement() != sidebarNowhere }
+
+// stackedSidebarHeight is how many rows the stacked panel takes off the list,
+// its border included. Only the fields go in it — a narrow terminal is usually
+// a short one too, and the path and the hint are the parts the list already
+// says or the footer can.
+func (m Model) stackedSidebarHeight() int {
+	if m.sidebarPlacement() != sidebarStacked {
+		return 0
+	}
+	return m.stackedSidebarFields() + 2
+}
+
+// stackedSidebarFields is the number of lines inside that panel: the image, its
+// target and its cap, plus the scope once there is a cap to put somewhere.
+func (m Model) stackedSidebarFields() int {
+	r := m.currentRow()
+	if r == nil {
+		return 1
+	}
+	if r.Pin != "" {
+		return 4
+	}
+	return 3
+}
+
+// stackedSidebar renders the panel that goes below the list.
+func (m Model) stackedSidebar() []string {
+	inner := clampWidth(m.width) - boxChrome
+	if inner < 1 {
+		inner = 1
+	}
+	fields := m.stackedSidebarFields()
+	return m.theme.Box(m.sidebarLines(inner, fields), inner, fields, m.focus == focusSide)
+}
 
 // sidebarWidth is how much of the frame the right column takes. Wide enough for
 // a tag and its label, and capped so a very wide terminal spends the extra room
