@@ -8,6 +8,13 @@
   <strong>Keep your Docker Compose image tags up to date — like <code>npm-check-updates</code>, but for <code>compose.yaml</code>.</strong>
 </p>
 
+<p align="center">
+  <a href="https://github.com/p-arndt/compose-check-updates/actions/workflows/ci.yml"><img src="https://github.com/p-arndt/compose-check-updates/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/p-arndt/compose-check-updates/releases/latest"><img src="https://img.shields.io/github/v/release/p-arndt/compose-check-updates?label=release" alt="Latest release"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/p-arndt/compose-check-updates" alt="MIT license"></a>
+  <img src="https://img.shields.io/badge/platforms-linux%20%7C%20macOS%20%7C%20windows-informational" alt="Platforms">
+</p>
+
 ```bash
 ccu              # open the TUI and pick what to update
 ccu check        # just print what's outdated
@@ -15,112 +22,57 @@ ccu check -u     # print and write the new tags
 ```
 
 Point it at a directory, it scans every Compose file below it, asks each registry
-what's newer, and — if you want — rewrites the tags for you.
-
-## 🎬 What it looks like
+what's newer, and — if you want — rewrites the tags for you. One static binary,
+no daemon, no runtime.
 
 <p align="center">
   <img src="./assets/demo.gif" alt="ccu scanning four Compose stacks, retargeting traefik from a major bump to the latest 2.11.x, and writing the new tags" width="900">
 </p>
 
-Four stacks checked at once, `traefik` pointed at the newest `2.11.x` instead of
-the `v3` it was offered, everything else taken as it came — and a `.ccu` backup
-next to every file that was touched.
+Four stacks at once, `traefik` pointed at the newest `2.11.x` instead of the `v3`
+it was offered — and a `.ccu` backup next to every file that was touched.
 
----
+## Install
 
-# Install
-
-Download the binary for your platform from the
-[Releases](https://github.com/p-arndt/compose-check-updates/releases) page.
-
-**Linux / macOS**
+Grab the binary for your platform from
+[Releases](https://github.com/p-arndt/compose-check-updates/releases):
 
 ```bash
-mv ccu-linux-amd64 ccu && chmod +x ccu
-sudo mv ccu /usr/local/bin/     # optional
+curl -fsSLO https://github.com/p-arndt/compose-check-updates/releases/latest/download/ccu-linux-amd64
+mv ccu-linux-amd64 ccu && chmod +x ccu && sudo mv ccu /usr/local/bin/
 ccu version
 ```
 
-**Windows** — rename it to `ccu.exe`, optionally put its directory on your `PATH`,
-then check with `ccu.exe version`.
+Builds for linux/macOS/windows on `amd64`, `arm64`, `arm` and `386`; Windows just
+needs the `.exe` on your `PATH`. Every release ships a `checksums.txt`.
+Later, `ccu self-update` replaces the binary in place.
 
-You can also just run the downloaded file directly (`./ccu-linux-amd64`) without
-installing anything.
+## Usage
 
-Later on, `ccu self-update` replaces the binary in place — see
-[Updating ccu](#updating-ccu).
-
-# Usage
-
-`cd` into the directory holding your stacks and run `ccu`. All subdirectories are
-scanned recursively for Compose files, and the images in their services are
-checked against their registries.
-
-There are two ways to use it:
+`cd` into the directory holding your stacks and run `ccu`. Everything below it is
+scanned recursively.
 
 | | |
 | ---------------- | ---------------------------------------------------------- |
 | **`ccu`**        | The TUI. Browse what's outdated, pick rows, apply. Default. |
 | **`ccu check`**  | One-shot report for scripts, cron and CI. No UI.            |
 
-Nothing is ever written unless you ask for it — `A` in the TUI, `-u` for `check`.
+Nothing is written unless you ask — `A` in the TUI, `-u` for `check` — and every
+modified file gets a `.ccu` backup beside it.
 
-> [!NOTE]
-> Writing creates a backup of every modified Compose file next to it, with a
-> `.ccu` extension.
+### The TUI
 
-## The TUI (default)
-
-```bash
-ccu                # scan the current directory
-ccu -d ./stacks    # scan somewhere else
-```
-
-A full-screen terminal UI: updates grouped per Compose file, colour-coded by
-level, streaming in as the registries answer. Arrow keys to move, `space` to
-select, `A` to apply. Press `?` for everything else.
-
-Nothing has to be memorised to get started. A bar across the top holds the
-settings that apply to the whole run, and `tab` walks the keyboard through
-everything there is to reach:
+Updates grouped per Compose file, colour-coded, streaming in as registries answer.
+**Arrows move; `space`/`enter` act on whatever has the focus.** `tab` reaches the
+detail column on an image and the settings bar anywhere else. `A` applies, `?`
+shows every key.
 
 ```
  show ‹ all ›   target ‹ major ›   [ issues 1 ]   [ apply 2 ]
 ```
 
-One rule holds everywhere: **the arrows move, `space` and `enter` act on
-whatever has the focus.** In the list that is the row, so they select it. On the
-bar it is the stop, so they step the setting or press the button. In the detail
-column it is the field. Nothing has to be remembered per pane.
-
-Each stop also names the key that does the same thing, so the bar teaches the
-shortcut rather than replacing it.
-
-`tab` answers one question: what is the cursor on? On an image it opens the
-detail column beside the list, and `tab` (or `esc`) there comes straight back. On a file or
-directory header — which describes no image — it goes up to the bar instead.
-
-`→`/`l` and `←`/`h` follow the pane they are pressed in: on a header they walk
-the tree, on an image right opens the detail column, on the bar they move between
-stops, and **inside the detail column they step the options of the field under
-the cursor** — `↑`/`↓` pick the field, `←`/`→` pick its value. The column is
-therefore left with `tab` or `esc` rather than with `←`. The bar still sits above
-the list, so `↓` leaves it and `↑` at the top of the list goes back up onto it.
-`esc` works from either, and only ever means "back": quitting is `q`, never
-`esc`.
-
-`m` is the bar's own key: it reaches the bar from anywhere, and each further
-press moves one stop along.
-
-On a terminal too narrow for two columns the detail column moves **below** the
-list instead of disappearing — the per-image target and the cap have no keys of
-their own, so the column is the only way to reach them and it has to survive the
-narrow layout. `tab` still opens it.
-
-Nothing is written until you press `A`, and you decide per row which version gets
-written — so a major bump never sneaks in. Afterwards `ccu` asks once whether the
-affected Compose files should be restarted with `docker compose up -d`.
+You decide per row which version gets written, so a major bump never sneaks in.
+Afterwards `ccu` offers to `docker compose up -d` the affected files.
 
 <details>
 <summary><strong>All keys</strong></summary>
@@ -148,6 +100,9 @@ affected Compose files should be restarted with `docker compose up -d`.
 | `esc`              | Back out of whatever has the keyboard (never quits) |
 | `?` / `q`          | Help / quit                                       |
 
+On a terminal too narrow for two columns the detail column moves *below* the list
+rather than disappearing — the per-image target and cap have no keys of their own.
+
 </details>
 
 <details>
@@ -155,14 +110,14 @@ affected Compose files should be restarted with `docker compose up -d`.
 
 `show` only decides which rows are _visible_; `target` decides which version
 actually gets _written_. Both sit on the top bar and both have a key (`f` and
-`t`); the row's own target lives in the detail column. The target defaults to `major`, so out of
-the box you are offered the highest available version. At target `minor`, an
-image on `traefik:v2.9.3` that has `3.7.8` available re-points to the latest
-`2.11.x` instead; at `patch`, to `2.9.4`.
+`t`); the row's own target lives in the detail column. The target defaults to
+`major`, so out of the box you are offered the highest available version. At
+target `minor`, an image on `traefik:v2.9.3` that has `3.7.8` available re-points
+to the latest `2.11.x` instead; at `patch`, to `2.9.4`.
 
-The sidebar only offers the levels an image actually has — the `(+2)` after a version
-means two other levels exist. A row with nothing at the current target shows as
-`[-] … no patch update` and cannot be applied.
+The sidebar only offers the levels an image actually has — the `(+2)` after a
+version means two other levels exist. A row with nothing at the current target
+shows as `[-] … no patch update` and cannot be applied.
 
 The TUI always resolves **all** update levels, regardless of `-patch`, `-minor`,
 `-major` or `-f`. Those flags govern `ccu check` only.
@@ -170,23 +125,18 @@ The TUI always resolves **all** update levels, regardless of `-patch`, `-minor`,
 </details>
 
 > [!TIP]
-> The TUI needs a real terminal. When stdout is piped or redirected, `ccu` runs
-> the `check` report instead and says so on stderr — so an old cron entry or CI
-> job keeps working either way. Piped, that report is JSON (see
-> [Output format](#output-format)).
+> The TUI needs a real terminal. Piped or redirected, `ccu` runs the `check`
+> report instead (as JSON) and says so on stderr — so old cron and CI entries
+> keep working.
 
-## `ccu check` — the non-interactive report
+### `ccu check` — the non-interactive report
 
 ```bash
 ccu check              # report only (patch updates by default)
-ccu check -u           # write the new tags
-ccu check -u -r        # write, then restart the affected services
+ccu check -u -r        # write the new tags, then restart the services
 ccu check -f           # consider every newer version, not just patches
 ccu check -d ./stacks  # scan a different directory
 ```
-
-Every flag below applies to `ccu check`; only `-d`, `-exclude` and `-config`
-also apply to the TUI, which picks levels in the UI instead.
 
 | Flag       | Description                                              | Default |
 | ---------- | -------------------------------------------------------- | ------- |
@@ -196,22 +146,25 @@ also apply to the TUI, which picks levels in the UI instead.
 | `-u`       | Update the Compose files with the new image tags         | `false` |
 | `-r`       | Restart the services after updating                      | `false` |
 | `-f`       | Full mode — consider every newer version, not just patches | `false` |
-| `-major`   | Only suggest major version updates                       | `false` |
-| `-minor`   | Only suggest minor version updates                       | `false` |
-| `-patch`   | Only suggest patch version updates                       | `true`  |
+| `-major` / `-minor` / `-patch` | Only suggest that level                | `-patch`|
 | `-format`  | Output format: `auto`, `pretty` or `json`                | `auto`  |
 
-### Output format
+Only `-d`, `-exclude` and `-config` also apply to the TUI, which picks levels in
+the UI instead.
 
-The report is written for whoever is reading it. On a terminal that is the
-aligned, colour-coded listing; in a pipe it is **JSON Lines** — one JSON object
-per line, written as the scan resolves, so `jq` and friends can read it
-streaming.
+**Exit codes:** `0` nothing left to do · `1` updates available, not applied ·
+`2` something failed. So CI gates without parsing anything:
 
 ```bash
-ccu check            # terminal -> pretty, piped -> json
-ccu check -u | jq .  # same, with the writes reported in the stream
+ccu check -f || echo "images are behind"
 ```
+
+<details>
+<summary><strong>Output format</strong> — JSON Lines when piped</summary>
+
+On a terminal the report is the aligned, colour-coded listing; in a pipe it is
+**JSON Lines** — one object per line, written as the scan resolves, so `jq` reads
+it streaming. `--format=pretty` / `--format=json` force either one.
 
 ```json
 {"kind":"update","image":"library/traefik","reference":"traefik:v2.9.3","services":["proxy"],"file":"proxy/compose.yaml","current":"v2.9.3","latest":"v3.2.0","level":"major","targets":{"minor":"v2.11.4","major":"v3.2.0"}}
@@ -232,27 +185,12 @@ ccu check -u | jq .  # same, with the writes reported in the stream
 | `applied` / `restarted` | with `-u` / `-r` | whether the write or restart succeeded — `false` says it was asked for and failed |
 | `error` | error | the failure, as text |
 
-`--format=pretty` forces the human listing into a pipe (useful for CI logs that
-render colour), and `--format=json` forces JSON on a terminal.
+Only the report goes to stdout — warnings, lookup failures and the "a newer ccu
+exists" notice go to **stderr**, so a pipe stays parseable.
 
-Only the report itself goes to stdout. Warnings, per-image lookup failures and
-the "a newer ccu exists" notice all go to **stderr**, so a pipe stays parseable.
+</details>
 
-### Exit codes
-
-| Code | Meaning |
-| ---- | ------- |
-| `0`  | nothing left to do — no updates found, or `-u` wrote all of them |
-| `1`  | updates are available and were not applied |
-| `2`  | something failed: a bad flag, an unreadable config, a registry error, a write that did not land |
-
-So a CI step gates on the result without parsing anything:
-
-```bash
-ccu check -f || echo "images are behind"
-```
-
-## All commands
+### All commands
 
 ```bash
 ccu                # the TUI
@@ -260,20 +198,14 @@ ccu check          # the non-interactive report
 ccu self-update    # download, verify and replace the running binary
 ccu check-update   # only report whether a newer ccu exists
 ccu config         # show the resolved configuration and where it came from
-ccu help           # show the help message
-ccu version        # show version information
+ccu help / version
 ```
 
-`self-update`, `check-update`, `help` and `version` act on `ccu` itself and
-ignore the flags above.
+A `ccu check` run also checks **at most once every 24 hours** whether a newer
+release exists and prints one line to stderr. It never installs anything by
+itself; `CCU_NO_UPDATE_CHECK=1` turns the check off.
 
-> [!NOTE]
-> **Coming from v0.6.x?** The report used to be the default and `-i` opened the
-> TUI. That is now the other way round. Both old spellings still work: `-i` is
-> accepted as a no-op, and a report-only flag without `check` (`ccu -u`) still
-> runs the report, printing a one-line hint about the new spelling.
-
-## Configuration file
+## Configuration
 
 Directories you never want scanned, written down once:
 
@@ -281,56 +213,28 @@ Directories you never want scanned, written down once:
 # .ccu.yaml
 exclude:
   - node_modules
-  - backup
   - services/legacy
 ```
 
-| File                                      | For                                       |
-| ----------------------------------------- | ----------------------------------------- |
-| `~/.config/ccu/config.yaml`               | preferences across every project          |
-| `.ccu.yaml` in the scan root or any parent | settings that travel with the stacks, in git |
+`~/.config/ccu/config.yaml` for preferences across every project, `.ccu.yaml` in
+the scan root or any parent for settings that travel with the stacks. Neither is
+required; project layers over global, `-exclude` over both, and the lists are
+**unioned** rather than replaced. `backup` matches that directory name at any
+depth, `services/legacy` only that path, `/mnt/backups` that absolute location —
+all three with `*` wildcards. `ccu config` shows what was read.
 
-Neither is required. Project layers over global, `-exclude` over both, and the
-lists are **unioned** rather than replaced. `.yml` works too. `-config <path>`
-reads one specific file instead of searching. `ccu config` shows what was read
-and what the merged result is.
+## Registries
 
-How an entry is written decides what it covers: `backup` matches that directory
-name **at any depth**, `services/legacy` only that path below the scan root,
-`/mnt/backups` that absolute location — all three with `*` wildcards. Excluded
-directories are never descended into.
+Any OCI registry works — Docker Hub, GHCR, Quay, Harbor, ECR, a self-hosted
+`registry:2`. Private repos need no setup: `ccu` reads the credentials
+`docker login` already stored. Logging in also lifts Docker Hub's anonymous rate
+limit, which starts to matter past a few dozen images.
 
-A malformed config file, or an unknown key in one, aborts the run instead of
-being skipped.
+## Images without semver tags
 
-# Updating ccu
-
-```bash
-ccu self-update    # download, verify and replace the running binary
-ccu check-update   # only report whether something newer exists
-```
-
-A `ccu check` run also checks **at most once every 24 hours** whether a newer
-release exists and prints one line to stderr if so — stdout stays clean. It never
-installs anything by itself.
-
-<details>
-<summary>Update-check details</summary>
-
-The timestamp of the last check lives in `<user config dir>/ccu/update-check.json`
-(`%AppData%\ccu\update-check.json` on Windows, `~/.config/ccu/update-check.json`
-on Linux). Set `CCU_NO_UPDATE_CHECK=1` to disable the check entirely.
-
-The older `-self-update` and `-check-update` flag spellings still work so existing
-scripts keep running, but the subcommands above are the supported form.
-
-</details>
-
-# Images without semver tags
-
-Not every image publishes semantic versions. Some are pinned by digest, others tag
-every build with its commit (e.g. `ghcr.io/vert-sh/vert` with `sha-e1c83ba` tags).
-For those, `ccu` compares the image manifest digest instead of the version number:
+Some images are pinned by digest, others tag every build with its commit
+(`sha-e1c83ba`). For those `ccu` compares the manifest digest instead of the
+version number, and reports the update as level `digest`:
 
 | In your Compose file            | What `ccu` does                                                          |
 | ------------------------------- | ------------------------------------------------------------------------ |
@@ -339,45 +243,46 @@ For those, `ccu` compares the image manifest digest instead of the version numbe
 | `image: vert:1.2.3@sha256:abc…` | Bumps the tag **and** the digest together, so they stay consistent       |
 | `image: vert:latest`            | Skipped — a floating tag already resolves to the newest image            |
 
-These are reported with the update level `digest`. A digest change has no
-major/minor/patch level, so it is always reported and is unaffected by `-major`,
-`-minor` and `-patch`.
-
 > [!NOTE]
-> Finding which tag carries the newest digest requires querying tags individually,
-> so the first check of such an image is noticeably slower. At most 250 tags of the
-> same naming scheme are inspected; `ccu` warns when an image has more.
+> This requires querying tags individually, so the first check of such an image
+> is noticeably slower. At most 250 tags of the same naming scheme are inspected.
 
 ## Troubleshooting
 
 <details>
 <summary>No new versions found, but newer versions exist</summary>
 
-By default `ccu check` only checks for **patch** versions. With a current tag of
-`1.0.0` and a latest tag of `1.1.0`, there is no newer patch version, so nothing
-is suggested. Use `ccu check -f` to consider every newer version — or just use the
-TUI, which always resolves every level.
+`ccu check` only looks for **patch** versions by default. With `1.0.0` current
+and `1.1.0` latest there is no newer patch, so nothing is suggested. Use
+`ccu check -f`, or the TUI, which always resolves every level.
 
 </details>
 
 <details>
 <summary>Image tags with only x.y versions</summary>
 
-Some images only publish `x.y` tags. Alpine has `3.14`, `3.14.1` and `3.14.0` — if
-you use `3.14`, `ccu` suggests `3.14.1`. But Postgres has `13`, `13.3` and `13.4`:
-if you use `13.2`, `ccu` will not suggest `13.4`, because `13` is not a valid
-semver version.
-
-_(This might change in the future behind an additional flag.)_
+Alpine has `3.14`, `3.14.1` and `3.14.0` — if you use `3.14`, `ccu` suggests
+`3.14.1`. But Postgres has `13`, `13.3` and `13.4`: on `13.2`, `ccu` will not
+suggest `13.4`, because `13` is not a valid semver version.
 
 </details>
 
 <details>
-<summary>The TUI does not open</summary>
+<summary>Coming from v0.6.x?</summary>
 
-`ccu` falls back to the `check` report when stdout is not a terminal — inside a
-pipe (`ccu | less`), a redirect (`ccu > out.txt`), or a CI job. The stderr line
-tells you when that happened, and the report comes out as JSON. Run `ccu` with
-its output attached to the terminal to get the UI.
+The report used to be the default and `-i` opened the TUI; that is now the other
+way round. Both old spellings still work — `-i` is accepted as a no-op, and a
+report-only flag without `check` (`ccu -u`) still runs the report with a one-line
+hint. The old `-self-update` / `-check-update` flags work too.
 
 </details>
+
+## Contributing
+
+Issues and PRs welcome — registry quirks and real-world Compose files that trip
+the parser especially. Plain Go, no codegen: `go test ./...` and `go vet ./...`
+is what CI runs.
+
+## License
+
+[MIT](LICENSE) © P. Arndt
