@@ -101,6 +101,10 @@ func (u *UpdateChecker) checkDigest(info *UpdateInfo) {
 	// nothing to compare it against — it already resolves to whatever is newest.
 	// All that can be done for it is to write down what it resolves to today.
 	if _, floating := mutableTags[info.CurrentTag]; floating && !pinnedByDigest {
+		if !u.pinFloating {
+			slog.Debug("Skipping (floating tag without digest)", "image", info.ImageName, "tag", info.CurrentTag, "path", info.FilePath)
+			return
+		}
 		u.pinFloatingTag(info)
 		return
 	}
@@ -161,16 +165,44 @@ func (u *UpdateChecker) checkDigest(info *UpdateInfo) {
 	info.digestFor = latestTag
 }
 
+// CheckPins resolves nothing but the digests bare floating tags resolve to, and
+// returns only the images it could pin. It exists for the caller that wants the
+// pins after the fact — the TUI, once the user asks for them — without paying for
+// a second full scan: no tag lists are fetched, one manifest head per floating
+// image and nothing else.
+func (u *UpdateChecker) CheckPins() ([]UpdateInfo, error) {
+	infos, err := u.createUpdateInfos()
+	if err != nil {
+		return nil, err
+	}
+
+	var pins []UpdateInfo
+	for i := range infos {
+		info := &infos[i]
+
+		// A reference that already carries a digest is not waiting to be pinned;
+		// the ordinary scan reports its drift.
+		if info.CurrentDigest != "" {
+			continue
+		}
+		if _, floating := mutableTags[info.CurrentTag]; !floating {
+			continue
+		}
+
+		u.pinFloatingTag(info)
+		if info.PinsFloating {
+			pins = append(pins, *info)
+		}
+	}
+
+	return pins, nil
+}
+
 // pinFloatingTag records the digest a bare floating tag currently resolves to,
 // so the reference can be rewritten as "latest@sha256:…". This is not an update
 // — the image is the one the tag already pointed at — but the one-off pin that
 // gives every later run something to compare against.
 func (u *UpdateChecker) pinFloatingTag(info *UpdateInfo) {
-	if !u.pinFloating {
-		slog.Debug("Skipping (floating tag without digest)", "image", info.ImageName, "tag", info.CurrentTag, "path", info.FilePath)
-		return
-	}
-
 	digest, err := u.registry.FetchImageDigest(info.ImageName + ":" + info.CurrentTag)
 	if err != nil {
 		slog.Warn("Skipping (failed resolving digest for floating tag)", "image", info.ImageName, "tag", info.CurrentTag, "path", info.FilePath)

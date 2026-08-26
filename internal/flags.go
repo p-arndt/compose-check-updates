@@ -23,6 +23,10 @@ type CCUFlags struct {
 	Minor       bool     // Update to the latest minor version
 	Patch       bool     // Update to the latest patch version
 	PinFloating bool     // Pin floating tags to the digest they currently resolve to
+	// PinFloatingSet records whether -pin-floating was actually passed, so that
+	// -pin-floating=false can override a config that turned it on. A plain false
+	// means "the command line said nothing", which the config still decides.
+	PinFloatingSet bool
 	Version     bool     // Version of ccu
 	SelfUpdate  bool     // Download and install the latest version of ccu
 	CheckUpdate bool     // Check whether a newer version of ccu is available, without installing it
@@ -126,6 +130,14 @@ func Parse(version string) CCUFlags {
 			}
 		})
 	}
+
+	// Read outside the block above, which only runs when the mode is still open:
+	// `ccu check -pin-floating=false` has to be seen as well.
+	flag.Visit(func(f *flag.Flag) {
+		if f.Name == "pin-floating" {
+			args.PinFloatingSet = true
+		}
+	})
 
 	if args.Version {
 		println("Version:", version)

@@ -25,6 +25,15 @@ func newTestModel() Model {
 	return m
 }
 
+// withFloatingListed is the model as a run that was asked to pin leaves it: the
+// floating rows listed and their digests already resolved, so a test can look at
+// them without driving the second scan.
+func (m Model) withFloatingListed() Model {
+	m.showFloating = true
+	m.floatingResolved = true
+	return m
+}
+
 func updateEvent(path, image, current, latest, level string) scanEventMsg {
 	return scanEventMsg{ev: scanner.Event{
 		Kind:  scanner.EventUpdate,

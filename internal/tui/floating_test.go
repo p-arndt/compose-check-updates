@@ -85,7 +85,7 @@ func TestBarPinsStopTogglesTheSameSetting(t *testing.T) {
 	m = feed(t, m, pinEvent("a/compose.yml", "nginx", "latest", testDigest))
 	require.False(t, m.showFloating)
 
-	m = focusStop(t, m, "pins")
+	m = focusStop(t, m, "floating")
 	stop := m.barStops()[m.barStop]
 	assert.Equal(t, "hidden", stop.value)
 

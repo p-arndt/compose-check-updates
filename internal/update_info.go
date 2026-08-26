@@ -316,6 +316,14 @@ func (u *UpdateInfo) Backup() error {
 // each other and only the last image to finish keeps its new version.
 var updateMu sync.Mutex
 
+// sameImageLine reports whether line is the one RawLine was scanned from.
+// Trailing blanks are ignored along with the \r, so a line differing from the
+// scanned one only in invisible characters is still rewritten.
+func sameImageLine(line, raw string) bool {
+	const blanks = " \t\r"
+	return strings.TrimRight(line, blanks) == strings.TrimRight(raw, blanks)
+}
+
 func (u *UpdateInfo) Update() error {
 	// A reference that pins a digest gets both tag and digest rewritten. Writing
 	// a tag next to the digest of some other release would silently pin the wrong
@@ -349,7 +357,12 @@ func (u *UpdateInfo) Update() error {
 
 	lines := strings.Split(string(input), "\n")
 	for i, line := range lines {
-		if !strings.Contains(line, u.RawLine) {
+		// The whole line has to match, not merely start with the reference: with
+		// `nginx:stable` and `nginx:stable-alpine` in the same file, a substring
+		// match rewrote the second one into "nginx:stable@sha256:…-alpine". The \r
+		// is what a CRLF file leaves behind once the content is split on \n; the
+		// scanner that produced RawLine had already dropped it.
+		if !sameImageLine(line, u.RawLine) {
 			continue
 		}
 		for _, r := range u.replacements() {

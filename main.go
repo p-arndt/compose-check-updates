@@ -63,10 +63,11 @@ func main() {
 		Images:      cfg.Images,
 		PinFloating: cfg.PinFloating,
 	}
-	// -pin-floating can only ever turn pinning on, never off: a flag that is
-	// absent from the command line says nothing about what the config decided.
-	if ccuFlags.PinFloating {
-		on := true
+	// A flag that was not spelled out says nothing about what the config decided,
+	// so only one that was actually passed overrides it — in either direction:
+	// -pin-floating=false is how a single run opts out of `pin_floating: true`.
+	if ccuFlags.PinFloatingSet {
+		on := ccuFlags.PinFloating
 		effective.PinFloating = &on
 	}
 
@@ -110,14 +111,12 @@ func main() {
 		// level resolved up front — re-scanning whenever the filter changes would mean
 		// hitting the registries again for versions we already looked up.
 		opts.Major, opts.Minor, opts.Patch = true, true, true
-		// Same reasoning for the floating tags: their digests are resolved whether
-		// or not the setting is on, so the bar can show and hide the pin rows
-		// without going back to the registries. Only whether they are *listed*
-		// follows the setting, which is what showPins carries into the model.
-		showPins := opts.PinFloating
-		opts.PinFloating = true
+		// The floating tags are deliberately *not* forced on in the same way. Their
+		// digests cost a request each and pin a reference the user left mutable on
+		// purpose, so a run that was not asked to pin does not pay for them; the
+		// bar's "floating" stop fetches them if and when it is pressed.
 
-		if err := tui.Run(opts, cfg.Project, cfg.Global, showPins); err != nil {
+		if err := tui.Run(opts, cfg.Project, cfg.Global); err != nil {
 			slog.Error("Error running interactive mode", "error", err)
 			os.Exit(exitError)
 		}
