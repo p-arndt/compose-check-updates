@@ -90,8 +90,8 @@ func DefaultKeyMap() KeyMap {
 		Issues:      key.NewBinding(key.WithKeys("i"), key.WithHelp("i", "issues")),
 		IssuesClose: key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "back to list")),
 
-		Filter: key.NewBinding(key.WithKeys("f"), key.WithHelp("f", "filter")),
-		Target: key.NewBinding(key.WithKeys("t"), key.WithHelp("t", "target level")),
+		Filter:   key.NewBinding(key.WithKeys("f"), key.WithHelp("f", "filter")),
+		Target:   key.NewBinding(key.WithKeys("t"), key.WithHelp("t", "target level")),
 		Floating: key.NewBinding(key.WithKeys("p"), key.WithHelp("p", "list/hide floating tags")),
 		// tab asks what the cursor is on: an image opens the detail column, a
 		// header goes to the bar. tab and esc both leave the column again.

@@ -11,30 +11,30 @@ import (
 )
 
 type CCUFlags struct {
-	Help        bool     // Show help message
-	Update      bool     // Update the Docker Compose files with the new image tags
-	Restart     bool     // Restart the services after updating the Docker Compose files
-	Interactive bool     // Interactively choose which docker images to update
-	Check       bool     // Run the non-interactive report instead of the TUI
-	LegacyPlain bool     // Check was inferred from a report-only flag rather than the `check` subcommand
-	Directory   string   // Root directory to search for Docker Compose files
-	Full        bool     // Update to the latest semver version
-	Major       bool     // Update to the latest major version
-	Minor       bool     // Update to the latest minor version
-	Patch       bool     // Update to the latest patch version
-	PinFloating bool     // Pin floating tags to the digest they currently resolve to
+	Help        bool   // Show help message
+	Update      bool   // Update the Docker Compose files with the new image tags
+	Restart     bool   // Restart the services after updating the Docker Compose files
+	Interactive bool   // Interactively choose which docker images to update
+	Check       bool   // Run the non-interactive report instead of the TUI
+	LegacyPlain bool   // Check was inferred from a report-only flag rather than the `check` subcommand
+	Directory   string // Root directory to search for Docker Compose files
+	Full        bool   // Update to the latest semver version
+	Major       bool   // Update to the latest major version
+	Minor       bool   // Update to the latest minor version
+	Patch       bool   // Update to the latest patch version
+	PinFloating bool   // Pin floating tags to the digest they currently resolve to
 	// PinFloatingSet records whether -pin-floating was actually passed, so that
 	// -pin-floating=false can override a config that turned it on. A plain false
 	// means "the command line said nothing", which the config still decides.
 	PinFloatingSet bool
-	Version     bool     // Version of ccu
-	SelfUpdate  bool     // Download and install the latest version of ccu
-	CheckUpdate bool     // Check whether a newer version of ccu is available, without installing it
-	Exclude     []string // Directories to exclude from search
-	ExcludeStr  string   // Comma-separated list of directories to exclude from search (flag only)
-	Config      string   // Explicit config file to read instead of searching for one
-	Format      string   // Output format of the report: auto, pretty or json
-	ShowConfig  bool     // Print the resolved configuration and where it came from
+	Version        bool     // Version of ccu
+	SelfUpdate     bool     // Download and install the latest version of ccu
+	CheckUpdate    bool     // Check whether a newer version of ccu is available, without installing it
+	Exclude        []string // Directories to exclude from search
+	ExcludeStr     string   // Comma-separated list of directories to exclude from search (flag only)
+	Config         string   // Explicit config file to read instead of searching for one
+	Format         string   // Output format of the report: auto, pretty or json
+	ShowConfig     bool     // Print the resolved configuration and where it came from
 }
 
 // plainOnlyFlags are the flags that only the non-interactive report reads: the

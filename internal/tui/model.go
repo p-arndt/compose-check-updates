@@ -146,21 +146,21 @@ func NewModel(opts scanner.Options) Model {
 	sp.Spinner = spinner.Dot
 
 	return Model{
-		opts:      opts,
-		setCap:    writeCap(opts.Root),
-		pins:      make(map[pinScope]config.Config),
-		theme:     theme,
-		keys:      DefaultKeyMap(),
-		phase:     phaseScanning,
-		spinner:   sp,
-		ctx:       ctx,
-		cancel:    cancel,
-		filter: FilterAll,
+		opts:    opts,
+		setCap:  writeCap(opts.Root),
+		pins:    make(map[pinScope]config.Config),
+		theme:   theme,
+		keys:    DefaultKeyMap(),
+		phase:   phaseScanning,
+		spinner: sp,
+		ctx:     ctx,
+		cancel:  cancel,
+		filter:  FilterAll,
 		// The scan resolved them only if it was asked to, which is the same
 		// condition under which they are listed to begin with.
 		showFloating:     opts.PinFloating,
 		floatingResolved: opts.PinFloating,
-		collapsed: make(map[string]bool),
+		collapsed:        make(map[string]bool),
 		// The highest available version is what a fresh session offers.
 		target: TargetMajor,
 		width:  80,

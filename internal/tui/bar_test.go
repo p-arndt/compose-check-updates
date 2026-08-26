@@ -232,11 +232,11 @@ func TestBarHintsMatchTheKeyMap(t *testing.T) {
 	k := DefaultKeyMap()
 
 	want := map[string]string{
-		"show":   k.Filter.Help().Key,
-		"target": k.Target.Help().Key,
+		"show":     k.Filter.Help().Key,
+		"target":   k.Target.Help().Key,
 		"floating": k.Floating.Help().Key,
-		"issues": k.Issues.Help().Key,
-		"apply":  k.Apply.Help().Key,
+		"issues":   k.Issues.Help().Key,
+		"apply":    k.Apply.Help().Key,
 	}
 	for _, s := range m.barStops() {
 		name := strings.Split(s.label, " ")[0]
