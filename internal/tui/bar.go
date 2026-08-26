@@ -40,7 +40,7 @@ type barField int
 const (
 	barFieldShow barField = iota
 	barFieldTarget
-	barFieldPins
+	barFieldFloating
 )
 
 // barStop is one station on the bar.
@@ -69,8 +69,8 @@ func (m Model) barStops() []barStop {
 			label: "target", value: m.target.Label(), hint: hintFor(m.keys.Target),
 		},
 		{
-			kind: barValue, field: barFieldPins,
-			label: "pins", value: pinsLabel(m.showPins), hint: hintFor(m.keys.Pins),
+			kind: barValue, field: barFieldFloating,
+			label: "floating", value: floatingLabel(m.showFloating), hint: hintFor(m.keys.Floating),
 		},
 		{
 			kind: barButton, act: barActIssues,
@@ -85,10 +85,10 @@ func (m Model) barStops() []barStop {
 	}
 }
 
-// pinsLabel is the word the "pins" stop shows. "listed"/"hidden" rather than
-// on/off, because the rows exist either way — the scan resolved them — and only
-// whether they are in the list is what this stop decides.
-func pinsLabel(show bool) string {
+// floatingLabel is the word the "floating" stop shows. "listed"/"hidden" rather
+// than on/off, because what the stop decides is whether the rows are in the list,
+// not whether the images are checked.
+func floatingLabel(show bool) string {
 	if show {
 		return "listed"
 	}
@@ -212,8 +212,9 @@ func (m Model) pressBar(delta int) (tea.Model, tea.Cmd) {
 			m.setFilter(stepFilter(m.filter, delta))
 		case barFieldTarget:
 			m.setTargetAnnounced(stepTarget(m.target, delta))
-		case barFieldPins:
-			m.togglePins()
+		case barFieldFloating:
+			// The only stop whose value can need fetching before it means anything.
+			return m, m.toggleFloating()
 		}
 		return m, nil
 	}

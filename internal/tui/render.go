@@ -230,7 +230,12 @@ func (t Theme) Detail(u internal.UpdateInfo, level string, width int) string {
 		{"image", u.FullImageName},
 		{"name", u.ImageName},
 	}
-	if u.CurrentTag != "" || u.LatestTag != "" {
+	// A pin keeps its tag, so there is no delta to show: "latest → latest" is the
+	// no-op line the list column already goes out of its way to avoid, and the
+	// digest fields below say what actually changes.
+	if level == internal.LevelPin {
+		fields = append(fields, field{"tag", u.CurrentTag})
+	} else if u.CurrentTag != "" || u.LatestTag != "" {
 		fields = append(fields, field{"version", plainDelta(u.CurrentTag, u.LatestTag)})
 	}
 	if u.CurrentDigest != "" {

@@ -13,6 +13,12 @@ import (
 )
 
 type scanStartedMsg struct{ events <-chan scanner.Event }
+
+// The floating-tag scan is a second, much smaller run with its own channel: its
+// events may not touch the file counters the first scan owns.
+type floatingStartedMsg struct{ events <-chan scanner.Event }
+type floatingEventMsg struct{ ev scanner.Event }
+type floatingDoneMsg struct{}
 type scanEventMsg struct{ ev scanner.Event }
 type scanDoneMsg struct{}
 type scanFailedMsg struct{ err error }
@@ -42,6 +48,31 @@ func (m Model) startScan() tea.Msg {
 		return scanFailedMsg{err: err}
 	}
 	return scanStartedMsg{events: events}
+}
+
+// startFloatingScan resolves the digests behind the bare floating tags, which the
+// ordinary scan skipped because it was not asked for them.
+func (m Model) startFloatingScan() tea.Msg {
+	events, err := scanner.ScanPins(m.ctx, m.opts)
+	if err != nil {
+		// Not fatal: the list the user already has is unaffected, so this is one
+		// more entry for the issues pane rather than a reason to quit.
+		return floatingEventMsg{ev: scanner.Event{Kind: scanner.EventError, Err: err}}
+	}
+	return floatingStartedMsg{events: events}
+}
+
+// waitForFloatingEvent is waitForEvent for the second channel. Two channels
+// rather than one, so a floating-tag event can never be mistaken for scan
+// progress.
+func waitForFloatingEvent(events <-chan scanner.Event) tea.Cmd {
+	return func() tea.Msg {
+		ev, ok := <-events
+		if !ok {
+			return floatingDoneMsg{}
+		}
+		return floatingEventMsg{ev: ev}
+	}
 }
 
 // waitForEvent reads exactly one event and re-arms itself from Update. Draining
@@ -85,6 +116,28 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case scanEventMsg:
 		m.handleScanEvent(msg.ev)
 		return m, waitForEvent(m.events)
+
+	case floatingStartedMsg:
+		m.floatingEvents = msg.events
+		return m, waitForFloatingEvent(msg.events)
+
+	case floatingEventMsg:
+		switch msg.ev.Kind {
+		case scanner.EventUpdate:
+			m.addRow(Row{Update: msg.ev.Update, Level: msg.ev.Level})
+			m.syncScroll()
+		case scanner.EventError:
+			m.scanErrs = append(m.scanErrs, msg.ev.Err)
+		}
+		return m, waitForFloatingEvent(m.floatingEvents)
+
+	case floatingDoneMsg:
+		m.floatingResolved = true
+		m.drainLogs()
+		m.rebuild(m.cursorKey())
+		m.syncScroll()
+		m.setStatus(StatusInfo, m.floatingSummary())
+		return m, nil
 
 	case logPollMsg:
 		m.drainLogs()
@@ -266,8 +319,9 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.cycleFilter()
 	case key.Matches(msg, m.keys.Target):
 		m.cycleTarget()
-	case key.Matches(msg, m.keys.Pins):
-		m.togglePins()
+	case key.Matches(msg, m.keys.Floating):
+		cmd := m.toggleFloating()
+		return m, cmd
 	case key.Matches(msg, m.keys.Focus):
 		m.advanceFocus()
 	case key.Matches(msg, m.keys.FocusPrev):
@@ -520,13 +574,41 @@ func (m *Model) setTargetAnnounced(t Target) {
 	m.setStatus(StatusInfo, fmt.Sprintf("target level: %s", t.Label()))
 }
 
-// openIssues shows the pane listing every skipped image and unreadable file.
 // Nothing to browse is a no-op with an explanation rather than an empty pane.
-// togglePins lists or hides the floating-tag pins. No re-scan: their digests were
-// resolved along with everything else, so this only widens or narrows the view.
-func (m *Model) togglePins() {
-	m.showPins = !m.showPins
+// toggleFloating lists or hides the floating-tag rows, fetching their digests the
+// first time they are asked for: the scan only resolved them when the setting was
+// already on, and a run that was told not to pin must not spend the requests
+// anyway. Returns the command that does the fetching, or nil when there is
+// nothing left to fetch.
+func (m *Model) toggleFloating() tea.Cmd {
+	m.showFloating = !m.showFloating
 
+	// Hidden rows may not stay selected: `A` would then write a digest into a
+	// line the user cannot see, and the apply count would name rows no header
+	// reports.
+	if !m.showFloating {
+		for i := range m.rows {
+			if m.rows[i].Level == internal.LevelPin {
+				m.rows[i].Selected = false
+			}
+		}
+	}
+
+	m.rebuild(m.cursorKey())
+	m.syncScroll()
+
+	if m.showFloating && !m.floatingResolved {
+		m.setStatus(StatusInfo, "resolving what the floating tags point at…")
+		return m.startFloatingScan
+	}
+
+	m.setStatus(StatusInfo, m.floatingSummary())
+	return nil
+}
+
+// floatingSummary is what the status line says about the switch, counting the
+// rows rather than the images so it cannot disagree with the list.
+func (m Model) floatingSummary() string {
 	n := 0
 	for _, r := range m.rows {
 		if r.Level == internal.LevelPin {
@@ -534,19 +616,17 @@ func (m *Model) togglePins() {
 		}
 	}
 
-	m.rebuild(m.cursorKey())
-	m.syncScroll()
-
 	switch {
 	case n == 0:
-		m.setStatus(StatusInfo, "pins "+pinsLabel(m.showPins)+" — no floating tags found")
-	case m.showPins:
-		m.setStatus(StatusInfo, fmt.Sprintf("%d floating tag(s) listed, applying one writes the digest it resolves to", n))
+		return "no floating tags found"
+	case m.showFloating:
+		return fmt.Sprintf("%d floating tag(s) listed, applying one writes the digest it resolves to", n)
 	default:
-		m.setStatus(StatusInfo, fmt.Sprintf("%d floating tag(s) hidden", n))
+		return fmt.Sprintf("%d floating tag(s) hidden", n)
 	}
 }
 
+// openIssues shows the pane listing every skipped image and unreadable file.
 func (m *Model) openIssues() {
 	if len(m.scanErrs) == 0 {
 		m.setStatus(StatusInfo, "no issues were logged during the scan")

@@ -44,6 +44,9 @@ type Model struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 	events <-chan scanner.Event
+	// floatingEvents is the second, much smaller scan: the digests behind the
+	// floating tags, fetched only once the user asks to see them.
+	floatingEvents <-chan scanner.Event
 
 	rows    []Row
 	visible []int   // indices into rows that pass the current filter
@@ -51,10 +54,14 @@ type Model struct {
 	cursor  int     // index into entries — headers are navigable too
 	offset  int     // first display line rendered, for scrolling
 	filter  Filter
-	// showPins is whether the pin rows — floating tags offered a digest — are
-	// listed. They are always resolved by the scan, so this hides and shows rows
-	// that are already there; see the bar's "pins" stop.
-	showPins bool
+	// showFloating is whether the floating-tag rows — a "latest" offered the
+	// digest it resolves to — are listed. Named for the tag, not for the pin, so
+	// it cannot be confused with Row.Pin, which is the saved cap.
+	showFloating bool
+	// floatingResolved records that the digests behind the floating tags have been
+	// fetched, which the ordinary scan only does when the setting was on. Listing
+	// them otherwise has to go and get them first, once.
+	floatingResolved bool
 	// nodes is the directory tree the headers are drawn from, rebuilt alongside
 	// entries because a filter change can remove whole directories from it.
 	nodes []node
@@ -148,8 +155,11 @@ func NewModel(opts scanner.Options) Model {
 		spinner:   sp,
 		ctx:       ctx,
 		cancel:    cancel,
-		filter:    FilterAll,
-		showPins:  opts.PinFloating,
+		filter: FilterAll,
+		// The scan resolved them only if it was asked to, which is the same
+		// condition under which they are listed to begin with.
+		showFloating:     opts.PinFloating,
+		floatingResolved: opts.PinFloating,
 		collapsed: make(map[string]bool),
 		// The highest available version is what a fresh session offers.
 		target: TargetMajor,
@@ -180,14 +190,6 @@ func writeCap(root string) func(pinScope, string, config.Level) error {
 		}
 		return config.SetImageMax(path, image, max)
 	}
-}
-
-// WithPinDisplay sets whether pin rows start out listed, which is the setting
-// as it was resolved from the config and the command line. The scan resolves
-// them either way, so this only decides what the first frame shows.
-func (m Model) WithPinDisplay(show bool) Model {
-	m.showPins = show
-	return m
 }
 
 // WithPins attaches the caps already on disk, so the list can mark a pinned
@@ -321,17 +323,65 @@ func (m Model) cursorKey() string {
 	return m.entryKey(e)
 }
 
+// rowEligible reports whether a row is part of what the list is about at all,
+// the level filter aside. A floating-tag pin is not: it is an offer to write down
+// what "latest" resolves to, and until the user asks for those it may not be
+// counted either — a header reading "1 of 2 updates" would send them to `f`,
+// which cannot reveal it.
+func (m Model) rowEligible(r Row) bool {
+	if r.Level == internal.LevelPin {
+		return m.showFloating
+	}
+	return true
+}
+
+// rowVisible is rowEligible plus the level filter, and is the single definition
+// of what the list shows: every counter reads it, so a header can never disagree
+// with the lines under it. The filter — which only speaks about versions — has
+// nothing to say about a pin either way.
+func (m Model) rowVisible(r Row) bool {
+	if !m.rowEligible(r) {
+		return false
+	}
+	if r.Level == internal.LevelPin {
+		return true
+	}
+	return m.filter.Matches(r.Level)
+}
+
+// eligibleCount is how many rows the list is about, for the readouts that would
+// otherwise say len(m.rows) and count the ones nobody can see.
+func (m Model) eligibleCount() int {
+	n := 0
+	for _, r := range m.rows {
+		if m.rowEligible(r) {
+			n++
+		}
+	}
+	return n
+}
+
+// hiddenFloatingCount is how many rows the "floating" switch is currently
+// keeping out of the list, so an empty list can name the key that fills it.
+func (m Model) hiddenFloatingCount() int {
+	if m.showFloating {
+		return 0
+	}
+	n := 0
+	for _, r := range m.rows {
+		if r.Level == internal.LevelPin {
+			n++
+		}
+	}
+	return n
+}
+
 // rebuild recomputes the visible set and the rendered entries, then restores the
 // cursor, so inserting or filtering never moves it to a different image.
 func (m *Model) rebuild(keepKey string) {
 	m.visible = m.visible[:0]
 	for i, r := range m.rows {
-		// A pin is an offer to write down what a floating tag resolves to, not news
-		// about a version, so it stays out of the list until it is asked for.
-		if r.Level == internal.LevelPin && !m.showPins {
-			continue
-		}
-		if m.filter.Matches(r.Level) {
+		if m.rowVisible(r) {
 			m.visible = append(m.visible, i)
 		}
 	}

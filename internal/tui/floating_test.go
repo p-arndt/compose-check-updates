@@ -38,27 +38,27 @@ func TestPinRowsAreHiddenUntilAskedFor(t *testing.T) {
 	assert.Equal(t, "traefik", m.rows[m.visible[0]].Update.ImageName)
 
 	m = feed(t, m, keyMsg("p"))
-	assert.True(t, m.showPins)
+	assert.True(t, m.showFloating)
 	assert.Len(t, m.visible, 2)
 
 	m = feed(t, m, keyMsg("p"))
-	assert.False(t, m.showPins)
+	assert.False(t, m.showFloating)
 	assert.Len(t, m.visible, 1)
 }
 
 // The setting the config and -pin-floating resolved to decides the first frame.
 func TestPinDisplayStartsFromTheSetting(t *testing.T) {
 	m := NewModel(scanner.Options{PinFloating: true})
-	assert.True(t, m.showPins, "the scan was asked to pin, so the rows are listed")
+	assert.True(t, m.showFloating, "the scan was asked to pin, so the rows are listed")
 
-	assert.False(t, NewModel(scanner.Options{}).showPins)
-	assert.True(t, newTestModel().WithPinDisplay(true).showPins)
+	assert.False(t, NewModel(scanner.Options{}).showFloating)
+	assert.True(t, newTestModel().withFloatingListed().showFloating)
 }
 
 // A pin keeps its tag, so the version column has to say what actually changes.
 // "latest → latest" would be a row that reads as a no-op.
 func TestPinRowShowsTheDigestItWouldWrite(t *testing.T) {
-	m := newTestModel().WithPinDisplay(true)
+	m := newTestModel().withFloatingListed()
 	m = feed(t, m, pinEvent("a/compose.yml", "nginx", "latest", testDigest))
 
 	r := *rowFor(t, m, "nginx")
@@ -83,14 +83,14 @@ func TestPinLevelHasItsOwnColour(t *testing.T) {
 func TestBarPinsStopTogglesTheSameSetting(t *testing.T) {
 	m := newTestModel()
 	m = feed(t, m, pinEvent("a/compose.yml", "nginx", "latest", testDigest))
-	require.False(t, m.showPins)
+	require.False(t, m.showFloating)
 
 	m = focusStop(t, m, "pins")
 	stop := m.barStops()[m.barStop]
 	assert.Equal(t, "hidden", stop.value)
 
 	m = feed(t, m, keyMsg(" "))
-	assert.True(t, m.showPins)
+	assert.True(t, m.showFloating)
 	assert.Equal(t, "listed", m.barStops()[m.barStop].value)
 	assert.Contains(t, strings.ToLower(m.statusText), "floating tag")
 }
@@ -98,7 +98,7 @@ func TestBarPinsStopTogglesTheSameSetting(t *testing.T) {
 // Pinning offers no choice of level, so the target keys have to leave the row
 // exactly as the scan resolved it rather than clearing the digest under it.
 func TestTargetKeysLeaveAPinAlone(t *testing.T) {
-	m := newTestModel().WithPinDisplay(true)
+	m := newTestModel().withFloatingListed()
 	m = feed(t, m, pinEvent("a/compose.yml", "nginx", "latest", testDigest))
 
 	m = feed(t, m, keyMsg("t"), keyMsg("t"))

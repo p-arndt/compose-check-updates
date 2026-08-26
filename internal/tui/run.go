@@ -104,9 +104,7 @@ func captureSlog(min slog.Level) (*logCapture, func()) {
 //
 // project and global are the two config layers as read from disk, kept apart
 // rather than merged: removing a pin needs to know which scope it came from.
-// showPins is whether floating-tag pins start out listed; the scan resolves them
-// either way, so the bar can hide and show them without a second scan.
-func Run(opts scanner.Options, project, global config.Config, showPins bool) error {
+func Run(opts scanner.Options, project, global config.Config) error {
 	fd := os.Stdout.Fd()
 	if !isatty.IsTerminal(fd) && !isatty.IsCygwinTerminal(fd) {
 		return errors.New("interactive mode needs a terminal, but stdout is not a TTY; run without -i to print the available updates instead")
@@ -120,7 +118,7 @@ func Run(opts scanner.Options, project, global config.Config, showPins bool) err
 	// even if the user never looked at the status line.
 	defer dumpLogs(logs)
 
-	p := tea.NewProgram(NewModel(opts).WithPinDisplay(showPins).WithPins(project, global).WithLogCapture(logs), tea.WithAltScreen(), tea.WithMouseCellMotion())
+	p := tea.NewProgram(NewModel(opts).WithPins(project, global).WithLogCapture(logs), tea.WithAltScreen(), tea.WithMouseCellMotion())
 	final, err := p.Run()
 	if err != nil {
 		return err
