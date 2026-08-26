@@ -4,6 +4,8 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+
+	"github.com/p-arndt/compose-check-updates/internal"
 )
 
 // minWidth is the narrowest layout the renderers will attempt. Terminal width is
@@ -20,6 +22,7 @@ func DefaultTheme() Theme {
 		Minor:     lipgloss.Color("179"), // amber, readable on white unlike bright yellow
 		Patch:     lipgloss.Color("71"),  // muted green
 		Digest:    lipgloss.Color("141"), // violet — deliberately off the blue axis so the badge cannot be read as chrome
+		Pin:       lipgloss.Color("109"), // desaturated teal — a pin changes no version, so it must not read as loud as one that does
 		Text:      lipgloss.Color("252"),
 		Dim:       lipgloss.Color("244"), // mid grey: the one value that survives both polarities
 		Accent:    lipgloss.Color("75"),  // light blue: carries the dark title text with plenty of contrast
@@ -42,6 +45,8 @@ func (t Theme) LevelColor(level string) lipgloss.Color {
 		return t.Patch
 	case "digest":
 		return t.Digest
+	case internal.LevelPin:
+		return t.Pin
 	default:
 		return t.Dim
 	}

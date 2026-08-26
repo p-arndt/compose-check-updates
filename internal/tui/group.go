@@ -48,8 +48,13 @@ func (m Model) groupInfo(nodeIdx int, cursor bool) GroupInfo {
 		if _, ok := files[r.FilePath()]; !ok {
 			continue
 		}
+		// Both counts go through the same predicates the list itself uses, so the
+		// header cannot claim rows the filter — or the floating switch — removed.
+		if !m.rowEligible(r) {
+			continue
+		}
 		g.Total++
-		if m.filter.Matches(r.Level) {
+		if m.rowVisible(r) {
 			g.Shown++
 		}
 		if r.Selected {

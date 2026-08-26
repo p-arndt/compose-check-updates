@@ -40,6 +40,7 @@ type barField int
 const (
 	barFieldShow barField = iota
 	barFieldTarget
+	barFieldFloating
 )
 
 // barStop is one station on the bar.
@@ -68,6 +69,10 @@ func (m Model) barStops() []barStop {
 			label: "target", value: m.target.Label(), hint: hintFor(m.keys.Target),
 		},
 		{
+			kind: barValue, field: barFieldFloating,
+			label: "floating", value: floatingLabel(m.showFloating), hint: hintFor(m.keys.Floating),
+		},
+		{
 			kind: barButton, act: barActIssues,
 			label: fmt.Sprintf("issues %d", len(m.scanErrs)), hint: hintFor(m.keys.Issues),
 			off: len(m.scanErrs) == 0,
@@ -78,6 +83,16 @@ func (m Model) barStops() []barStop {
 			off: n == 0,
 		},
 	}
+}
+
+// floatingLabel is the word the "floating" stop shows. "listed"/"hidden" rather
+// than on/off, because what the stop decides is whether the rows are in the list,
+// not whether the images are checked.
+func floatingLabel(show bool) string {
+	if show {
+		return "listed"
+	}
+	return "hidden"
 }
 
 // hintFor is a binding's own help key, so the bar can never name a key the map
@@ -197,6 +212,9 @@ func (m Model) pressBar(delta int) (tea.Model, tea.Cmd) {
 			m.setFilter(stepFilter(m.filter, delta))
 		case barFieldTarget:
 			m.setTargetAnnounced(stepTarget(m.target, delta))
+		case barFieldFloating:
+			// The only stop whose value can need fetching before it means anything.
+			return m, m.toggleFloating()
 		}
 		return m, nil
 	}

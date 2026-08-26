@@ -26,7 +26,13 @@ type Options struct {
 	// Caps is the per-image cap the user recorded, keyed by image name without
 	// tag or digest, valued "patch"/"minor"/"major". An image with no entry has
 	// no cap.
-	Caps        map[string]string
+	Caps map[string]string
+
+	// PinFloating turns on pinning bare floating tags ("latest", "main", …) to
+	// the digest they currently resolve to. Off by default: it costs a request per
+	// floating image and pins a reference the user left mutable on purpose.
+	PinFloating bool
+
 	Concurrency int // max compose files checked at once; <=0 means a sensible default (8)
 }
 
@@ -45,7 +51,7 @@ type Event struct {
 	Path   string              // compose file involved (empty for EventDiscovered)
 	Total  int                 // number of compose files found; only set on EventDiscovered
 	Update internal.UpdateInfo // only set on EventUpdate
-	Level  string              // update level of Update ("major"/"minor"/"patch"/"digest"); only on EventUpdate
+	Level  string              // update level of Update ("major"/"minor"/"patch"/"digest"/"pin"); only on EventUpdate
 	Err    error               // only set on EventError
 }
 
@@ -55,6 +61,26 @@ type Event struct {
 // The error return covers only the initial walk failing; per-file failures are
 // delivered as EventError.
 func Scan(ctx context.Context, opts Options) (<-chan Event, error) {
+	return walk(ctx, opts, true, checkFile)
+}
+
+// ScanPins walks opts.Root like Scan but resolves nothing except the digests
+// bare floating tags point at, emitting one EventUpdate per image it can pin. It
+// is the answer to a user asking for the pins mid-session: a full re-scan would
+// re-fetch every tag list for versions already on screen, while this costs one
+// manifest head per floating image.
+//
+// No progress events are emitted — the file counters belong to the scan that
+// filled the list, and a second run bumping them would report files as checked
+// twice.
+func ScanPins(ctx context.Context, opts Options) (<-chan Event, error) {
+	return walk(ctx, opts, false, checkFilePins)
+}
+
+// walk is the shared body of the two scans: discover the compose files, then run
+// check over them with bounded concurrency. progress decides whether the
+// file-level events are emitted at all.
+func walk(ctx context.Context, opts Options, progress bool, check func(context.Context, chan<- Event, Options, string)) (<-chan Event, error) {
 	paths, err := internal.GetComposeFilePaths(opts.Root, opts.Exclude)
 	if err != nil {
 		return nil, err
@@ -72,7 +98,7 @@ func Scan(ctx context.Context, opts Options) (<-chan Event, error) {
 	go func() {
 		defer close(events)
 
-		if !send(ctx, events, Event{Kind: EventDiscovered, Total: len(paths)}) {
+		if progress && !send(ctx, events, Event{Kind: EventDiscovered, Total: len(paths)}) {
 			return
 		}
 
@@ -91,7 +117,7 @@ func Scan(ctx context.Context, opts Options) (<-chan Event, error) {
 			go func(path string) {
 				defer wg.Done()
 				defer func() { <-sem }()
-				checkFile(ctx, events, opts, path)
+				check(ctx, events, opts, path)
 			}(path)
 		}
 
@@ -107,7 +133,7 @@ func checkFile(ctx context.Context, events chan<- Event, opts Options, path stri
 	}
 
 	registry := internal.NewRegistry("")
-	checker := internal.NewUpdateChecker(path, registry)
+	checker := internal.NewUpdateChecker(path, registry).WithPinFloating(opts.PinFloating)
 	infos, err := checker.Check(opts.Major, opts.Minor, opts.Patch)
 	if err != nil {
 		send(ctx, events, Event{Kind: EventError, Path: path, Err: err})
@@ -131,6 +157,24 @@ func checkFile(ctx context.Context, events chan<- Event, opts Options, path stri
 	}
 
 	send(ctx, events, Event{Kind: EventFileDone, Path: path})
+}
+
+// checkFilePins is ScanPins' per-file work: the floating tags of one compose
+// file and nothing else. Caps are not consulted — a pin moves no version, so
+// there is no level for a cap to clamp.
+func checkFilePins(ctx context.Context, events chan<- Event, opts Options, path string) {
+	registry := internal.NewRegistry("")
+	pins, err := internal.NewUpdateChecker(path, registry).CheckPins()
+	if err != nil {
+		send(ctx, events, Event{Kind: EventError, Path: path, Err: err})
+		return
+	}
+
+	for _, info := range pins {
+		if !send(ctx, events, Event{Kind: EventUpdate, Path: path, Update: info, Level: info.UpdateLevel()}) {
+			return
+		}
+	}
 }
 
 // applyCap records the cap on info and moves its selection down to it when the

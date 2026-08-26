@@ -35,6 +35,9 @@ type KeyMap struct {
 	IssuesClose key.Binding
 	Filter      key.Binding
 	Target      key.Binding
+	// Floating lists or hides the floating-tag rows, resolving their digests the
+	// first time they are asked for.
+	Floating key.Binding
 	// Three places can hold the keyboard: the list, the bar and the detail
 	// column. Focus/FocusPrev/Bar reach them; FocusBack is the way out.
 	Focus     key.Binding
@@ -87,8 +90,9 @@ func DefaultKeyMap() KeyMap {
 		Issues:      key.NewBinding(key.WithKeys("i"), key.WithHelp("i", "issues")),
 		IssuesClose: key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "back to list")),
 
-		Filter: key.NewBinding(key.WithKeys("f"), key.WithHelp("f", "filter")),
-		Target: key.NewBinding(key.WithKeys("t"), key.WithHelp("t", "target level")),
+		Filter:   key.NewBinding(key.WithKeys("f"), key.WithHelp("f", "filter")),
+		Target:   key.NewBinding(key.WithKeys("t"), key.WithHelp("t", "target level")),
+		Floating: key.NewBinding(key.WithKeys("p"), key.WithHelp("p", "list/hide floating tags")),
 		// tab asks what the cursor is on: an image opens the detail column, a
 		// header goes to the bar. tab and esc both leave the column again.
 		Focus:     key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "details / bar")),
@@ -134,7 +138,7 @@ func (k KeyMap) Bindings() []key.Binding {
 		k.Up, k.Down, k.PageUp, k.PageDown, k.Home, k.End,
 		k.Toggle, k.SelectAll, k.SelectNone, k.SelectAllGlobal, k.SelectNoneGlobal,
 		k.ToggleGroup, k.Collapse, k.Expand, k.CollapseAll, k.ExpandAll,
-		k.Filter, k.Target, k.Focus, k.Bar, k.BarNext, k.BarPrev, k.ValueNext, k.ValuePrev, k.Issues, k.Apply, k.ApplyRow, k.Help, k.Quit,
+		k.Filter, k.Target, k.Floating, k.Focus, k.Bar, k.BarNext, k.BarPrev, k.ValueNext, k.ValuePrev, k.Issues, k.Apply, k.ApplyRow, k.Help, k.Quit,
 	}
 }
 

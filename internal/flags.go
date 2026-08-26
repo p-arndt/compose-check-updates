@@ -11,25 +11,30 @@ import (
 )
 
 type CCUFlags struct {
-	Help        bool     // Show help message
-	Update      bool     // Update the Docker Compose files with the new image tags
-	Restart     bool     // Restart the services after updating the Docker Compose files
-	Interactive bool     // Interactively choose which docker images to update
-	Check       bool     // Run the non-interactive report instead of the TUI
-	LegacyPlain bool     // Check was inferred from a report-only flag rather than the `check` subcommand
-	Directory   string   // Root directory to search for Docker Compose files
-	Full        bool     // Update to the latest semver version
-	Major       bool     // Update to the latest major version
-	Minor       bool     // Update to the latest minor version
-	Patch       bool     // Update to the latest patch version
-	Version     bool     // Version of ccu
-	SelfUpdate  bool     // Download and install the latest version of ccu
-	CheckUpdate bool     // Check whether a newer version of ccu is available, without installing it
-	Exclude     []string // Directories to exclude from search
-	ExcludeStr  string   // Comma-separated list of directories to exclude from search (flag only)
-	Config      string   // Explicit config file to read instead of searching for one
-	Format      string   // Output format of the report: auto, pretty or json
-	ShowConfig  bool     // Print the resolved configuration and where it came from
+	Help        bool   // Show help message
+	Update      bool   // Update the Docker Compose files with the new image tags
+	Restart     bool   // Restart the services after updating the Docker Compose files
+	Interactive bool   // Interactively choose which docker images to update
+	Check       bool   // Run the non-interactive report instead of the TUI
+	LegacyPlain bool   // Check was inferred from a report-only flag rather than the `check` subcommand
+	Directory   string // Root directory to search for Docker Compose files
+	Full        bool   // Update to the latest semver version
+	Major       bool   // Update to the latest major version
+	Minor       bool   // Update to the latest minor version
+	Patch       bool   // Update to the latest patch version
+	PinFloating bool   // Pin floating tags to the digest they currently resolve to
+	// PinFloatingSet records whether -pin-floating was actually passed, so that
+	// -pin-floating=false can override a config that turned it on. A plain false
+	// means "the command line said nothing", which the config still decides.
+	PinFloatingSet bool
+	Version        bool     // Version of ccu
+	SelfUpdate     bool     // Download and install the latest version of ccu
+	CheckUpdate    bool     // Check whether a newer version of ccu is available, without installing it
+	Exclude        []string // Directories to exclude from search
+	ExcludeStr     string   // Comma-separated list of directories to exclude from search (flag only)
+	Config         string   // Explicit config file to read instead of searching for one
+	Format         string   // Output format of the report: auto, pretty or json
+	ShowConfig     bool     // Print the resolved configuration and where it came from
 }
 
 // plainOnlyFlags are the flags that only the non-interactive report reads: the
@@ -71,6 +76,7 @@ func Parse(version string) CCUFlags {
 	flag.BoolVar(&args.Major, "major", false, "Update to the latest major version")
 	flag.BoolVar(&args.Minor, "minor", false, "Update to the latest minor version")
 	flag.BoolVar(&args.Patch, "patch", true, "Update to the latest patch version")
+	flag.BoolVar(&args.PinFloating, "pin-floating", false, "Pin floating tags (latest, main, ...) to the digest they resolve to")
 	flag.BoolVar(&args.Version, "v", false, "Show version information")
 	// Kept registered so existing scripts keep working, hidden from the usage text
 	// so only the subcommand form is taught. Unlike -v and -h below, neither is
@@ -125,6 +131,14 @@ func Parse(version string) CCUFlags {
 		})
 	}
 
+	// Read outside the block above, which only runs when the mode is still open:
+	// `ccu check -pin-floating=false` has to be seen as well.
+	flag.Visit(func(f *flag.Flag) {
+		if f.Name == "pin-floating" {
+			args.PinFloatingSet = true
+		}
+	})
+
 	if args.Version {
 		println("Version:", version)
 		os.Exit(0)
@@ -171,7 +185,7 @@ func usage(w io.Writer) {
 	fmt.Fprintln(tw, "  config\tShow the resolved configuration and the files it was read from")
 	fmt.Fprintln(tw, "  help\tShow this help message")
 	fmt.Fprintln(tw, "  version\tShow version information")
-	fmt.Fprintf(tw, "\nFlags (-d, -exclude and -config apply to both modes, the rest only to `%s check`):\n", name)
+	fmt.Fprintf(tw, "\nFlags (-d, -exclude, -config and -pin-floating apply to both modes, the rest only to `%s check`):\n", name)
 	flag.VisitAll(func(f *flag.Flag) {
 		// An empty usage string marks a flag kept only for backwards
 		// compatibility; see the registrations in Parse.

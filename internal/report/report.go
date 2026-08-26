@@ -170,7 +170,12 @@ func (prettyWriter) Update(u internal.UpdateInfo, level string, res Result) {
 	if !res.ApplyRequested && !res.RestartRequested {
 		attrs := []any{"image", u.ImageName, "current", u.CurrentTag, "latest", u.LatestTag, "file", u.FilePath, "update_level", level}
 		if u.IsDigestUpdate() {
-			attrs = append(attrs, "current_digest", u.CurrentDigest, "latest_digest", u.LatestDigest)
+			// A pin has no current digest to report — that is the whole point of it —
+			// and an empty field would read as one that failed to resolve.
+			if u.CurrentDigest != "" {
+				attrs = append(attrs, "current_digest", u.CurrentDigest)
+			}
+			attrs = append(attrs, "latest_digest", u.LatestDigest)
 		}
 		slog.Info("New version", attrs...)
 	}

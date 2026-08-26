@@ -246,7 +246,7 @@ func (m Model) statusLine() string {
 		return m.status(StatusError, fmt.Sprintf("%d issue(s) — press i · last: %v", n, m.scanErrs[n-1]))
 	}
 	if m.statusText == "" {
-		return m.status(StatusInfo, fmt.Sprintf("%d selected of %d", m.selectedCount(), len(m.rows)))
+		return m.status(StatusInfo, fmt.Sprintf("%d selected of %d", m.selectedCount(), m.eligibleCount()))
 	}
 	return m.status(m.statusKind, m.statusText)
 }
@@ -377,6 +377,11 @@ func (m Model) issuesView() string {
 }
 
 func (m Model) emptyText() string {
+	// Named before the filter is blamed: a file holding nothing but floating tags
+	// looks empty, and `f` is not the key that changes that.
+	if n := m.hiddenFloatingCount(); n > 0 && len(m.visible) == 0 {
+		return fmt.Sprintf("%d floating tag(s) hidden, nothing else to report (p lists them)", n)
+	}
 	if len(m.rows) == 0 {
 		if m.phase == phaseScanning {
 			return "scanning…"

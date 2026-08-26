@@ -152,7 +152,7 @@ func rowTailPlain(r Row) string {
 	if r.NoTarget {
 		return "no " + r.Target.Label() + " update" + pinMarker(r)
 	}
-	s := plainDelta(r.Update.CurrentTag, r.Update.LatestTag)
+	s := plainDelta(rowDelta(r))
 	if n := r.otherTargets(); n > 0 {
 		// Without this, a row pointing at 2.9.4 looks like the only version `T`
 		// could offer.
@@ -180,7 +180,8 @@ func (t Theme) rowTail(r Row, tailPlain string, budget int) string {
 		return lipgloss.NewStyle().Foreground(t.Dim).Italic(true).Render(truncatePlain(tailPlain, budget))
 	}
 
-	full := t.VersionDelta(r.Update.CurrentTag, r.Update.LatestTag, r.Level)
+	current, latest := rowDelta(r)
+	full := t.VersionDelta(current, latest, r.Level)
 	if n := r.otherTargets(); n > 0 {
 		full += lipgloss.NewStyle().Foreground(t.Dim).Render(fmt.Sprintf(" (+%d)", n))
 	}
@@ -193,7 +194,17 @@ func (t Theme) rowTail(r Row, tailPlain string, budget int) string {
 	// Too narrow for both versions: show where we are going, not where we were.
 	return lipgloss.NewStyle().
 		Foreground(t.LevelColor(r.Level)).
-		Render(truncatePlain(r.Update.LatestTag, budget))
+		Render(truncatePlain(latest, budget))
+}
+
+// rowDelta is what the version column compares. A pin keeps its tag — that is
+// what makes it a pin — so the digest it resolved to stands in for the new
+// version; without it the column would read "latest → latest" and say nothing.
+func rowDelta(r Row) (current, latest string) {
+	if r.Level == internal.LevelPin && r.Update.LatestDigest != "" {
+		return r.Update.CurrentTag, "@" + shortDigest(r.Update.LatestDigest)
+	}
+	return r.Update.CurrentTag, r.Update.LatestTag
 }
 
 // plainDelta is the unstyled form of VersionDelta, used for width budgeting.
@@ -219,7 +230,12 @@ func (t Theme) Detail(u internal.UpdateInfo, level string, width int) string {
 		{"image", u.FullImageName},
 		{"name", u.ImageName},
 	}
-	if u.CurrentTag != "" || u.LatestTag != "" {
+	// A pin keeps its tag, so there is no delta to show: "latest → latest" is the
+	// no-op line the list column already goes out of its way to avoid, and the
+	// digest fields below say what actually changes.
+	if level == internal.LevelPin {
+		fields = append(fields, field{"tag", u.CurrentTag})
+	} else if u.CurrentTag != "" || u.LatestTag != "" {
 		fields = append(fields, field{"version", plainDelta(u.CurrentTag, u.LatestTag)})
 	}
 	if u.CurrentDigest != "" {

@@ -228,3 +228,45 @@ func TestParse(t *testing.T) {
 		})
 	}
 }
+
+// -pin-floating applies to both modes, so naming it must not infer the report,
+// and whether it was spelled out at all has to survive parsing: a plain false
+// means "the command line said nothing" and leaves the config in charge, while
+// -pin-floating=false is a run opting out of `pin_floating: true`.
+func TestParsePinFloating(t *testing.T) {
+	tests := []struct {
+		name     string
+		args     []string
+		wantOn   bool
+		wantSet  bool
+		wantMode bool // Check
+	}{
+		{name: "absent"},
+		{name: "on", args: []string{"-pin-floating"}, wantOn: true, wantSet: true},
+		{name: "explicitly off", args: []string{"-pin-floating=false"}, wantSet: true},
+		// Read outside the mode-inference block, so `check` in front of it is seen.
+		{name: "off under check", args: []string{"check", "-pin-floating=false"}, wantSet: true, wantMode: true},
+		{name: "on under check", args: []string{"check", "-pin-floating"}, wantOn: true, wantSet: true, wantMode: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			origArgs := os.Args
+			defer func() { os.Args = origArgs }()
+			os.Args = append([]string{"ccu"}, tt.args...)
+
+			flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ContinueOnError)
+
+			result := Parse("test")
+			if result.PinFloating != tt.wantOn {
+				t.Errorf("Parse(%q).PinFloating = %v, expected %v", tt.args, result.PinFloating, tt.wantOn)
+			}
+			if result.PinFloatingSet != tt.wantSet {
+				t.Errorf("Parse(%q).PinFloatingSet = %v, expected %v", tt.args, result.PinFloatingSet, tt.wantSet)
+			}
+			if result.Check != tt.wantMode {
+				t.Errorf("Parse(%q).Check = %v, expected %v", tt.args, result.Check, tt.wantMode)
+			}
+		})
+	}
+}

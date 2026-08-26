@@ -101,7 +101,7 @@ func TestBarStopsAreStableButDisabled(t *testing.T) {
 		}
 		return out
 	}
-	assert.Equal(t, []string{"show", "target", "issues", "apply"}, labels(m))
+	assert.Equal(t, []string{"show", "target", "floating", "issues", "apply"}, labels(m))
 
 	for _, s := range m.barStops() {
 		if strings.HasPrefix(s.label, "issues") || strings.HasPrefix(s.label, "apply") {
@@ -232,10 +232,11 @@ func TestBarHintsMatchTheKeyMap(t *testing.T) {
 	k := DefaultKeyMap()
 
 	want := map[string]string{
-		"show":   k.Filter.Help().Key,
-		"target": k.Target.Help().Key,
-		"issues": k.Issues.Help().Key,
-		"apply":  k.Apply.Help().Key,
+		"show":     k.Filter.Help().Key,
+		"target":   k.Target.Help().Key,
+		"floating": k.Floating.Help().Key,
+		"issues":   k.Issues.Help().Key,
+		"apply":    k.Apply.Help().Key,
 	}
 	for _, s := range m.barStops() {
 		name := strings.Split(s.label, " ")[0]

@@ -59,8 +59,16 @@ func main() {
 	// written down once is meant to stay excluded, and -exclude is how a run adds
 	// one more on top.
 	effective := config.Config{
-		Exclude: config.Union(cfg.Exclude, ccuFlags.Exclude),
-		Images:  cfg.Images,
+		Exclude:     config.Union(cfg.Exclude, ccuFlags.Exclude),
+		Images:      cfg.Images,
+		PinFloating: cfg.PinFloating,
+	}
+	// A flag that was not spelled out says nothing about what the config decided,
+	// so only one that was actually passed overrides it — in either direction:
+	// -pin-floating=false is how a single run opts out of `pin_floating: true`.
+	if ccuFlags.PinFloatingSet {
+		on := ccuFlags.PinFloating
+		effective.PinFloating = &on
 	}
 
 	// A report about ccu's own settings, like the version and update commands
@@ -77,6 +85,8 @@ func main() {
 		Major:   ccuFlags.Major,
 		Minor:   ccuFlags.Minor,
 		Patch:   ccuFlags.Patch,
+
+		PinFloating: effective.PinFloatingEnabled(),
 	}
 
 	format, err := report.ParseFormat(ccuFlags.Format)
@@ -101,6 +111,10 @@ func main() {
 		// level resolved up front — re-scanning whenever the filter changes would mean
 		// hitting the registries again for versions we already looked up.
 		opts.Major, opts.Minor, opts.Patch = true, true, true
+		// The floating tags are deliberately *not* forced on in the same way. Their
+		// digests cost a request each and pin a reference the user left mutable on
+		// purpose, so a run that was not asked to pin does not pay for them; the
+		// bar's "floating" stop fetches them if and when it is pressed.
 
 		if err := tui.Run(opts, cfg.Project, cfg.Global); err != nil {
 			slog.Error("Error running interactive mode", "error", err)

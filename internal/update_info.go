@@ -10,6 +10,12 @@ import (
 	"github.com/Masterminds/semver/v3"
 )
 
+// LevelPin is the level of a floating tag being pinned to the digest it
+// currently resolves to. Unlike the semver levels it describes no change to the
+// image: it writes down which image "latest" means today, so that every later
+// run can tell that it has moved on.
+const LevelPin = "pin"
+
 type UpdateInfo struct {
 	FilePath string
 	RawLine  string
@@ -34,6 +40,12 @@ type UpdateInfo struct {
 	// empty means no cap. It is kept as a plain string so this package stays
 	// independent of wherever the preference was read from.
 	Cap string
+
+	// PinsFloating marks the one update that adds a digest instead of changing
+	// one: a bare floating tag ("latest") gaining the digest it resolves to right
+	// now. Nothing about the image moved, so it carries no level of its own and
+	// no cap has anything to say about it — see LevelPin.
+	PinsFloating bool
 
 	// Tag LatestDigest was resolved for. A digest only ever describes one
 	// release, so switching target has to invalidate it.
@@ -176,6 +188,12 @@ func (u *UpdateInfo) IsDigestUpdate() bool {
 }
 
 func (u *UpdateInfo) HasNewVersion(major, minor, patch bool) bool {
+	// Pinning a floating tag is something to do regardless of the level filters:
+	// they speak about versions, and this one writes a digest.
+	if u.PinsFloating {
+		return true
+	}
+
 	// A digest change carries no major/minor/patch level, so the level filters
 	// cannot apply to it — it is either a different image or it is not.
 	if u.IsDigestUpdate() {
@@ -207,8 +225,16 @@ func (u *UpdateInfo) HasNewVersion(major, minor, patch bool) bool {
 
 // UpdateLevel returns the semantic version increment level between CurrentTag and LatestTag.
 // Possible values are "major", "minor", "patch", "digest" for changes that carry
-// no version, or empty string when undetermined.
+// no version, LevelPin for a floating tag being given the digest it resolves to,
+// or empty string when undetermined.
 func (u *UpdateInfo) UpdateLevel() string {
+	// Checked before the digest cases below, which would otherwise report a pin
+	// as a digest update — the digest is new to the file, but the image behind it
+	// is the one the tag already pointed at.
+	if u.PinsFloating {
+		return LevelPin
+	}
+
 	if u.CurrentTag == "" || u.LatestTag == "" {
 		if u.IsDigestUpdate() {
 			return "digest"
@@ -253,6 +279,14 @@ type replacement struct{ old, new string }
 func (u *UpdateInfo) replacements() []replacement {
 	var reps []replacement
 
+	// A pin adds a digest where the reference had none, so there is nothing to
+	// substitute: the whole reference is replaced by itself plus the digest. The
+	// full reference rather than the bare tag, because "latest" may well appear in
+	// the repository name too and only the first occurrence would be rewritten.
+	if u.PinsFloating && u.LatestDigest != "" {
+		return []replacement{{u.FullImageName, u.FullImageName + "@" + u.LatestDigest}}
+	}
+
 	if u.CurrentTag != "" && u.LatestTag != "" && u.LatestTag != u.CurrentTag {
 		reps = append(reps, replacement{u.CurrentTag, u.LatestTag})
 	}
@@ -281,6 +315,14 @@ func (u *UpdateInfo) Backup() error {
 // file is updated in its own goroutine, so without this their writes overwrite
 // each other and only the last image to finish keeps its new version.
 var updateMu sync.Mutex
+
+// sameImageLine reports whether line is the one RawLine was scanned from.
+// Trailing blanks are ignored along with the \r, so a line differing from the
+// scanned one only in invisible characters is still rewritten.
+func sameImageLine(line, raw string) bool {
+	const blanks = " \t\r"
+	return strings.TrimRight(line, blanks) == strings.TrimRight(raw, blanks)
+}
 
 func (u *UpdateInfo) Update() error {
 	// A reference that pins a digest gets both tag and digest rewritten. Writing
@@ -315,7 +357,12 @@ func (u *UpdateInfo) Update() error {
 
 	lines := strings.Split(string(input), "\n")
 	for i, line := range lines {
-		if !strings.Contains(line, u.RawLine) {
+		// The whole line has to match, not merely start with the reference: with
+		// `nginx:stable` and `nginx:stable-alpine` in the same file, a substring
+		// match rewrote the second one into "nginx:stable@sha256:…-alpine". The \r
+		// is what a CRLF file leaves behind once the content is split on \n; the
+		// scanner that produced RawLine had already dropped it.
+		if !sameImageLine(line, u.RawLine) {
 			continue
 		}
 		for _, r := range u.replacements() {
