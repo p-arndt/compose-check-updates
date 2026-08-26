@@ -1,0 +1,15 @@
+services:
+  # Built from the Dockerfile next to this file: the tag that decides what this
+  # service runs sits on its FROM lines, not here.
+  keycloak:
+    # image: quay.io/keycloak/keycloak:latest
+    build:
+      context: "./"
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_started
+
+  postgres:
+    image: postgres:16.2

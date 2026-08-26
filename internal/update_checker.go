@@ -20,6 +20,15 @@ type UpdateChecker struct {
 	// reference the user deliberately left mutable into a pinned one, so it has
 	// to be asked for.
 	pinFloating bool
+
+	// composePath is the compose file that builds path, set only when path is a
+	// Dockerfile reached through a service's `build:`. It is what tells the two
+	// kinds of file apart here — and what a restart has to act on later, since
+	// `docker compose up` knows about the service, not about its Dockerfile.
+	composePath string
+	// service is the compose service that builds path. Empty for a compose file,
+	// whose services are read from the file itself.
+	service string
 }
 
 func NewUpdateChecker(path string, registry *Registry) *UpdateChecker {
@@ -27,6 +36,16 @@ func NewUpdateChecker(path string, registry *Registry) *UpdateChecker {
 		registry = NewRegistry("")
 	}
 	return &UpdateChecker{path: path, registry: registry}
+}
+
+// NewDockerfileChecker returns a checker for the Dockerfile a compose service
+// builds. Everything past parsing is the same work a compose file gets — the
+// base image of a self-built image moves exactly like any other image, it just
+// lives on a FROM line — so the two share the whole checker below.
+func NewDockerfileChecker(dockerfile, composePath, service string, registry *Registry) *UpdateChecker {
+	checker := NewUpdateChecker(dockerfile, registry)
+	checker.composePath, checker.service = composePath, service
+	return checker
 }
 
 // WithPinFloating enables pinning bare floating tags to the digest they resolve
@@ -219,6 +238,10 @@ func (u *UpdateChecker) pinFloatingTag(info *UpdateInfo) {
 }
 
 func (u *UpdateChecker) createUpdateInfos() ([]UpdateInfo, error) {
+	if u.composePath != "" {
+		return u.createDockerfileUpdateInfos()
+	}
+
 	var updateInfos []UpdateInfo
 	// Index rather than a set: a repeated reference has to find the entry it
 	// duplicates so its service name can be added to it.
@@ -247,7 +270,7 @@ func (u *UpdateChecker) createUpdateInfos() ([]UpdateInfo, error) {
 		imageKey := name + ":" + tag + "@" + dgst
 
 		if i, exists := byImage[imageKey]; exists {
-			updateInfos[i].Services = appendService(updateInfos[i].Services, service)
+			updateInfos[i].Services = AppendService(updateInfos[i].Services, service)
 			continue
 		}
 
@@ -255,7 +278,7 @@ func (u *UpdateChecker) createUpdateInfos() ([]UpdateInfo, error) {
 		updateInfos = append(updateInfos, UpdateInfo{
 			FilePath:      u.path,
 			RawLine:       line,
-			Services:      appendService(nil, service),
+			Services:      AppendService(nil, service),
 			FullImageName: imageName,
 			ImageName:     name,
 			CurrentTag:    tag,
@@ -266,10 +289,96 @@ func (u *UpdateChecker) createUpdateInfos() ([]UpdateInfo, error) {
 	return updateInfos, nil
 }
 
-// appendService adds name to services unless it is empty or already there. An
+// createDockerfileUpdateInfos is createUpdateInfos for a Dockerfile: the base
+// images its FROM lines name, minus the ones no registry can answer for.
+//
+// A multi-stage build usually names the same base twice — once as the builder,
+// once as the runtime — and both lines have to move together, or the next build
+// copies artefacts from one release into another. So the duplicates are folded
+// into a single update carrying every line it has to rewrite.
+func (u *UpdateChecker) createDockerfileUpdateInfos() ([]UpdateInfo, error) {
+	var updateInfos []UpdateInfo
+	byImage := make(map[string]int)
+	// Stage names declared by earlier FROM lines. A later FROM naming one of
+	// them builds on this file, not on anything a registry has heard of.
+	stages := make(map[string]struct{})
+
+	file, err := os.Open(u.path)
+	if err != nil {
+		return nil, err
+	}
+
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := scanner.Text()
+
+		imageName, stage, ok := parseFrom(line)
+		if !ok {
+			continue
+		}
+		// A stage declared by this very line is recorded after it has been
+		// checked itself: `FROM x AS x` still names the image x.
+		skip := false
+		if _, isStage := stages[strings.ToLower(imageName)]; isStage {
+			skip = true
+		}
+		// The empty image of `FROM scratch` has no repository behind it, and an
+		// ARG-interpolated reference names a tag only the build knows.
+		if strings.EqualFold(imageName, "scratch") || strings.Contains(imageName, "$") {
+			skip = true
+		}
+		if stage != "" {
+			stages[strings.ToLower(stage)] = struct{}{}
+		}
+		if skip {
+			continue
+		}
+
+		name, tag, dgst := u.getNameTagAndDigest(imageName)
+		imageKey := name + ":" + tag + "@" + dgst
+
+		if i, exists := byImage[imageKey]; exists {
+			updateInfos[i].ExtraLines = appendLine(updateInfos[i].ExtraLines, updateInfos[i].RawLine, line)
+			continue
+		}
+
+		byImage[imageKey] = len(updateInfos)
+		updateInfos = append(updateInfos, UpdateInfo{
+			FilePath:      u.path,
+			ComposePath:   u.composePath,
+			RawLine:       line,
+			Services:      AppendService(nil, u.service),
+			FullImageName: imageName,
+			ImageName:     name,
+			CurrentTag:    tag,
+			CurrentDigest: dgst,
+		})
+	}
+
+	return updateInfos, nil
+}
+
+// appendLine adds line to extra unless it is already covered — by the update's
+// own RawLine or by a line collected before it. Update() rewrites every matching
+// line in the file, so a repeated spelling needs no second entry.
+func appendLine(extra []string, raw, line string) []string {
+	if sameImageLine(line, raw) {
+		return extra
+	}
+	for _, e := range extra {
+		if sameImageLine(line, e) {
+			return extra
+		}
+	}
+	return append(extra, line)
+}
+
+// AppendService adds name to services unless it is empty or already there. An
 // image declared outside any service — a top-level x- block, say — simply
 // contributes no name rather than an empty one.
-func appendService(services []string, name string) []string {
+func AppendService(services []string, name string) []string {
 	if name == "" {
 		return services
 	}

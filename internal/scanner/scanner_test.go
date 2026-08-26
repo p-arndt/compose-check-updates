@@ -91,7 +91,7 @@ func TestScanDiscoversComposeFiles(t *testing.T) {
 	events := collect(t, ch)
 	require.NotEmpty(t, events)
 	require.Equal(t, EventDiscovered, events[0].Kind, "EventDiscovered must be first")
-	assert.Equal(t, 7, events[0].Total)
+	assert.Equal(t, 8, events[0].Total)
 
 	expected := []string{
 		"docker-compose.yml",
@@ -99,6 +99,7 @@ func TestScanDiscoversComposeFiles(t *testing.T) {
 		"folder1/compose.yml",
 		"folder2/docker-compose.yaml",
 		"folder2/docker-compose.yml",
+		"keycloak/compose.yaml",
 		"sample1/docker-compose.yml",
 		"sample2/compose.yml",
 	}
@@ -122,7 +123,7 @@ func TestScanHonoursExclude(t *testing.T) {
 
 	events := collect(t, ch)
 	require.NotEmpty(t, events)
-	assert.Equal(t, 3, events[0].Total)
+	assert.Equal(t, 4, events[0].Total)
 
 	for _, path := range kindPaths(events, EventFileStart) {
 		assert.NotContains(t, path, "/folder1/")
@@ -157,4 +158,24 @@ func TestScanCancelDuringConsumption(t *testing.T) {
 
 	cancel()
 	collect(t, ch) // must terminate rather than deadlock
+}
+
+// TestDockerfileCheckers covers the wiring only: whether the Dockerfiles a
+// compose file builds are picked up at all, and that the option switches them
+// off. What the checkers then find needs a registry and is tested there.
+func TestDockerfileCheckers(t *testing.T) {
+	dir := t.TempDir()
+	compose := filepath.Join(dir, "compose.yaml")
+	require.NoError(t, os.WriteFile(compose, []byte(`services:
+  keycloak:
+    build:
+      context: "./"
+      dockerfile: Dockerfile
+  postgres:
+    image: postgres:16.2
+`), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "Dockerfile"), []byte("FROM keycloak/keycloak:26.7.2\n"), 0644))
+
+	assert.Len(t, dockerfileCheckers(Options{Dockerfiles: true}, nil, compose), 1)
+	assert.Empty(t, dockerfileCheckers(Options{}, nil, compose))
 }

@@ -35,6 +35,12 @@ type Config struct {
 	// project file that says nothing must not switch off what the global one
 	// turned on.
 	PinFloating *bool `yaml:"pin_floating"`
+
+	// Dockerfiles turns off checking the base images of Dockerfiles built by a
+	// compose service. A pointer for the same reason PinFloating is one, and
+	// absent means on: a service built from a Dockerfile has no image tag of its
+	// own, so leaving it out would mean ccu has nothing to say about it at all.
+	Dockerfiles *bool `yaml:"dockerfiles"`
 }
 
 // PinFloatingEnabled reports whether floating tags are to be pinned. Absent
@@ -42,6 +48,13 @@ type Config struct {
 // it only ever happens where it was asked for.
 func (c Config) PinFloatingEnabled() bool {
 	return c.PinFloating != nil && *c.PinFloating
+}
+
+// DockerfilesEnabled reports whether the base images of built Dockerfiles are
+// checked. Absent means on: it is the only way a `build:` service is covered,
+// and it reads no file the compose file did not already point at.
+func (c Config) DockerfilesEnabled() bool {
+	return c.Dockerfiles == nil || *c.Dockerfiles
 }
 
 // projectNames are the project-local file names, in the order they are tried.
@@ -234,6 +247,9 @@ func merge(base, over Config) Config {
 	// the project layer able to turn the global setting off as well as on.
 	if over.PinFloating != nil {
 		base.PinFloating = over.PinFloating
+	}
+	if over.Dockerfiles != nil {
+		base.Dockerfiles = over.Dockerfiles
 	}
 	return base
 }

@@ -93,6 +93,10 @@ type record struct {
 	Reference string   `json:"reference,omitempty"`
 	Services  []string `json:"services,omitempty"`
 	File      string   `json:"file,omitempty"`
+	// ComposeFile is the compose file behind File when File is a Dockerfile a
+	// service builds. It is what `docker compose -f` has to be handed, so a
+	// consumer acting on the report does not have to guess it back from the path.
+	ComposeFile string `json:"compose_file,omitempty"`
 
 	Current string `json:"current,omitempty"`
 	Latest  string `json:"latest,omitempty"`
@@ -124,6 +128,7 @@ func (w *jsonlWriter) Update(u internal.UpdateInfo, level string, res Result) {
 		Reference:     u.FullImageName,
 		Services:      u.Services,
 		File:          u.FilePath,
+		ComposeFile:   u.ComposePath,
 		Current:       u.CurrentTag,
 		Latest:        u.LatestTag,
 		Level:         level,
@@ -183,7 +188,9 @@ func (prettyWriter) Update(u internal.UpdateInfo, level string, res Result) {
 		slog.Info("Updated file", "file", u.FilePath, "image", u.ImageName, "latest", u.LatestTag)
 	}
 	if res.Restarted {
-		slog.Info("Compose file restarted", "file", u.FilePath)
+		// The compose file that was brought up, which for a Dockerfile update is
+		// not the file that was rewritten.
+		slog.Info("Compose file restarted", "file", u.RestartPath())
 	}
 }
 

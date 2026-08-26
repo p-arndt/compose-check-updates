@@ -27,6 +27,11 @@ type CCUFlags struct {
 	// -pin-floating=false can override a config that turned it on. A plain false
 	// means "the command line said nothing", which the config still decides.
 	PinFloatingSet bool
+	Dockerfiles    bool // Check the base images of the Dockerfiles compose services build
+	// DockerfilesSet records whether -dockerfiles was actually passed, for the
+	// same reason PinFloatingSet does: this one defaults to on, so a plain true
+	// says nothing about whether the user or the default asked for it.
+	DockerfilesSet bool
 	Version        bool     // Version of ccu
 	SelfUpdate     bool     // Download and install the latest version of ccu
 	CheckUpdate    bool     // Check whether a newer version of ccu is available, without installing it
@@ -77,6 +82,7 @@ func Parse(version string) CCUFlags {
 	flag.BoolVar(&args.Minor, "minor", false, "Update to the latest minor version")
 	flag.BoolVar(&args.Patch, "patch", true, "Update to the latest patch version")
 	flag.BoolVar(&args.PinFloating, "pin-floating", false, "Pin floating tags (latest, main, ...) to the digest they resolve to")
+	flag.BoolVar(&args.Dockerfiles, "dockerfiles", true, "Also check the base images of Dockerfiles built by a compose service")
 	flag.BoolVar(&args.Version, "v", false, "Show version information")
 	// Kept registered so existing scripts keep working, hidden from the usage text
 	// so only the subcommand form is taught. Unlike -v and -h below, neither is
@@ -136,6 +142,9 @@ func Parse(version string) CCUFlags {
 	flag.Visit(func(f *flag.Flag) {
 		if f.Name == "pin-floating" {
 			args.PinFloatingSet = true
+		}
+		if f.Name == "dockerfiles" {
+			args.DockerfilesSet = true
 		}
 	})
 

@@ -196,3 +196,40 @@ func TestPrettyWriterWritesNothingToTheStream(t *testing.T) {
 
 	assert.Empty(t, buf.String())
 }
+
+// TestJSONLDockerfileUpdate covers what a consumer of the report needs in order
+// to act on a Dockerfile update: `file` is the file that was rewritten, and
+// `compose_file` is the one to hand `docker compose -f`. A compose-file update
+// carries no `compose_file` at all, since `file` already is one.
+func TestJSONLDockerfileUpdate(t *testing.T) {
+	var buf bytes.Buffer
+	w := New(FormatJSONL, &buf)
+
+	w.Update(internal.UpdateInfo{
+		FilePath:      "stacks/keycloak/Dockerfile",
+		ComposePath:   "stacks/keycloak/compose.yaml",
+		Services:      []string{"keycloak"},
+		ImageName:     "quay.io/keycloak/keycloak",
+		FullImageName: "quay.io/keycloak/keycloak:26.0.7",
+		CurrentTag:    "26.0.7",
+		LatestTag:     "26.7.2",
+		MinorTag:      "26.7.2",
+	}, "minor", Result{})
+	w.Update(internal.UpdateInfo{
+		FilePath:      "stacks/keycloak/compose.yaml",
+		Services:      []string{"postgres"},
+		ImageName:     "library/postgres",
+		FullImageName: "postgres:16.2",
+		CurrentTag:    "16.2",
+		LatestTag:     "18.6",
+		MajorTag:      "18.6",
+	}, "major", Result{})
+	require.NoError(t, w.Close())
+
+	recs := decode(t, &buf)
+	require.Len(t, recs, 2)
+
+	assert.Equal(t, "stacks/keycloak/Dockerfile", recs[0]["file"])
+	assert.Equal(t, "stacks/keycloak/compose.yaml", recs[0]["compose_file"])
+	assert.NotContains(t, recs[1], "compose_file")
+}

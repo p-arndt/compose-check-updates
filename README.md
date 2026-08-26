@@ -150,8 +150,9 @@ ccu check -d ./stacks  # scan a different directory
 | `-major` / `-minor` / `-patch` | Only suggest that level                | `-patch`|
 | `-format`  | Output format: `auto`, `pretty` or `json`                | `auto`  |
 | `-pin-floating` | Pin floating tags (`latest`, `main`, …) to the digest they resolve to | `false` |
+| `-dockerfiles` | Also check the base images of Dockerfiles built by a compose service | `true` |
 
-Only `-d`, `-exclude`, `-config` and `-pin-floating` also apply to the TUI, which
+Only `-d`, `-exclude`, `-config`, `-pin-floating` and `-dockerfiles` also apply to the TUI, which
 picks levels in the UI instead.
 
 **Exit codes:** `0` nothing left to do · `1` updates available, not applied ·
@@ -178,7 +179,8 @@ it streaming. `--format=pretty` / `--format=json` force either one.
 | `kind` | every line | `update` or `error` — dispatch on this |
 | `image` / `reference` | update | the image name, and the reference as the Compose file writes it |
 | `services` | update | the Compose services that declare it; a list, because identical references are reported once |
-| `file` | both | the Compose file involved |
+| `file` | both | the file involved — the Compose file, or the Dockerfile when the update sits on a `FROM` line |
+| `compose_file` | Dockerfile updates | the Compose file that builds it, i.e. the one to hand `docker compose -f` |
 | `current` / `latest` | update | the tag now, and the one this run picked |
 | `level` | update | `major`, `minor`, `patch`, `digest` or `pin` |
 | `current_digest` / `latest_digest` | digest-pinned images | only present when the digest actually moved |
@@ -219,6 +221,9 @@ exclude:
 
 # Offer floating tags (latest, main, …) the digest they resolve to.
 pin_floating: true
+
+# Check the base images of Dockerfiles built by a compose service. On by default.
+dockerfiles: false
 ```
 
 `~/.config/ccu/config.yaml` for preferences across every project, `.ccu.yaml` in
@@ -234,6 +239,44 @@ Any OCI registry works — Docker Hub, GHCR, Quay, Harbor, ECR, a self-hosted
 `registry:2`. Private repos need no setup: `ccu` reads the credentials
 `docker login` already stored. Logging in also lifts Docker Hub's anonymous rate
 limit, which starts to matter past a few dozen images.
+
+## Images you build yourself
+
+A service with a `build:` has no image tag for `ccu` to check — the tag that
+decides what it runs sits on the `FROM` line of its Dockerfile. So those are
+scanned too:
+
+```yaml
+services:
+  keycloak:
+    build:
+      context: "./"
+      dockerfile: Dockerfile
+```
+
+```dockerfile
+-FROM quay.io/keycloak/keycloak:26.0.7 AS builder
++FROM quay.io/keycloak/keycloak:26.7.2 AS builder
+...
+-FROM quay.io/keycloak/keycloak:26.0.7
++FROM quay.io/keycloak/keycloak:26.7.2
+```
+
+The Dockerfile shows up in the list under its own path, next to the compose file
+that builds it, and behaves like any other row: levels, caps, targets, a `.ccu`
+backup beside the file it rewrites. Two details are specific to it:
+
+- **Every stage moves together.** A multi-stage build usually names its base once
+  as the builder and once as the runtime, and both are rewritten as one update —
+  a runtime left a release behind its builder is a broken image, not a partial one.
+- **A restart rebuilds.** `docker compose up -d --build` for these, since a new
+  base image reaches the container only through a build.
+
+Skipped, because no registry can answer for them: `FROM scratch`, a stage
+referring to an earlier one (`FROM builder`), a reference assembled from build
+args (`FROM ${BASE}`), `dockerfile_inline:`, and contexts that are not a local
+path. `-dockerfiles=false` (or `dockerfiles: false` in the config) turns the
+whole thing off.
 
 ## Images without semver tags
 

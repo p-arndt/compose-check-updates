@@ -154,9 +154,11 @@ func dumpLogs(c *logCapture) {
 func runRestarts(targets []internal.UpdateInfo) error {
 	var errs []error
 	for _, t := range targets {
-		fmt.Printf("Restarting %s\n", t.FilePath)
+		// The compose file the restart acts on, which for a Dockerfile update is
+		// not the file that was rewritten.
+		fmt.Printf("Restarting %s\n", t.RestartPath())
 		if err := t.Restart(); err != nil {
-			fmt.Fprintf(os.Stderr, "Error restarting %s: %v\n", t.FilePath, err)
+			fmt.Fprintf(os.Stderr, "Error restarting %s: %v\n", t.RestartPath(), err)
 			errs = append(errs, err)
 		}
 	}

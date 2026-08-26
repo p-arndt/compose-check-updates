@@ -38,6 +38,7 @@ func Show(w io.Writer, loaded Loaded, effective Config) {
 	}
 
 	fmt.Fprintf(w, "  pin_floating: %t\n", effective.PinFloatingEnabled())
+	fmt.Fprintf(w, "  dockerfiles: %t\n", effective.DockerfilesEnabled())
 
 	showImages(w, effective)
 }

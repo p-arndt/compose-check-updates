@@ -33,6 +33,12 @@ type Options struct {
 	// floating image and pins a reference the user left mutable on purpose.
 	PinFloating bool
 
+	// Dockerfiles turns on checking the base images of the Dockerfiles a compose
+	// file's services build. On by default: a service with `build:` has no image
+	// tag of its own, so without this the only images ccu can say anything about
+	// are the ones nobody builds themselves.
+	Dockerfiles bool
+
 	Concurrency int // max compose files checked at once; <=0 means a sensible default (8)
 }
 
@@ -140,6 +146,21 @@ func checkFile(ctx context.Context, events chan<- Event, opts Options, path stri
 		return
 	}
 
+	// The Dockerfiles this compose file builds are checked as part of it: their
+	// updates belong to the same stack, and the file counters count compose
+	// files, which is what the user pointed ccu at.
+	for _, d := range dockerfileCheckers(opts, registry, path) {
+		more, err := d.checker.Check(opts.Major, opts.Minor, opts.Patch)
+		if err != nil {
+			// Not an EventError: a consumer counts those against the compose
+			// files it is waiting for, and this failure is one file below. The
+			// Dockerfile is named rather than the compose file, which read fine.
+			slog.Warn("Skipping (failed reading Dockerfile)", "path", d.path, "error", err)
+			continue
+		}
+		infos = append(infos, more...)
+	}
+
 	for _, info := range infos {
 		// Check resolved the highest tag the level flags allow, which for a
 		// capped image may be a release it is not allowed to take. Re-pointing it
@@ -159,6 +180,32 @@ func checkFile(ctx context.Context, events chan<- Event, opts Options, path stri
 	send(ctx, events, Event{Kind: EventFileDone, Path: path})
 }
 
+// dockerfileCheckers returns a checker for every Dockerfile the compose file at
+// path builds, in declaration order. Nothing when the option is off.
+func dockerfileCheckers(opts Options, registry *internal.Registry, path string) []dockerfileChecker {
+	if !opts.Dockerfiles {
+		return nil
+	}
+
+	var checkers []dockerfileChecker
+	for _, target := range internal.GetBuildTargets(path) {
+		checkers = append(checkers, dockerfileChecker{
+			path: target.Dockerfile,
+			checker: internal.NewDockerfileChecker(target.Dockerfile, path, target.Service, registry).
+				WithPinFloating(opts.PinFloating),
+		})
+	}
+	return checkers
+}
+
+// dockerfileChecker pairs a checker with the file it reads, so a failure can
+// name it. A slice rather than a map keyed by path: the order the Dockerfiles
+// were declared in is the order their updates are reported in.
+type dockerfileChecker struct {
+	path    string
+	checker *internal.UpdateChecker
+}
+
 // checkFilePins is ScanPins' per-file work: the floating tags of one compose
 // file and nothing else. Caps are not consulted — a pin moves no version, so
 // there is no level for a cap to clamp.
@@ -168,6 +215,15 @@ func checkFilePins(ctx context.Context, events chan<- Event, opts Options, path 
 	if err != nil {
 		send(ctx, events, Event{Kind: EventError, Path: path, Err: err})
 		return
+	}
+
+	for _, d := range dockerfileCheckers(opts, registry, path) {
+		more, err := d.checker.CheckPins()
+		if err != nil {
+			slog.Warn("Skipping (failed reading Dockerfile)", "path", d.path, "error", err)
+			continue
+		}
+		pins = append(pins, more...)
 	}
 
 	for _, info := range pins {

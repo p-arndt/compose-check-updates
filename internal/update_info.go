@@ -19,6 +19,16 @@ const LevelPin = "pin"
 type UpdateInfo struct {
 	FilePath string
 	RawLine  string
+	// ExtraLines are further lines of FilePath carrying this same reference, all
+	// of which are rewritten together. A multi-stage Dockerfile names its base
+	// image once per stage — `FROM x:1 AS builder` and `FROM x:1` — and moving
+	// only one of them would build the next image from two different releases.
+	ExtraLines []string
+	// ComposePath is the compose file whose service builds FilePath, set only
+	// when FilePath is a Dockerfile. Empty means FilePath is the compose file
+	// itself. It is what a restart acts on: compose knows the service, not the
+	// Dockerfile behind it.
+	ComposePath string
 	// Services names the compose services that declare this image. It is a list
 	// because identical references are collapsed into one entry: two services on
 	// the same image are one update to make, but both names are worth reporting.
@@ -324,6 +334,33 @@ func sameImageLine(line, raw string) bool {
 	return strings.TrimRight(line, blanks) == strings.TrimRight(raw, blanks)
 }
 
+// rewrites reports whether line is one this update has to change: the line it
+// was scanned from, or one of the further lines carrying the same reference.
+func (u *UpdateInfo) rewrites(line string) bool {
+	if sameImageLine(line, u.RawLine) {
+		return true
+	}
+	for _, extra := range u.ExtraLines {
+		if sameImageLine(line, extra) {
+			return true
+		}
+	}
+	return false
+}
+
+// IsDockerfile reports whether this update sits in a Dockerfile built by a
+// compose service rather than in a compose file.
+func (u *UpdateInfo) IsDockerfile() bool { return u.ComposePath != "" }
+
+// RestartPath is the compose file to hand `docker compose -f` for this update:
+// the Dockerfile's owning compose file, or the file the update itself sits in.
+func (u *UpdateInfo) RestartPath() string {
+	if u.ComposePath != "" {
+		return u.ComposePath
+	}
+	return u.FilePath
+}
+
 func (u *UpdateInfo) Update() error {
 	// A reference that pins a digest gets both tag and digest rewritten. Writing
 	// a tag next to the digest of some other release would silently pin the wrong
@@ -362,7 +399,7 @@ func (u *UpdateInfo) Update() error {
 		// match rewrote the second one into "nginx:stable@sha256:…-alpine". The \r
 		// is what a CRLF file leaves behind once the content is split on \n; the
 		// scanner that produced RawLine had already dropped it.
-		if !sameImageLine(line, u.RawLine) {
+		if !u.rewrites(line) {
 			continue
 		}
 		for _, r := range u.replacements() {
@@ -404,7 +441,14 @@ func (u *UpdateInfo) Restart() error {
 		return err
 	}
 
-	args := append(append([]string{}, compose[1:]...), "-f", u.FilePath, "up", "-d")
+	args := append(append([]string{}, compose[1:]...), "-f", u.RestartPath(), "up", "-d")
+
+	// A new base image only reaches the running container once the image is
+	// built again — without this, restarting a self-built service would come
+	// back up on exactly the image it was already running.
+	if u.IsDockerfile() {
+		args = append(args, "--build")
+	}
 	cmd := exec.Command(compose[0], args...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr

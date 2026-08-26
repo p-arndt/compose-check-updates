@@ -62,6 +62,7 @@ func main() {
 		Exclude:     config.Union(cfg.Exclude, ccuFlags.Exclude),
 		Images:      cfg.Images,
 		PinFloating: cfg.PinFloating,
+		Dockerfiles: cfg.Dockerfiles,
 	}
 	// A flag that was not spelled out says nothing about what the config decided,
 	// so only one that was actually passed overrides it — in either direction:
@@ -69,6 +70,10 @@ func main() {
 	if ccuFlags.PinFloatingSet {
 		on := ccuFlags.PinFloating
 		effective.PinFloating = &on
+	}
+	if ccuFlags.DockerfilesSet {
+		on := ccuFlags.Dockerfiles
+		effective.Dockerfiles = &on
 	}
 
 	// A report about ccu's own settings, like the version and update commands
@@ -87,6 +92,7 @@ func main() {
 		Patch:   ccuFlags.Patch,
 
 		PinFloating: effective.PinFloatingEnabled(),
+		Dockerfiles: effective.DockerfilesEnabled(),
 	}
 
 	format, err := report.ParseFormat(ccuFlags.Format)

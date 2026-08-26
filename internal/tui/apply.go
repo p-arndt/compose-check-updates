@@ -120,14 +120,25 @@ func (m *Model) finishApply() tea.Cmd {
 // affectedFiles is the deduplicated set of compose files that actually changed,
 // in list order. The restart question is asked once for the set, since
 // `docker compose up -d` acts on the whole file anyway.
+// Keyed by the compose file each update restarts through rather than by the file
+// it was written to: a stack whose compose file *and* whose Dockerfile changed is
+// still one `up`. Of those two the Dockerfile update wins, because only it asks
+// for the rebuild that puts the new base image into the running container.
 func (m Model) affectedFiles() []internal.UpdateInfo {
-	seen := make(map[string]bool)
+	at := make(map[string]int)
 	var out []internal.UpdateInfo
 	for _, r := range m.rows {
-		if r.State != RowApplied || seen[r.Update.FilePath] {
+		if r.State != RowApplied {
 			continue
 		}
-		seen[r.Update.FilePath] = true
+		path := r.Update.RestartPath()
+		if i, ok := at[path]; ok {
+			if r.Update.IsDockerfile() && !out[i].IsDockerfile() {
+				out[i] = r.Update
+			}
+			continue
+		}
+		at[path] = len(out)
 		out = append(out, r.Update)
 	}
 	return out

@@ -264,6 +264,19 @@ func rowKey(r Row) string {
 }
 
 func (m *Model) addRow(r Row) {
+	// One Dockerfile can be built by several compose files — a `compose.yaml`
+	// and its `compose.yml` override in the same directory, say — and each of
+	// them reports it. Two rows would then share a rowKey, so rowByKey would
+	// resolve both to the first: applying would write it twice and leave its
+	// twin pending forever. The services of the row dropped are kept, since it
+	// is the same update either way.
+	if existing := m.rowByKey(rowKey(r)); existing != nil {
+		for _, s := range r.Update.Services {
+			existing.Update.Services = internal.AppendService(existing.Update.Services, s)
+		}
+		return
+	}
+
 	key := m.cursorKey()
 
 	// Rows keep arriving after the user has changed the global target, so a new
