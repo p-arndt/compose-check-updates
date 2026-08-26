@@ -90,7 +90,7 @@ Afterwards `ccu` offers to `docker compose up -d` the affected files.
 | `ctrl+a` / `ctrl+n`| Select / deselect the whole list                  |
 | `f`                | Cycle the display filter (which rows are shown)   |
 | `t`                | Cycle the target level for **all** rows           |
-| `p`                | List or hide the floating-tag pins                |
+| `p`                | List or hide the floating tags                    |
 | `tab`              | On an image: the details column (`tab` or `esc` returns). Otherwise: the top bar |
 | `shift+tab`        | Step back along the bar                           |
 | `m`                | The top bar, from anywhere; again for the next stop |
@@ -260,10 +260,11 @@ down:
 +  image: nginx:latest@sha256:b34848eff6db…
 ```
 
-The tag stays floating, so `docker compose pull` still behaves as before. What
-changes is that from now on `ccu` can *see* the drift: every later run compares
-the pinned digest against what `latest` resolves to and reports a `digest` update
-when they differ — exactly like a digest-pinned image.
+The tag is still spelled `latest`, but the digest now decides: `docker compose
+pull` gets **that exact build** and stops following the tag. In exchange `ccu` can
+*see* the drift — every later run compares the pinned digest against what
+`latest` resolves to and reports a `digest` update when they differ, exactly like
+a digest-pinned image. You trade automatic pulls for a reviewable bump.
 
 These rows are reported as level `pin`, and only when asked for:
 
@@ -277,15 +278,18 @@ ccu check -pin-floating -u     # and write them
 pin_floating: true
 ```
 
-In the TUI the pins sit behind the bar's `pins` stop (`p`), which lists and hides
-them without re-scanning; `pin_floating` decides which way it starts. Caps do not
-apply — pinning moves no version, so an image capped at `patch` can still be
-pinned.
+In the TUI they sit behind the bar's `floating` stop (`p`), which lists and hides
+them; `pin_floating` decides which way it starts. If the run was not asked to pin,
+the first press fetches the digests then and there — nothing is spent on a
+registry until you ask. Caps do not apply: pinning moves no version, so an image
+capped at `patch` can still be pinned.
 
 > [!NOTE]
-> This is a one-way door for the reference: once a digest is in the file, the
-> image is that exact build until `ccu` moves it. A pin costs one extra registry
-> request per floating image, which is why it is off by default.
+> Once a digest is in the file, the image is that exact build until `ccu` moves
+> it — so this suits stacks you update deliberately, not ones relying on a
+> nightly `pull`. A pin also costs one registry request per floating image,
+> which is the other reason it is off by default. `-pin-floating=false` overrides
+> `pin_floating: true` for a single run.
 
 > [!NOTE]
 > This requires querying tags individually, so the first check of such an image
