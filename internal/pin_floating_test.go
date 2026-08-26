@@ -174,3 +174,67 @@ func TestPinFloatingIsNotBoundByACap(t *testing.T) {
 	assert.True(t, info.AllowsLevel(LevelPin))
 	assert.True(t, info.HasNewVersion(false, false, true))
 }
+
+// The bug this guards: a substring match on RawLine rewrote every line the
+// reference was a prefix of, so `nginx:stable-alpine` next to `nginx:stable`
+// became `nginx:stable@sha256:…-alpine` — a reference no registry can resolve.
+// Only the line the reference was scanned from may be touched.
+func TestPinFloatingLeavesALongerTagOnTheNextLineAlone(t *testing.T) {
+	before := "services:\n" +
+		"  a:\n" +
+		"    image: nginx:stable\n" +
+		"  b:\n" +
+		"    image: nginx:stable-alpine\n"
+	file := writeComposeFile(t, before)
+
+	info := UpdateInfo{
+		FilePath:      file,
+		FullImageName: "nginx:stable",
+		ImageName:     "library/nginx",
+		RawLine:       "    image: nginx:stable",
+		CurrentTag:    "stable",
+		LatestTag:     "stable",
+		LatestDigest:  digestNew,
+		digestFor:     "stable",
+		PinsFloating:  true,
+	}
+
+	assertUpdateWrites(t, info, file, "services:\n"+
+		"  a:\n"+
+		"    image: nginx:stable@"+digestNew+"\n"+
+		"  b:\n"+
+		"    image: nginx:stable-alpine\n")
+}
+
+// The same for a version bump, which is the far more common shape: `myapp:1.0`
+// must not drag `myapp:1.0.1` along with it.
+func TestUpdateLeavesALongerTagOnTheNextLineAlone(t *testing.T) {
+	file := writeComposeFile(t, "    image: myapp:1.0\n    image: myapp:1.0.1\n")
+
+	info := UpdateInfo{
+		FilePath:      file,
+		FullImageName: "myapp:1.0",
+		RawLine:       "    image: myapp:1.0",
+		CurrentTag:    "1.0",
+		LatestTag:     "1.1",
+	}
+
+	assertUpdateWrites(t, info, file, "    image: myapp:1.1\n    image: myapp:1.0.1\n")
+}
+
+// A CRLF file, and a line the editor left a trailing space on: neither is
+// visible in the reference, so neither may stop the line from being rewritten.
+// The line endings themselves stay as they were found.
+func TestUpdateMatchesThroughInvisibleTrailingCharacters(t *testing.T) {
+	file := writeComposeFile(t, "    image: myapp:1.0  \r\n    image: other:2.0\r\n")
+
+	info := UpdateInfo{
+		FilePath:      file,
+		FullImageName: "myapp:1.0",
+		RawLine:       "    image: myapp:1.0",
+		CurrentTag:    "1.0",
+		LatestTag:     "1.1",
+	}
+
+	assertUpdateWrites(t, info, file, "    image: myapp:1.1  \r\n    image: other:2.0\r\n")
+}

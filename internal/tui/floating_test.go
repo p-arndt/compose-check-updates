@@ -109,3 +109,98 @@ func TestTargetKeysLeaveAPinAlone(t *testing.T) {
 	assert.Equal(t, testDigest, r.Update.LatestDigest)
 	assert.False(t, r.NoTarget, "a pin is applicable, whatever the target says")
 }
+
+// Hiding the rows has to disarm them too: `A` would otherwise write a digest
+// into a line nobody can see, and the apply count would name rows no header
+// reports. A version row's selection is none of the switch's business.
+func TestHidingFloatingRowsClearsTheirSelection(t *testing.T) {
+	m := newTestModel().withFloatingListed()
+	m = feed(t, m,
+		pinEvent("a/compose.yml", "nginx", "latest", testDigest),
+		updateEvent("a/compose.yml", "traefik", "v2.9.3", "v2.9.4", "patch"),
+	)
+
+	m = feed(t, m, keyMsg("a")) // select everything
+	require.Equal(t, 2, m.selectedCount())
+
+	m = feed(t, m, keyMsg("p"))
+	require.False(t, m.showFloating)
+	assert.Equal(t, 1, m.selectedCount(), "the hidden pin may not stay armed")
+	assert.False(t, rowFor(t, m, "nginx").Selected)
+	assert.True(t, rowFor(t, m, "traefik").Selected, "the version row was not what `p` hid")
+
+	// And listing them again does not silently re-arm what was cleared.
+	m = feed(t, m, keyMsg("p"))
+	assert.Equal(t, 1, m.selectedCount())
+	assert.False(t, rowFor(t, m, "nginx").Selected)
+}
+
+// The header counts and the lines under them read the same predicates, so the
+// switch has to move both: a group claiming "2 updates" over one line is the
+// failure this guards.
+func TestGroupCountersFollowTheFloatingSwitch(t *testing.T) {
+	m := newTestModel().withFloatingListed()
+	m = feed(t, m,
+		pinEvent("a/compose.yml", "nginx", "latest", testDigest),
+		updateEvent("a/compose.yml", "traefik", "v2.9.3", "v2.9.4", "patch"),
+	)
+
+	g := m.groupInfo(nodeIdx(t, m, "a/compose.yml"), false)
+	assert.Equal(t, 2, g.Total)
+	assert.Equal(t, 2, g.Shown)
+	assert.Equal(t, 2, m.eligibleCount())
+
+	m = feed(t, m, keyMsg("p"))
+	g = m.groupInfo(nodeIdx(t, m, "a/compose.yml"), false)
+	assert.Equal(t, 1, g.Total, "a hidden pin is not an update this group has")
+	assert.Equal(t, 1, g.Shown)
+	assert.Equal(t, 1, m.eligibleCount())
+	assert.Len(t, m.visible, 1)
+}
+
+// The filter speaks about versions, and a pin moves none, so no setting of it
+// may take the row away: `p` is the only switch that decides a pin's fate.
+func TestPinRowsIgnoreTheLevelFilter(t *testing.T) {
+	m := newTestModel().withFloatingListed()
+	m = feed(t, m,
+		pinEvent("a/compose.yml", "nginx", "latest", testDigest),
+		updateEvent("a/compose.yml", "traefik", "v2.9.3", "v2.9.4", "patch"),
+	)
+
+	for _, f := range []Filter{FilterAll, FilterMajor, FilterMinor, FilterPatch, FilterDigest} {
+		m.setFilter(f)
+		m.rebuild(m.cursorKey())
+		require.NotNil(t, rowFor(t, m, "nginx"))
+		listed := false
+		for _, i := range m.visible {
+			if m.rows[i].Update.ImageName == "nginx" {
+				listed = true
+			}
+		}
+		assert.True(t, listed, "filter %s hid a pin", f.Label())
+	}
+}
+
+// The detail column says what changes. For a pin that is the digest, so the tag
+// is stated once rather than as a "latest → latest" delta that reads as a no-op.
+func TestDetailPaneNamesThePinsTagInsteadOfADelta(t *testing.T) {
+	u := internal.UpdateInfo{
+		FullImageName: "nginx:latest",
+		ImageName:     "library/nginx",
+		CurrentTag:    "latest",
+		LatestTag:     "latest",
+		LatestDigest:  testDigest,
+		RawLine:       "    image: nginx:latest",
+		FilePath:      "a/compose.yml",
+	}
+
+	out := DefaultTheme().Detail(u, internal.LevelPin, 80)
+	assert.Contains(t, out, "tag")
+	assert.NotContains(t, out, "latest → latest")
+	assert.Contains(t, out, shortDigest(testDigest))
+	assert.NotContains(t, out, "version")
+
+	// The same image without the pin still gets the ordinary version line.
+	u.LatestTag = "1.29.4"
+	assert.Contains(t, DefaultTheme().Detail(u, "minor", 80), "latest → 1.29.4")
+}
