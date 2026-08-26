@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/p-arndt/compose-check-updates/internal"
 	"github.com/p-arndt/compose-check-updates/internal/scanner"
 )
 
@@ -265,6 +266,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.cycleFilter()
 	case key.Matches(msg, m.keys.Target):
 		m.cycleTarget()
+	case key.Matches(msg, m.keys.Pins):
+		m.togglePins()
 	case key.Matches(msg, m.keys.Focus):
 		m.advanceFocus()
 	case key.Matches(msg, m.keys.FocusPrev):
@@ -519,6 +522,31 @@ func (m *Model) setTargetAnnounced(t Target) {
 
 // openIssues shows the pane listing every skipped image and unreadable file.
 // Nothing to browse is a no-op with an explanation rather than an empty pane.
+// togglePins lists or hides the floating-tag pins. No re-scan: their digests were
+// resolved along with everything else, so this only widens or narrows the view.
+func (m *Model) togglePins() {
+	m.showPins = !m.showPins
+
+	n := 0
+	for _, r := range m.rows {
+		if r.Level == internal.LevelPin {
+			n++
+		}
+	}
+
+	m.rebuild(m.cursorKey())
+	m.syncScroll()
+
+	switch {
+	case n == 0:
+		m.setStatus(StatusInfo, "pins "+pinsLabel(m.showPins)+" — no floating tags found")
+	case m.showPins:
+		m.setStatus(StatusInfo, fmt.Sprintf("%d floating tag(s) listed, applying one writes the digest it resolves to", n))
+	default:
+		m.setStatus(StatusInfo, fmt.Sprintf("%d floating tag(s) hidden", n))
+	}
+}
+
 func (m *Model) openIssues() {
 	if len(m.scanErrs) == 0 {
 		m.setStatus(StatusInfo, "no issues were logged during the scan")

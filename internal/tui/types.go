@@ -107,7 +107,7 @@ const (
 // flattened across compose files; FilePath groups them under file headers.
 type Row struct {
 	Update   internal.UpdateInfo
-	Level    string // "major" | "minor" | "patch" | "digest" — of the SELECTED tag
+	Level    string // "major" | "minor" | "patch" | "digest" | "pin" — of the SELECTED tag
 	Selected bool
 	State    RowState
 	Err      error // set when State is RowFailed
@@ -199,6 +199,7 @@ type Theme struct {
 	Minor     lipgloss.Color
 	Patch     lipgloss.Color
 	Digest    lipgloss.Color
+	Pin       lipgloss.Color
 	Text      lipgloss.Color
 	Dim       lipgloss.Color
 	Accent    lipgloss.Color

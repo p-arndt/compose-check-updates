@@ -40,6 +40,7 @@ type barField int
 const (
 	barFieldShow barField = iota
 	barFieldTarget
+	barFieldPins
 )
 
 // barStop is one station on the bar.
@@ -68,6 +69,10 @@ func (m Model) barStops() []barStop {
 			label: "target", value: m.target.Label(), hint: hintFor(m.keys.Target),
 		},
 		{
+			kind: barValue, field: barFieldPins,
+			label: "pins", value: pinsLabel(m.showPins), hint: hintFor(m.keys.Pins),
+		},
+		{
 			kind: barButton, act: barActIssues,
 			label: fmt.Sprintf("issues %d", len(m.scanErrs)), hint: hintFor(m.keys.Issues),
 			off: len(m.scanErrs) == 0,
@@ -78,6 +83,16 @@ func (m Model) barStops() []barStop {
 			off: n == 0,
 		},
 	}
+}
+
+// pinsLabel is the word the "pins" stop shows. "listed"/"hidden" rather than
+// on/off, because the rows exist either way — the scan resolved them — and only
+// whether they are in the list is what this stop decides.
+func pinsLabel(show bool) string {
+	if show {
+		return "listed"
+	}
+	return "hidden"
 }
 
 // hintFor is a binding's own help key, so the bar can never name a key the map
@@ -197,6 +212,8 @@ func (m Model) pressBar(delta int) (tea.Model, tea.Cmd) {
 			m.setFilter(stepFilter(m.filter, delta))
 		case barFieldTarget:
 			m.setTargetAnnounced(stepTarget(m.target, delta))
+		case barFieldPins:
+			m.togglePins()
 		}
 		return m, nil
 	}

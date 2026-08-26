@@ -22,6 +22,7 @@ type CCUFlags struct {
 	Major       bool     // Update to the latest major version
 	Minor       bool     // Update to the latest minor version
 	Patch       bool     // Update to the latest patch version
+	PinFloating bool     // Pin floating tags to the digest they currently resolve to
 	Version     bool     // Version of ccu
 	SelfUpdate  bool     // Download and install the latest version of ccu
 	CheckUpdate bool     // Check whether a newer version of ccu is available, without installing it
@@ -71,6 +72,7 @@ func Parse(version string) CCUFlags {
 	flag.BoolVar(&args.Major, "major", false, "Update to the latest major version")
 	flag.BoolVar(&args.Minor, "minor", false, "Update to the latest minor version")
 	flag.BoolVar(&args.Patch, "patch", true, "Update to the latest patch version")
+	flag.BoolVar(&args.PinFloating, "pin-floating", false, "Pin floating tags (latest, main, ...) to the digest they resolve to")
 	flag.BoolVar(&args.Version, "v", false, "Show version information")
 	// Kept registered so existing scripts keep working, hidden from the usage text
 	// so only the subcommand form is taught. Unlike -v and -h below, neither is
@@ -171,7 +173,7 @@ func usage(w io.Writer) {
 	fmt.Fprintln(tw, "  config\tShow the resolved configuration and the files it was read from")
 	fmt.Fprintln(tw, "  help\tShow this help message")
 	fmt.Fprintln(tw, "  version\tShow version information")
-	fmt.Fprintf(tw, "\nFlags (-d, -exclude and -config apply to both modes, the rest only to `%s check`):\n", name)
+	fmt.Fprintf(tw, "\nFlags (-d, -exclude, -config and -pin-floating apply to both modes, the rest only to `%s check`):\n", name)
 	flag.VisitAll(func(f *flag.Flag) {
 		// An empty usage string marks a flag kept only for backwards
 		// compatibility; see the registrations in Parse.

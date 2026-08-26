@@ -193,3 +193,62 @@ func assertEqual(t *testing.T, what string, got, want []string) {
 		}
 	}
 }
+
+// pin_floating is a plain switch, but an absent one must not read as "off":
+// that is what lets a project file turn the global preference off as well as on.
+func TestPinFloatingLayers(t *testing.T) {
+	tests := []struct {
+		name           string
+		global, projct string
+		want           bool
+	}{
+		{name: "neither file says anything", want: false},
+		{name: "global on", global: "pin_floating: true\n", want: true},
+		{name: "global on, project silent", global: "pin_floating: true\n", projct: "exclude:\n  - tmp\n", want: true},
+		{name: "project turns it off again", global: "pin_floating: true\n", projct: "pin_floating: false\n", want: false},
+		{name: "project alone turns it on", projct: "pin_floating: true\n", want: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			global := t.TempDir()
+			if tt.global != "" {
+				write(t, filepath.Join(global, "config.yaml"), tt.global)
+			}
+			t.Setenv("CCU_CONFIG_DIR", global)
+
+			root := t.TempDir()
+			if tt.projct != "" {
+				write(t, filepath.Join(root, ".ccu.yaml"), tt.projct)
+			}
+
+			loaded, err := Load(root, "")
+			if err != nil {
+				t.Fatalf("Load: %v", err)
+			}
+			if got := loaded.PinFloatingEnabled(); got != tt.want {
+				t.Errorf("PinFloatingEnabled() = %t, expected %t", got, tt.want)
+			}
+		})
+	}
+}
+
+// A file that never mentions the key leaves it unset, so a later layer can still
+// decide it. Only reading the pointer can tell that apart from an explicit false.
+func TestPinFloatingAbsentIsUnset(t *testing.T) {
+	cfg, err := Parse(strings.NewReader("exclude:\n  - tmp\n"))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if cfg.PinFloating != nil {
+		t.Errorf("PinFloating = %v, expected it to stay unset", *cfg.PinFloating)
+	}
+
+	cfg, err = Parse(strings.NewReader("pin_floating: false\n"))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if cfg.PinFloating == nil || *cfg.PinFloating {
+		t.Errorf("PinFloating = %v, expected an explicit false", cfg.PinFloating)
+	}
+}

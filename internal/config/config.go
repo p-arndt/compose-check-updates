@@ -29,6 +29,19 @@ type Config struct {
 	// project has to be able to raise a cap the global file set, not only
 	// tighten it.
 	Images map[string]ImagePolicy `yaml:"images"`
+
+	// PinFloating turns on pinning bare floating tags to the digest they resolve
+	// to. A pointer because absent and `false` have to stay distinguishable: a
+	// project file that says nothing must not switch off what the global one
+	// turned on.
+	PinFloating *bool `yaml:"pin_floating"`
+}
+
+// PinFloatingEnabled reports whether floating tags are to be pinned. Absent
+// means off: pinning rewrites a reference the user deliberately left mutable, so
+// it only ever happens where it was asked for.
+func (c Config) PinFloatingEnabled() bool {
+	return c.PinFloating != nil && *c.PinFloating
 }
 
 // projectNames are the project-local file names, in the order they are tried.
@@ -217,6 +230,11 @@ func Parse(r io.Reader) (Config, error) {
 func merge(base, over Config) Config {
 	base.Exclude = Union(base.Exclude, over.Exclude)
 	base.Images = mergeImages(base.Images, over.Images)
+	// Only a file that actually names the key overrides it, which is what makes
+	// the project layer able to turn the global setting off as well as on.
+	if over.PinFloating != nil {
+		base.PinFloating = over.PinFloating
+	}
 	return base
 }
 

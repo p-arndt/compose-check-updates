@@ -14,6 +14,12 @@ import (
 type UpdateChecker struct {
 	path     string
 	registry *Registry
+
+	// pinFloating turns on writing down what a bare floating tag resolves to.
+	// Off by default: it costs one request per floating image and turns a
+	// reference the user deliberately left mutable into a pinned one, so it has
+	// to be asked for.
+	pinFloating bool
 }
 
 func NewUpdateChecker(path string, registry *Registry) *UpdateChecker {
@@ -21,6 +27,13 @@ func NewUpdateChecker(path string, registry *Registry) *UpdateChecker {
 		registry = NewRegistry("")
 	}
 	return &UpdateChecker{path: path, registry: registry}
+}
+
+// WithPinFloating enables pinning bare floating tags to the digest they resolve
+// to. See UpdateChecker.pinFloating.
+func (u *UpdateChecker) WithPinFloating(on bool) *UpdateChecker {
+	u.pinFloating = on
+	return u
 }
 
 func (u *UpdateChecker) Check(major, minor, patch bool) ([]UpdateInfo, error) {
@@ -86,8 +99,9 @@ func (u *UpdateChecker) checkDigest(info *UpdateInfo) {
 
 	// A bare floating tag records no digest in the compose file, so there is
 	// nothing to compare it against — it already resolves to whatever is newest.
+	// All that can be done for it is to write down what it resolves to today.
 	if _, floating := mutableTags[info.CurrentTag]; floating && !pinnedByDigest {
-		slog.Debug("Skipping (floating tag without digest)", "image", info.ImageName, "tag", info.CurrentTag, "path", info.FilePath)
+		u.pinFloatingTag(info)
 		return
 	}
 	if info.CurrentTag == "" && !pinnedByDigest {
@@ -145,6 +159,31 @@ func (u *UpdateChecker) checkDigest(info *UpdateInfo) {
 	}
 	info.LatestTag = latestTag
 	info.digestFor = latestTag
+}
+
+// pinFloatingTag records the digest a bare floating tag currently resolves to,
+// so the reference can be rewritten as "latest@sha256:…". This is not an update
+// — the image is the one the tag already pointed at — but the one-off pin that
+// gives every later run something to compare against.
+func (u *UpdateChecker) pinFloatingTag(info *UpdateInfo) {
+	if !u.pinFloating {
+		slog.Debug("Skipping (floating tag without digest)", "image", info.ImageName, "tag", info.CurrentTag, "path", info.FilePath)
+		return
+	}
+
+	digest, err := u.registry.FetchImageDigest(info.ImageName + ":" + info.CurrentTag)
+	if err != nil {
+		slog.Warn("Skipping (failed resolving digest for floating tag)", "image", info.ImageName, "tag", info.CurrentTag, "path", info.FilePath)
+		return
+	}
+
+	// The tag stays exactly as it is; only the digest is new. LatestTag is set
+	// all the same, so the consumers that read it — the report, the TUI's row —
+	// have the tag the pin belongs to rather than an empty field.
+	info.LatestTag = info.CurrentTag
+	info.LatestDigest = digest
+	info.digestFor = info.CurrentTag
+	info.PinsFloating = true
 }
 
 func (u *UpdateChecker) createUpdateInfos() ([]UpdateInfo, error) {

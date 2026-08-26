@@ -51,6 +51,10 @@ type Model struct {
 	cursor  int     // index into entries — headers are navigable too
 	offset  int     // first display line rendered, for scrolling
 	filter  Filter
+	// showPins is whether the pin rows — floating tags offered a digest — are
+	// listed. They are always resolved by the scan, so this hides and shows rows
+	// that are already there; see the bar's "pins" stop.
+	showPins bool
 	// nodes is the directory tree the headers are drawn from, rebuilt alongside
 	// entries because a filter change can remove whole directories from it.
 	nodes []node
@@ -145,6 +149,7 @@ func NewModel(opts scanner.Options) Model {
 		ctx:       ctx,
 		cancel:    cancel,
 		filter:    FilterAll,
+		showPins:  opts.PinFloating,
 		collapsed: make(map[string]bool),
 		// The highest available version is what a fresh session offers.
 		target: TargetMajor,
@@ -175,6 +180,14 @@ func writeCap(root string) func(pinScope, string, config.Level) error {
 		}
 		return config.SetImageMax(path, image, max)
 	}
+}
+
+// WithPinDisplay sets whether pin rows start out listed, which is the setting
+// as it was resolved from the config and the command line. The scan resolves
+// them either way, so this only decides what the first frame shows.
+func (m Model) WithPinDisplay(show bool) Model {
+	m.showPins = show
+	return m
 }
 
 // WithPins attaches the caps already on disk, so the list can mark a pinned
@@ -313,6 +326,11 @@ func (m Model) cursorKey() string {
 func (m *Model) rebuild(keepKey string) {
 	m.visible = m.visible[:0]
 	for i, r := range m.rows {
+		// A pin is an offer to write down what a floating tag resolves to, not news
+		// about a version, so it stays out of the list until it is asked for.
+		if r.Level == internal.LevelPin && !m.showPins {
+			continue
+		}
 		if m.filter.Matches(r.Level) {
 			m.visible = append(m.visible, i)
 		}

@@ -26,7 +26,13 @@ type Options struct {
 	// Caps is the per-image cap the user recorded, keyed by image name without
 	// tag or digest, valued "patch"/"minor"/"major". An image with no entry has
 	// no cap.
-	Caps        map[string]string
+	Caps map[string]string
+
+	// PinFloating turns on pinning bare floating tags ("latest", "main", …) to
+	// the digest they currently resolve to. Off by default: it costs a request per
+	// floating image and pins a reference the user left mutable on purpose.
+	PinFloating bool
+
 	Concurrency int // max compose files checked at once; <=0 means a sensible default (8)
 }
 
@@ -45,7 +51,7 @@ type Event struct {
 	Path   string              // compose file involved (empty for EventDiscovered)
 	Total  int                 // number of compose files found; only set on EventDiscovered
 	Update internal.UpdateInfo // only set on EventUpdate
-	Level  string              // update level of Update ("major"/"minor"/"patch"/"digest"); only on EventUpdate
+	Level  string              // update level of Update ("major"/"minor"/"patch"/"digest"/"pin"); only on EventUpdate
 	Err    error               // only set on EventError
 }
 
@@ -107,7 +113,7 @@ func checkFile(ctx context.Context, events chan<- Event, opts Options, path stri
 	}
 
 	registry := internal.NewRegistry("")
-	checker := internal.NewUpdateChecker(path, registry)
+	checker := internal.NewUpdateChecker(path, registry).WithPinFloating(opts.PinFloating)
 	infos, err := checker.Check(opts.Major, opts.Minor, opts.Patch)
 	if err != nil {
 		send(ctx, events, Event{Kind: EventError, Path: path, Err: err})
