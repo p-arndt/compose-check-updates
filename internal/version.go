@@ -136,8 +136,9 @@ func normalizeSemver(tag string) (normalized string, ok bool) {
 	// Accept an optional leading "v" (e.g. "v1.2.3") as well as plain semver.
 	tag = strings.TrimPrefix(tag, "v")
 
-	// Capture major.minor[.patch] and optional prerelease/build metadata.
-	regex := regexp.MustCompile(`^(?P<major>0|[1-9]\d*)\.(?P<minor>0|[1-9]\d*)(?:\.(?P<patch>0|[1-9]\d*))?(?P<rest>(?:-[0-9A-Za-z-.]+)?(?:\+[0-9A-Za-z-.]+)?)$`)
+	// Capture major.minor[.patch], any further numeric segments, and optional
+	// prerelease/build metadata.
+	regex := regexp.MustCompile(`^(?P<major>0|[1-9]\d*)\.(?P<minor>0|[1-9]\d*)(?:\.(?P<patch>0|[1-9]\d*))?(?P<extra>(?:\.\d+)*)(?P<rest>(?:-[0-9A-Za-z-.]+)?(?:\+[0-9A-Za-z-.]+)?)$`)
 	matches := regex.FindStringSubmatch(tag)
 	if len(matches) == 0 {
 		return "", false
@@ -146,12 +147,44 @@ func normalizeSemver(tag string) (normalized string, ok bool) {
 	major := matches[1]
 	minor := matches[2]
 	patch := matches[3]
-	rest := matches[4]
+	extra := matches[4]
+	rest := matches[5]
 	if patch == "" {
 		patch = "0"
 	}
 
+	// Calendar-style tags carry a 4th (or further) numeric segment, e.g.
+	// "2026.7.7.2". Semver has nowhere to put it, so it is folded into build
+	// metadata: the tag then parses and is ordered by its first three segments,
+	// which is enough to place "2026.7.7.2" after "2026.7.7" and before
+	// "2026.8.x". Two tags differing only in the extra segment compare equal,
+	// exactly as SemVer treats build metadata.
+	if extra != "" {
+		build := "seg" + extra // extra begins with '.', e.g. ".2" -> "seg.2"
+		if i := strings.IndexByte(rest, '+'); i >= 0 {
+			rest = rest[:i+1] + build + "." + rest[i+1:]
+		} else {
+			rest += "+" + build
+		}
+	}
+
 	return major + "." + minor + "." + patch + rest, true
+}
+
+// parseSemverTag turns a tag string into a comparable version. It first tries
+// semver.NewVersion, which already coerces forms like "16" and "v1.2", and
+// falls back to normalizeSemver for the tags it rejects — chiefly calendar-style
+// ones with a 4th or further numeric segment ("2026.7.7.2"). Every version
+// comparison in this package goes through here so they all agree on what parses.
+func parseSemverTag(tag string) (*semver.Version, error) {
+	if v, err := semver.NewVersion(tag); err == nil {
+		return v, nil
+	}
+	normalized, ok := normalizeSemver(tag)
+	if !ok {
+		return nil, semver.ErrInvalidSemVer
+	}
+	return semver.NewVersion(normalized)
 }
 
 func isEqualMajor(current, tag *semver.Version) bool {

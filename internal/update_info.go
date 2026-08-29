@@ -6,8 +6,6 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
-
-	"github.com/Masterminds/semver/v3"
 )
 
 // LevelPin is the level of a floating tag being pinned to the digest it
@@ -214,12 +212,12 @@ func (u *UpdateInfo) HasNewVersion(major, minor, patch bool) bool {
 		return false
 	}
 
-	current, err := semver.NewVersion(u.CurrentTag)
+	current, err := parseSemverTag(u.CurrentTag)
 	if err != nil {
 		return false
 	}
 
-	latest, err := semver.NewVersion(u.LatestTag)
+	latest, err := parseSemverTag(u.LatestTag)
 	if err != nil {
 		return false
 	}
@@ -252,7 +250,7 @@ func (u *UpdateInfo) UpdateLevel() string {
 		return ""
 	}
 
-	current, err := semver.NewVersion(u.CurrentTag)
+	current, err := parseSemverTag(u.CurrentTag)
 	if err != nil {
 		if u.IsDigestUpdate() {
 			return "digest"
@@ -260,7 +258,7 @@ func (u *UpdateInfo) UpdateLevel() string {
 		return ""
 	}
 
-	latest, err := semver.NewVersion(u.LatestTag)
+	latest, err := parseSemverTag(u.LatestTag)
 	if err != nil {
 		if u.IsDigestUpdate() {
 			return "digest"

@@ -23,6 +23,9 @@ func TestHasNewVersion(t *testing.T) {
 		{"With suffix, no new version", "1.0.0-rc1", "1.0.0-rc1", false},
 		{"Invalid current tag", "", "1.0.0", false},
 		{"Invalid latest tag", "1.0.0", "", false},
+		{"Calendar tag with 4th segment moves to a 3-segment release", "v2026.7.7.2", "v2026.8.27", true},
+		{"Calendar tag with 4th segment, no newer release", "v2026.8.27", "v2026.8.27", false},
+		{"Calendar tag differing only in the 4th segment does not count", "v2026.7.7", "v2026.7.7.2", false},
 	}
 
 	for _, tt := range tests {

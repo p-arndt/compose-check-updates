@@ -7,7 +7,6 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/Masterminds/semver/v3"
 	"github.com/regclient/regclient/types/ref"
 )
 
@@ -64,7 +63,7 @@ func (u *UpdateChecker) Check(major, minor, patch bool) ([]UpdateInfo, error) {
 	for i := range updateInfos {
 		info := &updateInfos[i]
 
-		version, err := semver.NewVersion(info.CurrentTag)
+		version, err := parseSemverTag(info.CurrentTag)
 		if err != nil {
 			// Not a semver tag. Comparing manifest digests is then the only way
 			// to tell whether the image moved on, which covers both digest-pinned

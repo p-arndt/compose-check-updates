@@ -237,6 +237,28 @@ func TestFindLatestVersion(t *testing.T) {
 				Expected: "10.0.0",
 			},
 		},
+		{
+			name: "calendar tag with 4th segment, patch within the same month",
+			testData: TestFindLatestVersionStruct{
+				Current:  "v2026.7.7.2",
+				Tags:     []string{"v2026.7.7", "v2026.7.7.2", "v2026.7.30", "v2026.8.16.2", "v2026.8.27"},
+				Major:    false,
+				Minor:    false,
+				Patch:    true,
+				Expected: "v2026.7.30",
+			},
+		},
+		{
+			name: "calendar tag with 4th segment, newest across months with -f",
+			testData: TestFindLatestVersionStruct{
+				Current:  "v2026.7.7.2",
+				Tags:     []string{"v2026.7.7", "v2026.7.7.2", "v2026.7.30", "v2026.8.16.2", "v2026.8.27"},
+				Major:    true,
+				Minor:    true,
+				Patch:    true,
+				Expected: "v2026.8.27",
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -328,6 +350,56 @@ func TestFindLatestPerLevel(t *testing.T) {
 			assert.Equal(t, tt.wantMajor, major, "major")
 		})
 	}
+}
+
+func TestNormalizeSemverExtraSegments(t *testing.T) {
+	tests := []struct {
+		in   string
+		want string
+	}{
+		{"1.2.3", "1.2.3"},
+		{"1.2", "1.2.0"},
+		{"v2026.7.7.2", "2026.7.7+seg.2"},
+		{"2026.8.16.2", "2026.8.16+seg.2"},
+		{"1.2.3.4.5", "1.2.3+seg.4.5"},
+		{"1.2.3-rc1", "1.2.3-rc1"},
+		{"1.2.3.4-rc1", "1.2.3-rc1+seg.4"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.in, func(t *testing.T) {
+			got, ok := normalizeSemver(tt.in)
+			assert.True(t, ok)
+			assert.Equal(t, tt.want, got)
+
+			// Whatever normalizeSemver returns must parse.
+			_, err := semver.NewVersion(got)
+			assert.NoError(t, err)
+		})
+	}
+}
+
+func TestParseSemverTag(t *testing.T) {
+	// Forms semver.NewVersion already accepts are passed straight through.
+	for _, in := range []string{"1.2.3", "v1.2.3", "1.2", "16"} {
+		v, err := parseSemverTag(in)
+		assert.NoError(t, err, in)
+		assert.NotNil(t, v, in)
+	}
+
+	// A calendar tag with a 4th segment parses via the normalizeSemver fallback
+	// and orders by its first three segments.
+	got, err := parseSemverTag("v2026.7.7.2")
+	assert.NoError(t, err)
+	newer, err := parseSemverTag("v2026.8.27")
+	assert.NoError(t, err)
+	assert.True(t, newer.GreaterThan(got))
+
+	// Genuinely non-version tags still fail.
+	_, err = parseSemverTag("sha-e1c83ba")
+	assert.Error(t, err)
+	_, err = parseSemverTag("latest")
+	assert.Error(t, err)
 }
 
 func TestSuffixMismatch(t *testing.T) {
