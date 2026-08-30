@@ -28,6 +28,16 @@ type Options struct {
 	// no cap.
 	Caps map[string]string
 
+	// Versionings is the versioning scheme the user recorded per image, keyed by
+	// image name without tag or digest, valued "semver"/"loose". An image with no
+	// entry takes DefaultVersioning.
+	Versionings map[string]string
+
+	// DefaultVersioning is the scheme for images Versionings says nothing about.
+	// Empty means "semver", which is what every image gets until a config file or
+	// -versioning says otherwise.
+	DefaultVersioning string
+
 	// PinFloating turns on pinning bare floating tags ("latest", "main", …) to
 	// the digest they currently resolve to. Off by default: it costs a request per
 	// floating image and pins a reference the user left mutable on purpose.
@@ -139,7 +149,9 @@ func checkFile(ctx context.Context, events chan<- Event, opts Options, path stri
 	}
 
 	registry := internal.NewRegistry("")
-	checker := internal.NewUpdateChecker(path, registry).WithPinFloating(opts.PinFloating)
+	checker := internal.NewUpdateChecker(path, registry).
+		WithPinFloating(opts.PinFloating).
+		WithVersioning(opts.Versionings, opts.DefaultVersioning)
 	infos, err := checker.Check(opts.Major, opts.Minor, opts.Patch)
 	if err != nil {
 		send(ctx, events, Event{Kind: EventError, Path: path, Err: err})
@@ -192,7 +204,8 @@ func dockerfileCheckers(opts Options, registry *internal.Registry, path string) 
 		checkers = append(checkers, dockerfileChecker{
 			path: target.Dockerfile,
 			checker: internal.NewDockerfileChecker(target.Dockerfile, path, target.Service, registry).
-				WithPinFloating(opts.PinFloating),
+				WithPinFloating(opts.PinFloating).
+				WithVersioning(opts.Versionings, opts.DefaultVersioning),
 		})
 	}
 	return checkers

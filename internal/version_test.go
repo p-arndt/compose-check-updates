@@ -7,25 +7,32 @@ import (
 )
 
 type TestFindLatestVersionStruct struct {
-	Current  string
-	Tags     []string
-	Major    bool
-	Minor    bool
-	Patch    bool
-	Expected string
+	Current string
+	Tags    []string
+	Major   bool
+	Minor   bool
+	Patch   bool
+	// Versioning names the scheme to read the tags under; empty means semver.
+	Versioning string
+	Expected   string
+}
+
+// hermesTags is the tag list nousresearch/hermes-agent actually publishes, the
+// image from issue #13. It is the case worth pinning down: the repository mixes
+// three- and four-segment calendar tags, so a scheme that reads only three of
+// them cannot tell v2026.7.7 from v2026.7.7.2.
+var hermesTags = []string{
+	"latest", "main",
+	"v2026.8.27", "v2026.8.19", "v2026.8.18", "v2026.8.16.2", "v2026.8.16",
+	"v2026.8.13", "v2026.8.3", "v2026.7.30", "v2026.7.20", "v2026.7.7.2",
+	"v2026.7.7", "v2026.7.1", "v2026.6.19", "v2026.6.5", "v2026.5.29.2",
+	"v2026.5.29", "v2026.5.28", "v2026.5.16", "v2026.5.7", "v2026.4.30",
 }
 
 func TestFindLatestVersion(t *testing.T) {
 	tests := []struct {
 		name     string
-		testData struct {
-			Current  string
-			Tags     []string
-			Major    bool
-			Minor    bool
-			Patch    bool
-			Expected string
-		}
+		testData TestFindLatestVersionStruct
 	}{
 		{
 			name: "patch update available",
@@ -270,6 +277,77 @@ func TestFindLatestVersion(t *testing.T) {
 			},
 		},
 		{
+			name: "calendar tag with a fourth segment is unreadable as semver",
+			testData: TestFindLatestVersionStruct{
+				Current:  "v2026.7.7.2",
+				Tags:     hermesTags,
+				Major:    true,
+				Minor:    true,
+				Patch:    true,
+				Expected: "",
+			},
+		},
+		{
+			name: "loose reads the fourth segment and stays within the month",
+			testData: TestFindLatestVersionStruct{
+				Current:    "v2026.7.7.2",
+				Tags:       hermesTags,
+				Patch:      true,
+				Versioning: VersioningLoose,
+				Expected:   "v2026.7.30",
+			},
+		},
+		{
+			name: "loose crosses months when asked for everything",
+			testData: TestFindLatestVersionStruct{
+				Current:    "v2026.7.7.2",
+				Tags:       hermesTags,
+				Major:      true,
+				Versioning: VersioningLoose,
+				Expected:   "v2026.8.27",
+			},
+		},
+		{
+			name: "loose moves a three-segment tag onto a four-segment rebuild",
+			testData: TestFindLatestVersionStruct{
+				Current:    "v2026.5.29",
+				Tags:       []string{"v2026.5.28", "v2026.5.29", "v2026.5.29.2"},
+				Patch:      true,
+				Versioning: VersioningLoose,
+				Expected:   "v2026.5.29.2",
+			},
+		},
+		{
+			name: "loose does not move backwards within the fourth segment",
+			testData: TestFindLatestVersionStruct{
+				Current:    "v2026.5.29.2",
+				Tags:       []string{"v2026.5.28", "v2026.5.29", "v2026.5.29.2"},
+				Major:      true,
+				Versioning: VersioningLoose,
+				Expected:   "",
+			},
+		},
+		{
+			name: "loose keeps the suffix rule",
+			testData: TestFindLatestVersionStruct{
+				Current:    "2026.7.7.2-cuda",
+				Tags:       []string{"2026.7.7.2-cuda", "2026.7.30-cuda", "2026.8.27"},
+				Major:      true,
+				Versioning: VersioningLoose,
+				Expected:   "2026.7.30-cuda",
+			},
+		},
+		{
+			name: "loose reads a calendar tag written with leading zeros",
+			testData: TestFindLatestVersionStruct{
+				Current:    "2026.07.07",
+				Tags:       []string{"2026.07.07", "2026.07.30", "2026.08.03"},
+				Patch:      true,
+				Versioning: VersioningLoose,
+				Expected:   "2026.07.30",
+			},
+		},
+		{
 			name: "huge version jump",
 			testData: TestFindLatestVersionStruct{
 				Current:  "1.0.0",
@@ -284,7 +362,10 @@ func TestFindLatestVersion(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := FindLatestVersion(tt.testData.Current, tt.testData.Tags, tt.testData.Major, tt.testData.Minor, tt.testData.Patch)
+			scheme, ok := VersioningByName(tt.testData.Versioning)
+			assert.True(t, ok, "unknown versioning scheme")
+
+			result := FindLatestVersion(scheme, tt.testData.Current, tt.testData.Tags, tt.testData.Major, tt.testData.Minor, tt.testData.Patch)
 			assert.Equal(t, tt.testData.Expected, result)
 		})
 	}
@@ -354,7 +435,7 @@ func TestFindLatestPerLevel(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			patch, minor, major := FindLatestPerLevel(tt.current, tt.tags)
+			patch, minor, major := FindLatestPerLevel(DefaultVersioning(), tt.current, tt.tags)
 			assert.Equal(t, tt.wantPatch, patch, "patch")
 			assert.Equal(t, tt.wantMinor, minor, "minor")
 			assert.Equal(t, tt.wantMajor, major, "major")
@@ -371,7 +452,7 @@ func TestSuffixMismatch(t *testing.T) {
 		Patch:    true,
 		Expected: "",
 	}
-	result := FindLatestVersion(test.Current, test.Tags, test.Major, test.Minor, test.Patch)
+	result := FindLatestVersion(DefaultVersioning(), test.Current, test.Tags, test.Major, test.Minor, test.Patch)
 	assert.Equal(t, test.Expected, result)
 }
 
@@ -380,36 +461,42 @@ func TestSuffixMismatch(t *testing.T) {
 // accepted where the checker decides an image has a version, and rejected where
 // the upgrade target is looked for, so an image on "16" reported nothing and
 // fell through to no fallback either.
-func TestParseVersionTag(t *testing.T) {
+func TestSemverVersioningParse(t *testing.T) {
 	tests := []struct {
 		tag          string
 		wantOK       bool
-		wantVersion  string
+		wantRelease  []int
+		wantSuffix   string
 		wantSegments int
 	}{
-		{"1.2.3", true, "1.2.3", 3},
-		{"v1.2.3", true, "1.2.3", 3},
-		{"1.2", true, "1.2.0", 2},
-		{"16", true, "16.0.0", 1},
-		{"v16", true, "16.0.0", 1},
-		{"0", true, "0.0.0", 1},
-		{"3.19-alpine", true, "3.19.0-alpine", 2},
-		{"1.2.3-rc1", true, "1.2.3-rc1", 3},
-		{"2026.7.7.2", false, "", 0},
-		{"latest", false, "", 0},
-		{"", false, "", 0},
+		{"1.2.3", true, []int{1, 2, 3}, "", 3},
+		{"v1.2.3", true, []int{1, 2, 3}, "", 3},
+		{"1.2", true, []int{1, 2}, "", 2},
+		{"16", true, []int{16}, "", 1},
+		{"v16", true, []int{16}, "", 1},
+		{"0", true, []int{0}, "", 1},
+		{"3.19-alpine", true, []int{3, 19}, "-alpine", 2},
+		{"1.2.3-rc1", true, []int{1, 2, 3}, "-rc1", 3},
+		{"1.2.3+build.5", true, []int{1, 2, 3}, "+build.5", 3},
+		// Four segments, a leading zero and a plain word are all out of reach for
+		// this scheme; the loose one below is what reads them.
+		{"2026.7.7.2", false, nil, "", 0},
+		{"2026.07.07", false, nil, "", 0},
+		{"latest", false, nil, "", 0},
+		{"", false, nil, "", 0},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.tag, func(t *testing.T) {
-			vt, ok := parseVersionTag(tt.tag)
+			v, ok := DefaultVersioning().Parse(tt.tag)
 			assert.Equal(t, tt.wantOK, ok)
 			if !tt.wantOK {
 				return
 			}
-			assert.Equal(t, tt.wantVersion, vt.Version.String())
-			assert.Equal(t, tt.wantSegments, vt.Segments)
-			assert.Equal(t, tt.tag, vt.Tag)
+			assert.Equal(t, tt.wantRelease, v.Release)
+			assert.Equal(t, tt.wantSuffix, v.Suffix)
+			assert.Equal(t, tt.wantSegments, v.Segments())
+			assert.Equal(t, tt.tag, v.Tag)
 		})
 	}
 }
@@ -423,4 +510,14 @@ func TestSameTagFamily(t *testing.T) {
 	assert.True(t, sameTagFamily(3, 2))
 	assert.False(t, sameTagFamily(1, 3))
 	assert.False(t, sameTagFamily(3, 1))
+}
+
+func TestFindLatestPerLevelLoose(t *testing.T) {
+	loose, ok := VersioningByName(VersioningLoose)
+	assert.True(t, ok)
+
+	patch, minor, major := FindLatestPerLevel(loose, "v2026.7.7.2", hermesTags)
+	assert.Equal(t, "v2026.7.30", patch, "patch")
+	assert.Equal(t, "v2026.8.27", minor, "minor")
+	assert.Equal(t, "", major, "major")
 }

@@ -5,6 +5,7 @@ import (
 	"io"
 	"path/filepath"
 	"sort"
+	"strings"
 )
 
 // Show writes the configuration a scan would run with: which files were read,
@@ -37,30 +38,46 @@ func Show(w io.Writer, loaded Loaded, effective Config) {
 		}
 	}
 
+	fmt.Fprintf(w, "  versioning: %s\n", effective.DefaultVersioning())
 	fmt.Fprintf(w, "  pin_floating: %t\n", effective.PinFloatingEnabled())
 	fmt.Fprintf(w, "  dockerfiles: %t\n", effective.DockerfilesEnabled())
 
 	showImages(w, effective)
 }
 
-// showImages lists the per-image caps in a stable order. A map iterates at
+// showImages lists the per-image settings in a stable order. A map iterates at
 // random, and a report whose lines move between two identical runs is one nobody
 // can diff.
 func showImages(w io.Writer, effective Config) {
 	caps := effective.Caps()
-	if len(caps) == 0 {
-		fmt.Fprintln(w, "  images: (no caps set)")
+	schemes := effective.Versionings()
+	if len(caps) == 0 && len(schemes) == 0 {
+		fmt.Fprintln(w, "  images: (nothing set)")
 		return
 	}
 
-	images := make([]string, 0, len(caps))
-	for image := range caps {
-		images = append(images, image)
+	seen := make(map[string]struct{}, len(caps)+len(schemes))
+	images := make([]string, 0, len(caps)+len(schemes))
+	for _, m := range []map[string]string{caps, schemes} {
+		for image := range m {
+			if _, dup := seen[image]; dup {
+				continue
+			}
+			seen[image] = struct{}{}
+			images = append(images, image)
+		}
 	}
 	sort.Strings(images)
 
 	fmt.Fprintln(w, "  images:")
 	for _, image := range images {
-		fmt.Fprintf(w, "    %s: max %s\n", image, caps[image])
+		var settings []string
+		if cap, ok := caps[image]; ok {
+			settings = append(settings, "max "+cap)
+		}
+		if scheme, ok := schemes[image]; ok {
+			settings = append(settings, "versioning "+scheme)
+		}
+		fmt.Fprintf(w, "    %s: %s\n", image, strings.Join(settings, ", "))
 	}
 }

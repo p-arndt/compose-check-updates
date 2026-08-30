@@ -1,76 +1,68 @@
 package internal
 
 import (
-	"regexp"
 	"sort"
-	"strings"
-
-	"github.com/Masterminds/semver/v3"
 )
 
-// versionTag pairs a parsed version with the tag it was parsed from, so the
-// tag can be returned in its original form (e.g. keeping a "v" prefix), and
-// with the number of numeric segments the tag actually named. The count is kept
-// because the parsed version cannot tell "16" from "16.0.0" afterwards, and the
-// two are not interchangeable — see sameTagFamily.
-type versionTag struct {
-	Version  *semver.Version
-	Tag      string
-	Segments int
-}
-
-// candidateVersions parses every tag that looks like a version and returns them
-// sorted newest first. currentSegments is how many numeric segments the tag
-// being upgraded named; tags of an incompatible shape are dropped here rather
-// than later, so the callers below only ever see plausible targets.
-func candidateVersions(tags []string, currentSegments int) []versionTag {
-	var versionTags []versionTag
+// candidateVersions parses every tag the scheme can read and returns them sorted
+// newest first. Tags whose shape cannot stand in for the current one are dropped
+// here rather than later, so the callers below only ever see plausible targets.
+func candidateVersions(scheme Versioning, tags []string, current Version) []Version {
+	var versions []Version
 
 	for _, tag := range tags {
-		vt, ok := parseVersionTag(tag)
+		v, ok := scheme.Parse(tag)
 		if !ok {
 			continue
 		}
-		if !sameTagFamily(vt.Segments, currentSegments) {
+		if !sameTagFamily(v.Segments(), current.Segments()) {
 			continue
 		}
-		versionTags = append(versionTags, vt)
+		versions = append(versions, v)
 	}
 
-	sort.Slice(versionTags, func(i, j int) bool {
-		return versionTags[i].Version.GreaterThan(versionTags[j].Version)
+	sort.Slice(versions, func(i, j int) bool {
+		return versions[i].GreaterThan(versions[j])
 	})
 
-	return versionTags
+	return versions
+}
+
+// sameTagFamily reports whether a candidate tag has a shape that may stand in
+// for the current one. A tag naming only a major ("16") floats across its whole
+// major line the way "latest" floats across the repository, so replacing a
+// pinned "20.11.0" with "21" would quietly trade a fixed reference for a moving
+// one — and replacing "16" with "17.2" would do the reverse. Everything else
+// mixes freely: an image on "1.2" moving to "1.2.3" is the same release line
+// spelled more precisely, and one on "2026.7.7" moving to "2026.7.7.2" is the
+// whole point of the loose scheme.
+func sameTagFamily(candidate, current int) bool {
+	return (candidate == 1) == (current == 1)
 }
 
 // isUpgradeCandidate reports whether v is a newer release of the same release
 // line as current: a stable current never moves onto a prerelease, and a
-// prerelease current only moves within its own prerelease suffix.
-func isUpgradeCandidate(v, current *semver.Version) bool {
+// prerelease current only moves within its own suffix, so an image on
+// "3.19-alpine" is never handed a plain "3.20".
+func isUpgradeCandidate(v, current Version) bool {
 	if !v.GreaterThan(current) {
 		return false
 	}
-	if current.Prerelease() == "" {
-		return v.Prerelease() == ""
-	}
-	return v.Prerelease() == current.Prerelease()
+	return v.Suffix == current.Suffix
 }
 
 // FindLatestPerLevel returns the newest tag available at each upgrade level
-// relative to current. Any return value is "" when no upgrade exists at that
+// relative to currentTag. Any return value is "" when no upgrade exists at that
 // level. patchTag stays within the current major.minor; minorTag stays within
 // the current major; majorTag crosses to a higher major.
-func FindLatestPerLevel(currentTag string, tags []string) (patchTag, minorTag, majorTag string) {
-	cur, ok := parseVersionTag(currentTag)
+func FindLatestPerLevel(scheme Versioning, currentTag string, tags []string) (patchTag, minorTag, majorTag string) {
+	current, ok := scheme.Parse(currentTag)
 	if !ok {
 		return "", "", ""
 	}
-	current := cur.Version
 
 	// Sorted newest first, so the first match at a level is that level's best.
-	for _, vt := range candidateVersions(tags, cur.Segments) {
-		v := vt.Version
+	for _, v := range candidateVersions(scheme, tags, current) {
 		if !isUpgradeCandidate(v, current) {
 			continue
 		}
@@ -78,15 +70,18 @@ func FindLatestPerLevel(currentTag string, tags []string) (patchTag, minorTag, m
 		switch {
 		case v.Major() > current.Major():
 			if majorTag == "" {
-				majorTag = vt.Tag
+				majorTag = v.Tag
 			}
 		case v.Minor() > current.Minor():
 			if minorTag == "" {
-				minorTag = vt.Tag
+				minorTag = v.Tag
 			}
-		case v.Patch() > current.Patch():
+		default:
+			// Newer, but neither the major nor the minor moved. That is a patch,
+			// including the case a fourth segment alone advanced: "2026.7.7.2" is
+			// a rebuild of the release "2026.7.7" names, not a release of its own.
 			if patchTag == "" {
-				patchTag = vt.Tag
+				patchTag = v.Tag
 			}
 		}
 
@@ -98,12 +93,13 @@ func FindLatestPerLevel(currentTag string, tags []string) (patchTag, minorTag, m
 	return patchTag, minorTag, majorTag
 }
 
-func FindLatestVersion(currentTag string, tags []string, major, minor, patch bool) string {
-	cur, ok := parseVersionTag(currentTag)
+// FindLatestVersion returns the highest tag currentTag may move to under the
+// requested levels, or "" when there is none.
+func FindLatestVersion(scheme Versioning, currentTag string, tags []string, major, minor, patch bool) string {
+	current, ok := scheme.Parse(currentTag)
 	if !ok {
 		return ""
 	}
-	current := cur.Version
 
 	if major {
 		minor = true
@@ -113,111 +109,28 @@ func FindLatestVersion(currentTag string, tags []string, major, minor, patch boo
 		patch = true
 	}
 
-	versionTags := candidateVersions(tags, cur.Segments)
-	if len(versionTags) == 0 {
-		return ""
-	}
-
-	for _, vt := range versionTags {
-		v := vt.Version
-		tag := vt.Tag
-
-		// Skips versions not newer than current, and enforces the prerelease rules.
+	for _, v := range candidateVersions(scheme, tags, current) {
+		// Skips versions not newer than current, and enforces the suffix rule.
 		if !isUpgradeCandidate(v, current) {
 			continue
 		}
 
 		accept := false
-		if major && v.Major() > current.Major() {
+		switch {
+		case major && v.Major() > current.Major():
 			accept = true
-		} else if minor && isEqualMajor(v, current) && v.Minor() > current.Minor() {
+		case minor && v.Major() == current.Major() && v.Minor() > current.Minor():
 			accept = true
-		} else if patch && isEqualMajor(v, current) && isEqualMinor(v, current) && v.Patch() > current.Patch() {
+		case patch && v.Major() == current.Major() && v.Minor() == current.Minor():
+			// Everything left within the same major.minor is a patch; see the
+			// default branch of FindLatestPerLevel.
 			accept = true
 		}
 
 		if accept {
-			return tag
+			return v.Tag
 		}
 	}
 
 	return ""
-}
-
-// versionPattern captures the numeric segments a tag names, plus any
-// prerelease or build metadata trailing them. The minor and patch segments are
-// optional: Docker tags routinely name only part of a version ("16", "1.2"),
-// and a tool that refuses to read them has nothing to say about some of the
-// most commonly pinned images there are.
-var versionPattern = regexp.MustCompile(`^(?P<major>0|[1-9]\d*)(?:\.(?P<minor>0|[1-9]\d*))?(?:\.(?P<patch>0|[1-9]\d*))?(?P<rest>(?:-[0-9A-Za-z-.]+)?(?:\+[0-9A-Za-z-.]+)?)$`)
-
-// normalizeSemver accepts strict semantic versions as well as the "non-strict"
-// forms Docker tags take: "1.1" and "16" stand for "1.1.0" and "16.0.0". It
-// also reports how many segments were actually written, which the caller needs
-// because the normalized string no longer says. If the tag is not a supported
-// version format it returns ok=false.
-func normalizeSemver(tag string) (normalized string, segments int, ok bool) {
-	// Accept an optional leading "v" (e.g. "v1.2.3") as well as plain semver.
-	tag = strings.TrimPrefix(tag, "v")
-
-	matches := versionPattern.FindStringSubmatch(tag)
-	if len(matches) == 0 {
-		return "", 0, false
-	}
-
-	major, minor, patch, rest := matches[1], matches[2], matches[3], matches[4]
-
-	segments = 1
-	if minor != "" {
-		segments++
-	}
-	if patch != "" {
-		segments++
-	}
-
-	if minor == "" {
-		minor = "0"
-	}
-	if patch == "" {
-		patch = "0"
-	}
-
-	return major + "." + minor + "." + patch + rest, segments, true
-}
-
-// parseVersionTag turns a tag into a comparable version. It is the one place
-// tags are parsed: the checker deciding whether an image has a version at all
-// and the search for what to upgrade it to have to agree on the answer, or an
-// image passes the first and then silently matches nothing in the second.
-func parseVersionTag(tag string) (versionTag, bool) {
-	normalized, segments, ok := normalizeSemver(tag)
-	if !ok {
-		return versionTag{}, false
-	}
-
-	v, err := semver.NewVersion(normalized)
-	if err != nil {
-		return versionTag{}, false
-	}
-
-	return versionTag{Version: v, Tag: tag, Segments: segments}, true
-}
-
-// sameTagFamily reports whether a candidate tag has a shape that may stand in
-// for the current one. A tag naming only a major ("16") floats across its whole
-// major line the way "latest" floats across the repository, so replacing a
-// pinned "20.11.0" with "21" would quietly trade a fixed reference for a moving
-// one — and replacing "16" with "17.2" would do the reverse. Everything else
-// mixes freely: an image on "1.2" moving to "1.2.3" is the same release line
-// spelled more precisely.
-func sameTagFamily(candidate, current int) bool {
-	return (candidate == 1) == (current == 1)
-}
-
-func isEqualMajor(current, tag *semver.Version) bool {
-	return current.Major() == tag.Major()
-}
-
-func isEqualMinor(current, tag *semver.Version) bool {
-	return current.Minor() == tag.Minor()
 }

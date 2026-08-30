@@ -36,6 +36,12 @@ type Config struct {
 	// turned on.
 	PinFloating *bool `yaml:"pin_floating"`
 
+	// Versioning is the scheme every image's tags are read under unless the image
+	// names one of its own. Empty means `semver`. A plain string rather than a
+	// pointer because "" is already the "not set here" the merge below needs, and
+	// there is no false to tell apart from absent.
+	Versioning Versioning `yaml:"versioning"`
+
 	// Dockerfiles turns off checking the base images of Dockerfiles built by a
 	// compose service. A pointer for the same reason PinFloating is one, and
 	// absent means on: a service built from a Dockerfile has no image tag of its
@@ -230,6 +236,10 @@ func Parse(r io.Reader) (Config, error) {
 	}
 	cfg.Exclude = nonEmpty(cfg.Exclude)
 
+	if err := ValidateVersioning(cfg.Versioning); err != nil {
+		return Config{}, err
+	}
+
 	if err := validateImages(cfg.Images); err != nil {
 		return Config{}, err
 	}
@@ -250,6 +260,9 @@ func merge(base, over Config) Config {
 	}
 	if over.Dockerfiles != nil {
 		base.Dockerfiles = over.Dockerfiles
+	}
+	if over.Versioning != "" {
+		base.Versioning = over.Versioning
 	}
 	return base
 }

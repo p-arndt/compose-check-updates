@@ -20,6 +20,13 @@ type UpdateChecker struct {
 	// to be asked for.
 	pinFloating bool
 
+	// versionings is the scheme to read each image's tags under, keyed by image
+	// name without tag or digest, and defaultVersioning is what an image with no
+	// entry gets. Held as names rather than resolved schemes so this stays a
+	// plain pass-through of what the config said, resolved once per image below.
+	versionings       map[string]string
+	defaultVersioning string
+
 	// composePath is the compose file that builds path, set only when path is a
 	// Dockerfile reached through a service's `build:`. It is what tells the two
 	// kinds of file apart here — and what a restart has to act on later, since
@@ -54,6 +61,23 @@ func (u *UpdateChecker) WithPinFloating(on bool) *UpdateChecker {
 	return u
 }
 
+// WithVersioning sets the per-image versioning schemes and the default for
+// images without one. See UpdateChecker.versionings.
+func (u *UpdateChecker) WithVersioning(perImage map[string]string, def string) *UpdateChecker {
+	u.versionings, u.defaultVersioning = perImage, def
+	return u
+}
+
+// versioningFor returns the scheme name recorded for an image, falling back to
+// the default. Lookup is exact on the image name without tag or digest, the same
+// key a cap is recorded under.
+func (u *UpdateChecker) versioningFor(image string) string {
+	if name, ok := u.versionings[image]; ok && name != "" {
+		return name
+	}
+	return u.defaultVersioning
+}
+
 func (u *UpdateChecker) Check(major, minor, patch bool) ([]UpdateInfo, error) {
 	updateInfos, err := u.createUpdateInfos()
 	if err != nil {
@@ -63,11 +87,19 @@ func (u *UpdateChecker) Check(major, minor, patch bool) ([]UpdateInfo, error) {
 	for i := range updateInfos {
 		info := &updateInfos[i]
 
-		if _, ok := parseVersionTag(info.CurrentTag); !ok {
-			// Not a semver tag. Comparing manifest digests is then the only way
-			// to tell whether the image moved on, which covers both digest-pinned
-			// images and repositories that publish commit tags instead of
-			// versions (e.g. ghcr.io/vert-sh/vert).
+		// Recorded on the update itself, because the level and the cap are worked
+		// out again from the tags after this checker is gone.
+		info.Versioning = u.versioningFor(info.ImageName)
+		scheme, ok := VersioningByName(info.Versioning)
+		if !ok {
+			scheme = DefaultVersioning()
+		}
+
+		if _, readable := scheme.Parse(info.CurrentTag); !readable {
+			// No version this scheme can read. Comparing manifest digests is then
+			// the only way to tell whether the image moved on, which covers both
+			// digest-pinned images and repositories that publish commit tags
+			// instead of versions (e.g. ghcr.io/vert-sh/vert).
 			u.checkDigest(info)
 			continue
 		}
@@ -80,9 +112,9 @@ func (u *UpdateChecker) Check(major, minor, patch bool) ([]UpdateInfo, error) {
 
 		// Every level is resolved so an interactive caller can offer a choice of
 		// target; LatestTag stays the highest tag the requested flags allow.
-		info.PatchTag, info.MinorTag, info.MajorTag = FindLatestPerLevel(info.CurrentTag, tags)
+		info.PatchTag, info.MinorTag, info.MajorTag = FindLatestPerLevel(scheme, info.CurrentTag, tags)
 
-		latestVersion := FindLatestVersion(info.CurrentTag, tags, major, minor, patch)
+		latestVersion := FindLatestVersion(scheme, info.CurrentTag, tags, major, minor, patch)
 		if latestVersion == "" {
 			continue
 		}
@@ -174,7 +206,9 @@ func (u *UpdateChecker) checkDigest(info *UpdateInfo) {
 
 	latestTag := findTagForDigest(u.registry, info.ImageName, candidates, latestDigest)
 	if latestTag == "" {
-		slog.Warn("Skipping (no tag matches the newest digest)", "image", info.ImageName, "tag", info.CurrentTag, "path", info.FilePath)
+		// This is where an image with version-shaped tags ccu cannot read ends up,
+		// so the way out is named rather than left to be discovered.
+		slog.Warn("Skipping (no tag matches the newest digest); if this image's tags are versions, try `versioning: loose` for it", "image", info.ImageName, "tag", info.CurrentTag, "path", info.FilePath)
 		info.LatestDigest = ""
 		return
 	}

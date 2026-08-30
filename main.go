@@ -63,6 +63,19 @@ func main() {
 		Images:      cfg.Images,
 		PinFloating: cfg.PinFloating,
 		Dockerfiles: cfg.Dockerfiles,
+		Versioning:  cfg.Versioning,
+	}
+	// -versioning replaces the *default* scheme, not the per-image entries: a
+	// config line that names an image is the more specific statement, and a flag
+	// meant as a quick try should not silently undo it. Images keeps those
+	// entries, and VersioningFor consults them first.
+	if ccuFlags.Versioning != "" {
+		scheme := config.Versioning(ccuFlags.Versioning)
+		if err := config.ValidateVersioning(scheme); err != nil {
+			slog.Error("Error reading flags", "error", err)
+			os.Exit(exitError)
+		}
+		effective.Versioning = scheme
 	}
 	// A flag that was not spelled out says nothing about what the config decided,
 	// so only one that was actually passed overrides it — in either direction:
@@ -90,6 +103,9 @@ func main() {
 		Major:   ccuFlags.Major,
 		Minor:   ccuFlags.Minor,
 		Patch:   ccuFlags.Patch,
+
+		Versionings:       effective.Versionings(),
+		DefaultVersioning: effective.DefaultVersioning(),
 
 		PinFloating: effective.PinFloatingEnabled(),
 		Dockerfiles: effective.DockerfilesEnabled(),
