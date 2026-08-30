@@ -1,19 +1,16 @@
 package tui
 
 import (
-	"fmt"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"github.com/p-arndt/compose-check-updates/internal/policy"
 
-	"github.com/p-arndt/compose-check-updates/internal/config"
+	"github.com/charmbracelet/lipgloss"
 )
 
 // The sidebar is where a single image is decided: which release it moves to, and
-// whether that choice is remembered past this run. Three visible fields and a
-// cursor replace the three keys those questions used to need. It follows the
-// list rather than being opened, so which image is meant is never in question.
+// whether that choice is remembered past this run. It follows the list rather
+// than being opened, so which image is meant is never in question.
 
 // sidebarMinTotal is the terminal width below which the two columns stop fitting
 // side by side, leaving the list too cramped to read a path in.
@@ -128,16 +125,14 @@ const (
 )
 
 // capChoicesFor are the values the cap field steps through for one image. The cap
-// names a level of its own rather than borrowing the target's: the target is what
-// this run does, the cap is what every future run may not exceed.
-//
-// Levels the image has no release for are still offered — a cap is a policy about
-// the future. Major is the exception: it means nothing on its own, and appears
-// only when a global cap exists, where it is how a project waives that ceiling.
-func (m Model) capChoicesFor(image string) []config.Level {
-	choices := []config.Level{"", config.LevelPatch, config.LevelMinor}
+// names a level of its own: the target is what this run does, the cap is what
+// every future run may not exceed, so levels the image has no release for are
+// still offered. Major is the exception — it appears only when a global cap
+// exists, where it is how a project waives that ceiling.
+func (m Model) capChoicesFor(image string) []policy.Level {
+	choices := []policy.Level{"", policy.LevelPatch, policy.LevelMinor}
 	if m.capInScope(pinGlobal, image) != "" {
-		choices = append(choices, config.LevelMajor)
+		choices = append(choices, policy.LevelMajor)
 	}
 	return choices
 }
@@ -149,12 +144,11 @@ var scopeChoices = []pinScope{pinProject, pinGlobal}
 // versioningChoices are the values the versioning field steps through. The empty
 // one comes first because it is where every image starts: it is not a third
 // scheme but the absence of a preference, i.e. the run's default.
-var versioningChoices = []config.Versioning{"", config.VersioningSemver, config.VersioningLoose}
+var versioningChoices = []policy.Versioning{"", policy.VersioningSemver, policy.VersioningLoose}
 
 // sidebarLines renders the right column for the row under the cursor, within the
-// height it is given. Lines are added in priority order rather than top to
-// bottom: dropping a field would make a setting unreachable, whereas dropping the
-// file path only costs a fact the list already shows.
+// height it is given. Added in priority order, not top to bottom: dropping a
+// field hides a setting, dropping the path only repeats what the list shows.
 func (m Model) sidebarLines(width, height int) []string {
 	r := m.currentRow()
 	if r == nil {
@@ -231,7 +225,7 @@ func (m Model) targetValue(r *Row) string {
 		return m.theme.sideText("—", focused)
 	}
 	// The same badge the row carries in the list, so field and row read as one.
-	return m.theme.BadgeTight(r.Target.Label()) + " " + m.theme.sideText(r.Update.LatestTag, focused)
+	return m.theme.BadgeTight(policy.Level(targetLabel(r.Target))) + " " + m.theme.sideText(r.Update.LatestTag, focused)
 }
 
 // capValue is the ceiling this image may never move past, phrased as a rule
@@ -242,20 +236,19 @@ func (m Model) capValue(r *Row) string {
 		return m.theme.sideText("off", focused)
 	}
 
-	value := m.theme.BadgeTight(string(r.Pin))
+	value := m.theme.BadgeTight(r.Pin)
 
 	// Spelled out because "major" only means something here: it lifts a ceiling
 	// the global file set.
-	if r.Pin == config.LevelMajor {
+	if r.Pin == policy.LevelMajor {
 		value += m.theme.dim().Render("  lifts the global cap")
 	}
 	return value
 }
 
 // scopeValue names the file the cap is remembered in, with the path beside it:
-// "project" and "global" only mean something once the file is visible. The path
-// is dropped rather than truncated when the column is too narrow, since a cut
-// line would eat the closing chevron and make the field look broken.
+// "project" and "global" only mean something once the file is visible. Dropped
+// rather than truncated when too narrow: a cut line eats the closing chevron.
 func (m Model) scopeValue(r *Row, width int) string {
 	focused := m.focused(fieldScope)
 
@@ -282,212 +275,11 @@ func (m Model) pinScopeOf(image string) pinScope {
 	return pinGlobal
 }
 
-// cycleSideValue changes the focused field by delta. It is the only way the
-// sidebar writes anything. The command it returns is the work a changed value
-// costs — re-checking one image — and is nil for the fields that cost nothing.
-func (m *Model) cycleSideValue(delta int) tea.Cmd {
-	r := m.currentRow()
-	if r == nil {
-		return nil
-	}
-	// The sidebar cursor stays where it was as the list moves under it, so it can
-	// be sitting on a field this row does not have. A field nobody can see is not
-	// one a keypress may write.
-	if !m.fieldVisible(m.sideField) {
-		return nil
-	}
-
-	switch m.sideField {
-	case fieldTarget:
-		m.cycleRowTarget(delta)
-	case fieldVersioning:
-		return m.cycleVersioning(r, delta)
-	case fieldCap:
-		m.cycleCap(r, delta)
-	case fieldScope:
-		m.cycleScope(r, delta)
-	}
-	return nil
-}
-
-// cycleVersioning steps the scheme this image's tags are read under, writes it
-// immediately the way the cap is written, and asks for the one image to be
-// checked again. Re-checking is the whole point: a scheme that changes nothing
-// on screen looks exactly like a setting that does not work.
-func (m *Model) cycleVersioning(r *Row, delta int) tea.Cmd {
-	image := r.Update.ImageName
-
-	cur := 0
-	for i, c := range versioningChoices {
-		if c == m.versioningFor(image) {
-			cur = i
-			break
-		}
-	}
-	next := versioningChoices[((cur+delta)%len(versioningChoices)+len(versioningChoices))%len(versioningChoices)]
-
-	// A scheme already recorded lives in one scope; a new one goes to the project
-	// file, which is the narrower of the two and the easier to undo.
-	scope := pinProject
-	if m.versioningFor(image) != "" {
-		scope = m.versioningScopeOf(image)
-	}
-
-	// Cleared from both files before being written, so a scheme can never end up
-	// in two of them and the field cannot say which one it shows.
-	for _, s := range scopeChoices {
-		if err := m.setVersioning(s, image, ""); err != nil {
-			m.setStatus(StatusError, fmt.Sprintf("could not update %s: %v", image, err))
-			return nil
-		}
-	}
-	if next != "" {
-		if err := m.setVersioning(scope, image, next); err != nil {
-			m.setStatus(StatusError, fmt.Sprintf("could not save %s: %v", image, err))
-			return nil
-		}
-	}
-
-	m.recordVersioning(scope, image, next)
-
-	label := string(next)
-	if next == "" {
-		label = "the default (" + string(m.defaultVersioning()) + ")"
-	}
-	m.setStatus(StatusInfo, fmt.Sprintf("reading %s as %s…", image, label))
-
-	return recheckImage(m.opts, *r)
-}
-
-// versioningScopeOf reports which scope holds the scheme for an image, so the
-// next write goes back to the file the value came from. Project wins, the same
-// way it wins when the two layers are merged.
-func (m Model) versioningScopeOf(image string) pinScope {
-	if m.versioningInScope(pinProject, image) != "" {
-		return pinProject
-	}
-	return pinGlobal
-}
-
-// cycleCap steps the ceiling and writes it immediately, so what the field shows
-// is what is on disk, with no unsaved state to lose.
-func (m *Model) cycleCap(r *Row, delta int) {
-	image := r.Update.ImageName
-
-	choices := m.capChoicesFor(image)
-	cur := 0
-	for i, c := range choices {
-		if c == r.Pin {
-			cur = i
-			break
-		}
-	}
-	next := choices[((cur+delta)%len(choices)+len(choices))%len(choices)]
-
-	// A cap already recorded lives in one scope; a new one goes to the project
-	// file, which is the narrower of the two and the easier to undo.
-	scope := pinProject
-	if r.Pin != "" {
-		scope = m.pinScopeOf(image)
-	}
-
-	if !m.writeCapValue(scope, image, next) {
-		return
-	}
-
-	if next == "" {
-		m.setStatus(StatusSuccess, fmt.Sprintf("%s no longer capped", image))
-		return
-	}
-	m.setStatus(StatusSuccess, fmt.Sprintf("%s capped at %s (%s)", image, next, scopeLabel(scope)))
-}
-
-// cycleScope moves an existing cap between the two files. There is nothing to
-// move when no cap is set, and the field is not shown then either.
-func (m *Model) cycleScope(r *Row, delta int) {
-	if r.Pin == "" {
-		return
-	}
-
-	image := r.Update.ImageName
-	from := m.pinScopeOf(image)
-
-	cur := 0
-	for i, s := range scopeChoices {
-		if s == from {
-			cur = i
-			break
-		}
-	}
-	to := scopeChoices[((cur+delta)%len(scopeChoices)+len(scopeChoices))%len(scopeChoices)]
-	if to == from {
-		return
-	}
-
-	// Cleared from the old file before being written to the new one, or the image
-	// ends up capped in both and the field cannot say which it shows.
-	if err := m.setCap(from, image, ""); err != nil {
-		m.setStatus(StatusError, fmt.Sprintf("could not update %s: %v", image, err))
-		return
-	}
-	if !m.writeCapValue(to, image, r.Pin) {
-		return
-	}
-	m.setStatus(StatusSuccess, fmt.Sprintf("%s capped at %s (%s)", image, r.Pin, scopeLabel(to)))
-}
-
-// writeCapValue records level in scope — clearing every scope first, so a cap
-// can never end up in two files — and reports whether it got that far. A failed
-// write leaves the rows alone: the sidebar must not show a cap that is not on
-// disk.
-func (m *Model) writeCapValue(scope pinScope, image string, level config.Level) bool {
-	if level == "" {
-		for _, s := range scopeChoices {
-			if err := m.setCap(s, image, ""); err != nil {
-				m.setStatus(StatusError, fmt.Sprintf("could not update %s: %v", image, err))
-				return false
-			}
-		}
-		m.applyPin(image, "", scope)
-		return true
-	}
-
-	if err := m.setCap(scope, image, level); err != nil {
-		m.setStatus(StatusError, fmt.Sprintf("could not save %s: %v", image, err))
-		return false
-	}
-	m.applyPin(image, level, scope)
-	return true
-}
-
 func scopeLabel(s pinScope) string {
 	if s == pinGlobal {
 		return "global"
 	}
 	return "project"
-}
-
-// applyPin records the new cap in the in-memory layers and restamps the rows, so
-// marker and field agree with the file without re-reading it.
-func (m *Model) applyPin(image string, level config.Level, scope pinScope) {
-	for s := range m.pins {
-		cfg := m.pins[s]
-		if cfg.Images != nil {
-			delete(cfg.Images, image)
-		}
-		m.pins[s] = cfg
-	}
-
-	if level != "" {
-		cfg := m.pins[scope]
-		if cfg.Images == nil {
-			cfg.Images = map[string]config.ImagePolicy{}
-		}
-		cfg.Images[image] = config.ImagePolicy{Max: level}
-		m.pins[scope] = cfg
-	}
-
-	m.refreshPins()
 }
 
 // shortPath trims a compose file path to its last two segments — the directory

@@ -4,10 +4,11 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"github.com/p-arndt/compose-check-updates/internal/check"
+	"github.com/p-arndt/compose-check-updates/internal/policy"
 	"strings"
 	"testing"
 
-	"github.com/p-arndt/compose-check-updates/internal"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -61,7 +62,7 @@ func TestJSONLUpdate(t *testing.T) {
 	var buf bytes.Buffer
 	w := New(FormatJSONL, &buf)
 
-	u := internal.UpdateInfo{
+	u := check.Update{
 		FilePath:      "stacks/web/compose.yaml",
 		Services:      []string{"proxy", "proxy-internal"},
 		ImageName:     "traefik",
@@ -100,7 +101,7 @@ func TestJSONLDigestUpdate(t *testing.T) {
 	var buf bytes.Buffer
 	w := New(FormatJSONL, &buf)
 
-	w.Update(internal.UpdateInfo{
+	w.Update(check.Update{
 		ImageName:     "ghcr.io/vert-sh/vert",
 		CurrentTag:    "latest",
 		LatestTag:     "latest",
@@ -121,7 +122,7 @@ func TestJSONLUnchangedDigestIsNotReportedAsLatest(t *testing.T) {
 	var buf bytes.Buffer
 	w := New(FormatJSONL, &buf)
 
-	w.Update(internal.UpdateInfo{
+	w.Update(check.Update{
 		ImageName:     "nginx",
 		CurrentTag:    "1.2.3",
 		LatestTag:     "1.2.4",
@@ -139,9 +140,9 @@ func TestJSONLAppliedAndFailedApply(t *testing.T) {
 	var buf bytes.Buffer
 	w := New(FormatJSONL, &buf)
 
-	w.Update(internal.UpdateInfo{ImageName: "redis"}, "minor", Result{ApplyRequested: true, Applied: true})
-	w.Update(internal.UpdateInfo{ImageName: "postgres"}, "minor", Result{ApplyRequested: true})
-	w.Update(internal.UpdateInfo{ImageName: "caddy"}, "minor", Result{ApplyRequested: true, Applied: true, RestartRequested: true, Restarted: true})
+	w.Update(check.Update{ImageName: "redis"}, "minor", Result{ApplyRequested: true, Applied: true})
+	w.Update(check.Update{ImageName: "postgres"}, "minor", Result{ApplyRequested: true})
+	w.Update(check.Update{ImageName: "caddy"}, "minor", Result{ApplyRequested: true, Applied: true, RestartRequested: true, Restarted: true})
 	require.NoError(t, w.Close())
 
 	recs := decode(t, &buf)
@@ -172,7 +173,7 @@ func TestJSONLIsOneObjectPerLine(t *testing.T) {
 	var buf bytes.Buffer
 	w := New(FormatJSONL, &buf)
 
-	w.Update(internal.UpdateInfo{ImageName: "redis", CurrentTag: "7.0", LatestTag: "7.2"}, "minor", Result{})
+	w.Update(check.Update{ImageName: "redis", CurrentTag: "7.0", LatestTag: "7.2"}, "minor", Result{})
 	w.Error("compose.yaml", errors.New("boom"))
 	require.NoError(t, w.Close())
 
@@ -191,7 +192,7 @@ func TestPrettyWriterWritesNothingToTheStream(t *testing.T) {
 	var buf bytes.Buffer
 	w := New(FormatPretty, &buf)
 
-	w.Update(internal.UpdateInfo{ImageName: "redis"}, "minor", Result{})
+	w.Update(check.Update{ImageName: "redis"}, "minor", Result{})
 	require.NoError(t, w.Close())
 
 	assert.Empty(t, buf.String())
@@ -205,7 +206,7 @@ func TestJSONLDockerfileUpdate(t *testing.T) {
 	var buf bytes.Buffer
 	w := New(FormatJSONL, &buf)
 
-	w.Update(internal.UpdateInfo{
+	w.Update(check.Update{
 		FilePath:      "stacks/keycloak/Dockerfile",
 		ComposePath:   "stacks/keycloak/compose.yaml",
 		Services:      []string{"keycloak"},
@@ -215,7 +216,7 @@ func TestJSONLDockerfileUpdate(t *testing.T) {
 		LatestTag:     "26.7.2",
 		MinorTag:      "26.7.2",
 	}, "minor", Result{})
-	w.Update(internal.UpdateInfo{
+	w.Update(check.Update{
 		FilePath:      "stacks/keycloak/compose.yaml",
 		Services:      []string{"postgres"},
 		ImageName:     "library/postgres",
@@ -240,23 +241,23 @@ func TestJSONLUnreadable(t *testing.T) {
 	var buf bytes.Buffer
 	w := New(FormatJSONL, &buf)
 
-	u := internal.UpdateInfo{
+	u := check.Update{
 		ImageName:     "library/myimage",
 		FullImageName: "library/myimage:sha-e1c83ba",
 		FilePath:      "/tmp/compose.yaml",
 		CurrentTag:    "sha-e1c83ba",
 	}
-	u.MarkUnreadable(internal.ReasonNoTagForDigest, "none of this image's tags matches its newest digest")
+	u.MarkUnreadable(check.ReasonNoTagForDigest, "none of this image's tags matches its newest digest")
 
-	w.Update(u, u.UpdateLevel(), Result{})
+	w.Update(u, u.Level(), Result{})
 	require.NoError(t, w.Close())
 
 	recs := decode(t, &buf)
 	require.Len(t, recs, 1)
 
 	assert.Equal(t, "unreadable", recs[0]["kind"])
-	assert.Equal(t, internal.ReasonNoTagForDigest, recs[0]["reason"])
-	assert.Equal(t, internal.LevelUnreadable, recs[0]["level"])
+	assert.Equal(t, check.ReasonNoTagForDigest, recs[0]["reason"])
+	assert.Equal(t, policy.LevelUnreadable.String(), recs[0]["level"])
 	assert.Contains(t, recs[0]["message"], "newest digest")
 	// There is no target and no new digest, so neither key may be there to be
 	// mistaken for one.

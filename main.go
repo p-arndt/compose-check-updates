@@ -2,218 +2,158 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 
-	"github.com/p-arndt/compose-check-updates/internal"
 	"github.com/p-arndt/compose-check-updates/internal/buildinfo"
+	"github.com/p-arndt/compose-check-updates/internal/cli"
 	"github.com/p-arndt/compose-check-updates/internal/config"
 	"github.com/p-arndt/compose-check-updates/internal/logger"
 	"github.com/p-arndt/compose-check-updates/internal/modes"
 	"github.com/p-arndt/compose-check-updates/internal/report"
 	"github.com/p-arndt/compose-check-updates/internal/scanner"
 	"github.com/p-arndt/compose-check-updates/internal/tui"
-	"github.com/p-arndt/compose-check-updates/internal/update"
+	"github.com/p-arndt/compose-check-updates/internal/versioning"
+	"github.com/p-arndt/selfupdate"
+	"github.com/p-arndt/selfupdate/layout"
 )
 
-func main() {
-	// An update renames the running binary aside to "<exe>.old" — on Windows a
-	// running executable cannot be replaced, only moved — so the leftover can
-	// first be deleted by a later process, i.e. this one, before anything else.
-	update.CleanupLeftovers()
-
-	// Set colorized logger. It starts on stderr, because until the output format
-	// is settled every line it carries is a diagnostic about ccu itself — a
-	// broken config, an unreadable flag — and a `ccu check | jq` must not be fed
-	// one of those. Only the pretty report, which is written through slog, moves
-	// it to stdout below.
-	setLogOutput(os.Stderr)
-
-	// Version metadata comes from internal/buildinfo, stamped at build time from
-	// the repo-root VERSION file via -ldflags; unstamped dev builds report "dev".
-	ccuFlags := internal.Parse(buildinfo.String())
-
-	// Both are terminal actions in their own right: the user asked about ccu
-	// itself, not about their Compose files, so no scan may start behind them.
-	if ccuFlags.SelfUpdate || ccuFlags.CheckUpdate {
-		if err := update.Run(os.Stdout, buildinfo.Version, ccuFlags.CheckUpdate); err != nil {
-			slog.Error("Error updating ccu", "error", err)
-			os.Exit(exitError)
-		}
-		return
-	}
-
-	// Read before anything is scanned, and before the `config` command reports,
-	// so both see exactly the same resolution. A broken config file stops the run
-	// rather than being skipped: silently scanning with settings the user thinks
-	// are in effect is the one outcome worth failing over.
-	cfg, err := config.Load(ccuFlags.Directory, ccuFlags.Config)
-	if err != nil {
-		slog.Error("Error reading config", "error", err)
-		os.Exit(exitError)
-	}
-
-	// The command line adds to the config rather than replacing it: a directory
-	// written down once is meant to stay excluded, and -exclude is how a run adds
-	// one more on top.
-	effective := config.Config{
-		Exclude:      config.Union(cfg.Exclude, ccuFlags.Exclude),
-		FloatingTags: cfg.FloatingTags,
-		Images:       cfg.Images,
-		PinFloating:  cfg.PinFloating,
-		Dockerfiles:  cfg.Dockerfiles,
-		Versioning:   cfg.Versioning,
-	}
-	// -versioning replaces the *default* scheme, not the per-image entries: a
-	// config line that names an image is the more specific statement, and a flag
-	// meant as a quick try should not silently undo it. Images keeps those
-	// entries, and internal.ResolveVersioning consults them first.
-	if ccuFlags.Versioning != "" {
-		scheme := config.Versioning(ccuFlags.Versioning)
-		// The stricter check of the two: a default has no image to take a pattern
-		// from, so `regex` is a scheme only an entry naming an image may ask for.
-		if err := config.ValidateDefaultVersioning(scheme); err != nil {
-			slog.Error("Error reading flags", "error", err)
-			os.Exit(exitError)
-		}
-		effective.Versioning = scheme
-	}
-	// A flag that was not spelled out says nothing about what the config decided,
-	// so only one that was actually passed overrides it — in either direction:
-	// -pin-floating=false is how a single run opts out of `pin_floating: true`.
-	if ccuFlags.PinFloatingSet {
-		on := ccuFlags.PinFloating
-		effective.PinFloating = &on
-	}
-	if ccuFlags.DockerfilesSet {
-		on := ccuFlags.Dockerfiles
-		effective.Dockerfiles = &on
-	}
-
-	// A report about ccu's own settings, like the version and update commands
-	// above: it answers a question about the tool, so no scan follows it.
-	if ccuFlags.ShowConfig {
-		// -image asks the narrower question. The flag's own scheme is handed over
-		// separately rather than read back off effective: it was folded in above,
-		// and from the merged value a scheme named on the command line and one
-		// written in a file are indistinguishable.
-		if ccuFlags.Image != "" {
-			config.Explain(os.Stdout, cfg, effective, ccuFlags.Image, ccuFlags.Versioning)
-			return
-		}
-		config.Show(os.Stdout, cfg, effective)
-		return
-	}
-
-	opts := scanner.Options{
-		Root:    ccuFlags.Directory,
-		Exclude: effective.Exclude,
-		Caps:    effective.Caps(),
-		Major:   ccuFlags.Major,
-		Minor:   ccuFlags.Minor,
-		Patch:   ccuFlags.Patch,
-
-		Versionings:        effective.Versionings(),
-		DefaultVersioning:  effective.DefaultVersioning(),
-		VersioningPatterns: effective.VersioningPatterns(),
-		ReferenceTags:      effective.ReferenceTags(),
-		FloatingTags:       effective.ImageFloatingTags(),
-		GlobalFloatingTags: effective.FloatingTags,
-
-		PinFloating: effective.PinFloatingEnabled(),
-		Dockerfiles: effective.DockerfilesEnabled(),
-	}
-
-	format, err := report.ParseFormat(ccuFlags.Format)
-	if err != nil {
-		slog.Error("Error reading flags", "error", err)
-		os.Exit(exitError)
-	}
-
-	// The TUI is what a bare `ccu` means; `ccu check` is the way to ask for the
-	// report instead. A piped or redirected stdout has no frame to draw on, so
-	// rather than fail at something the user never spelled out, the run falls
-	// back to the report — that is what `ccu | tee`, a CI job or a cron entry
-	// wants anyway.
-	stdoutIsTerminal := isTerminal(os.Stdout)
-	if !ccuFlags.Check && !stdoutIsTerminal {
-		slog.Warn("No terminal on stdout, running the non-interactive report instead of the TUI; use `ccu check` to select it explicitly")
-		ccuFlags.Check = true
-	}
-
-	if !ccuFlags.Check {
-		// The TUI narrows the list with its own in-UI level filter, so it needs every
-		// level resolved up front — re-scanning whenever the filter changes would mean
-		// hitting the registries again for versions we already looked up.
-		opts.Major, opts.Minor, opts.Patch = true, true, true
-		// The floating tags are deliberately *not* forced on in the same way. Their
-		// digests cost a request each and pin a reference the user left mutable on
-		// purpose, so a run that was not asked to pin does not pay for them; the
-		// bar's "floating" stop fetches them if and when it is pressed.
-
-		if err := tui.Run(opts, cfg.Project, cfg.Global); err != nil {
-			slog.Error("Error running interactive mode", "error", err)
-			os.Exit(exitError)
-		}
-		return
-	}
-
-	// Said once, before the report itself, so an existing script keeps working
-	// and still gets told which spelling replaced it.
-	if ccuFlags.LegacyPlain {
-		slog.Warn("Report-only flags now belong to the `check` subcommand; use `ccu check ...` — the bare form still works for this release")
-	}
-
-	// Resolved only now: -format speaks about the report, and until the fallback
-	// above has had its say it is not settled that there is one.
-	format = format.Resolve(stdoutIsTerminal)
-
-	// A warning from deep inside a registry lookup stays on stderr, where it
-	// cannot appear in the machine-readable stream as a line no JSON parser can
-	// read.
-	// The pretty report is written through slog, so for it — and only for it —
-	// the logger owns stdout.
-	if format == report.FormatPretty {
-		setLogOutput(os.Stdout)
-	}
-
-	// The TUI installs its own quit handling, so only the non-interactive path
-	// has to translate a Ctrl-C into a cancelled scan.
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-
-	out := report.New(format, os.Stdout)
-
-	outcome, err := modes.Default(ctx, opts, ccuFlags, out)
-	if err != nil {
-		slog.Error("Error checking for updates", "error", err)
-		os.Exit(exitError)
-	}
-
-	// Only the non-interactive path gets the notice. The TUI swaps out the slog
-	// handler and owns the alt screen, so a stray line written around its
-	// teardown would land on top of the rendered frame; and -self-update /
-	// -check-update returned long before here, where nagging about a version the
-	// user just asked about would be pointless. Stderr rather than stdout, so
-	// piping ccu's report somewhere keeps it machine-readable.
-	update.NotifyIfAvailable(os.Stderr, buildinfo.Version)
-
-	os.Exit(exitCode(outcome))
-}
-
 // Exit codes, so a CI step can gate on the result without reading the report
-// back. A run that only reports is "successful" when there was nothing to
-// report: anything else is what the caller wanted to be told about.
+// back. A failure outranks a pending update: the run could not see everything,
+// so "1" would understate it.
 const (
 	exitUpToDate = 0
 	exitOutdated = 1
 	exitError    = 2
 )
 
-// exitCode maps a finished run onto those codes. A failure outranks a pending
-// update: the run could not see everything, so "1" would understate it.
+func main() {
+	// An update renames the running binary aside to "<exe>.old" — on Windows a
+	// running executable cannot be replaced, only moved — so the leftover is
+	// deleted by a later process, i.e. this one, before anything else.
+	selfupdate.CleanupLeftovers()
+
+	// Until the output format is settled, every line the logger carries is a
+	// diagnostic about ccu itself, and `ccu check | jq` must not be fed one. Only
+	// the pretty report, written through slog, moves it to stdout.
+	setLogOutput(os.Stderr)
+
+	flags := cli.Parse(buildinfo.String())
+
+	updater, err := newUpdater()
+	if err != nil {
+		slog.Error(err.Error())
+		os.Exit(exitError)
+	}
+
+	code, err := run(flags, updater)
+	if err != nil {
+		slog.Error(err.Error())
+		os.Exit(exitError)
+	}
+	os.Exit(code)
+}
+
+func run(flags cli.Flags, updater *selfupdate.Updater) (int, error) {
+	// A terminal action in its own right: the user asked about ccu itself, not
+	// about their compose files, so no scan may start behind it.
+	if flags.SelfUpdate || flags.CheckUpdate {
+		if err := updater.Run(context.Background(), os.Stdout, buildinfo.Version, flags.CheckUpdate); err != nil {
+			return 0, fmt.Errorf("updating ccu: %w", err)
+		}
+		return exitUpToDate, nil
+	}
+
+	// Read before anything is scanned, and before `ccu config` reports, so both
+	// see the same resolution. A broken config file stops the run: scanning with
+	// settings the user only thinks are in effect is worth failing over.
+	cfg, err := config.Load(flags.Directory, flags.Config)
+	if err != nil {
+		return 0, fmt.Errorf("reading config: %w", err)
+	}
+
+	effective, err := effectiveConfig(cfg.Config, flags)
+	if err != nil {
+		return 0, fmt.Errorf("reading flags: %w", err)
+	}
+
+	// A report about ccu's own settings, like the commands above: it answers a
+	// question about the tool, so no scan follows it.
+	if flags.ShowConfig {
+		// The flag's own scheme is handed over separately rather than read back
+		// off effective, where a scheme named on the command line and one written
+		// in a file are indistinguishable.
+		if flags.Image != "" {
+			config.Explain(os.Stdout, cfg, effective, flags.Image, flags.Versioning)
+		} else {
+			config.Show(os.Stdout, cfg, effective)
+		}
+		return exitUpToDate, nil
+	}
+
+	format, err := report.ParseFormat(flags.Format)
+	if err != nil {
+		return 0, fmt.Errorf("reading flags: %w", err)
+	}
+
+	// The TUI is what a bare `ccu` means; `ccu check` asks for the report
+	// instead. A piped stdout has no frame to draw on, so the run falls back to
+	// the report — what `ccu | tee`, CI or a cron entry wants anyway.
+	onTerminal := isTerminal(os.Stdout)
+	if !flags.Check && !onTerminal {
+		slog.Warn("No terminal on stdout, running the non-interactive report instead of the TUI; use `ccu check` to select it explicitly")
+		flags.Check = true
+	}
+
+	opts := scanOptions(flags, effective)
+
+	if !flags.Check {
+		if err := tui.Run(opts, cfg.Project, cfg.Global); err != nil {
+			return 0, fmt.Errorf("running interactive mode: %w", err)
+		}
+		return exitUpToDate, nil
+	}
+
+	return runReport(flags, updater, opts, format.Resolve(onTerminal))
+}
+
+func runReport(flags cli.Flags, updater *selfupdate.Updater, opts scanner.Options, format report.Format) (int, error) {
+	// Said once, before the report itself, so an existing script keeps working
+	// and still gets told which spelling replaced it.
+	if flags.LegacyPlain {
+		slog.Warn("Report-only flags now belong to the `check` subcommand; use `ccu check ...` — the bare form still works for this release")
+	}
+
+	// The pretty report is written through slog, so for it — and only for it —
+	// the logger owns stdout. A warning from deep inside a registry lookup stays
+	// on stderr, where it cannot appear in the machine-readable stream.
+	if format == report.FormatPretty {
+		setLogOutput(os.Stdout)
+	}
+
+	// The TUI installs its own quit handling, so only this path has to translate
+	// a Ctrl-C into a cancelled scan.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	outcome, err := modes.Default(ctx, opts, flags, report.New(format, os.Stdout))
+	if err != nil {
+		return 0, fmt.Errorf("checking for updates: %w", err)
+	}
+
+	// Only the non-interactive path gets the notice: the TUI owns the alt screen,
+	// and -self-update returned long before here. Stderr rather than stdout, so
+	// piping ccu's report somewhere keeps it machine-readable.
+	updater.NotifyIfAvailable(os.Stderr, buildinfo.Version)
+
+	return exitCode(outcome), nil
+}
+
+// exitCode maps a finished run onto the codes above.
 func exitCode(o modes.Outcome) int {
 	switch {
 	case o.Failed:
@@ -225,13 +165,84 @@ func exitCode(o modes.Outcome) int {
 	}
 }
 
-// setLogOutput points the default logger at f, colourised as before.
+// effectiveConfig layers the command line over the config files. The command
+// line adds to the config rather than replacing it: a directory written down
+// once is meant to stay excluded, and -exclude adds one more on top.
+func effectiveConfig(cfg config.Config, flags cli.Flags) (config.Config, error) {
+	cfg.Exclude = config.Union(cfg.Exclude, flags.Exclude)
+
+	// -versioning replaces the *default* scheme, not the per-image entries: a
+	// config line naming an image is the more specific statement, and a flag
+	// meant as a quick try should not silently undo it.
+	if flags.Versioning != "" {
+		// The stricter of the two checks: a default has no image to take a pattern
+		// from, so `regex` is a scheme only an entry naming an image may ask for.
+		if err := versioning.ValidateDefault(flags.Versioning); err != nil {
+			return config.Config{}, err
+		}
+		cfg.Versioning = flags.Versioning
+	}
+
+	// A flag that was not spelled out says nothing about what the config decided,
+	// so only one actually passed overrides it — in either direction:
+	// -pin-floating=false is how a single run opts out of `pin_floating: true`.
+	if flags.PinFloatingSet {
+		cfg.PinFloating = &flags.PinFloating
+	}
+	if flags.DockerfilesSet {
+		cfg.Dockerfiles = &flags.Dockerfiles
+	}
+
+	return cfg, nil
+}
+
+func scanOptions(flags cli.Flags, effective config.Config) scanner.Options {
+	opts := scanner.Options{
+		Root:        flags.Directory,
+		Exclude:     effective.Exclude,
+		Major:       flags.Major,
+		Minor:       flags.Minor,
+		Patch:       flags.Patch,
+		Policies:    effective.Policies(),
+		Dockerfiles: effective.DockerfilesEnabled(),
+	}
+
+	// The TUI narrows the list with its own level filter, so it needs every level
+	// resolved up front, or every filter change would hit the registries again.
+	// Floating tags are not forced on the same way: their digests cost a request
+	// each, so the bar's "floating" stop fetches them if it is pressed.
+	if !flags.Check {
+		opts.Major, opts.Minor, opts.Patch = true, true, true
+	}
+
+	return opts
+}
+
+// newUpdater describes ccu's releases to the self-updater: raw binaries named
+// after the tool rather than the repository, and the checksums file the release
+// workflow writes beside them.
+func newUpdater() (*selfupdate.Updater, error) {
+	return selfupdate.New(selfupdate.Config{
+		Owner:   "p-arndt",
+		Repo:    "compose-check-updates",
+		AppName: "ccu",
+		Layout:  &layout.RawBinary{},
+		// Spelled out because the default would name `ccu update`, which is not a
+		// command ccu has.
+		UpdateCmd: "ccu self-update",
+		// The library's own client stops at 30s, which is the tighter of the two
+		// limits and would abort a slow download the 60s deadline still allows.
+		HTTP: &http.Client{Timeout: selfupdate.DefaultUpdateTimeout},
+	})
+}
+
+// setLogOutput points the default logger at f, colourised.
 func setLogOutput(f *os.File) {
 	slog.SetDefault(slog.New(logger.NewCustomHandler(slog.LevelInfo, f)))
 }
 
-// isTerminal reports whether f is attached to a terminal, used to tell a piped
-// stdout apart from any other reason the TUI refused to start.
+// isTerminal tells a piped stdout apart from any other reason the TUI refused to
+// start.
 func isTerminal(f *os.File) bool {
 	info, err := f.Stat()
 	if err != nil {

@@ -1,5 +1,3 @@
-github.com/Masterminds/semver/v3 v3.5.0 h1:kQceYJfbupGfZOKZQg0kou0DgAKhzDg2NZPAwZ/2OOE=
-github.com/Masterminds/semver/v3 v3.5.0/go.mod h1:4V+yj/TJE1HU9XfppCwVMZq3I84lprf4nC11bSS5beM=
 github.com/aymanbagabas/go-osc52/v2 v2.0.1 h1:HwpRHbFMcZLEVr42D4p7XBqjyuxQH5SMiErDT4WkJ2k=
 github.com/aymanbagabas/go-osc52/v2 v2.0.1/go.mod h1:uYgXzlJ7ZpABp8OJ+exZzJJhRNQ2ASbcXHWsFqH8hp8=
 github.com/charmbracelet/bubbles v1.0.0 h1:12J8/ak/uCZEMQ6KU7pcfwceyjLlWsDLAxB5fXonfvc=
@@ -50,6 +48,8 @@ github.com/olareg/olareg v0.2.1 h1:RPHGIaqlVWPbKAsOYUj7e2WfEEW5M7F8I6hKMrwd4jU=
 github.com/olareg/olareg v0.2.1/go.mod h1:dhr8QetC7U7jJ2m93oxDhEEOKCRbPgOK1oGyKfB4QNo=
 github.com/opencontainers/go-digest v1.0.0 h1:apOUWs51W5PlhuyGyz9FCeeBIOUDA/6nW8Oi/yOhh5U=
 github.com/opencontainers/go-digest v1.0.0/go.mod h1:0JzlMkj0TRzQZfJkVvzbP0HBR3IKzErnv2BNG4W4MAM=
+github.com/p-arndt/selfupdate v0.2.0 h1:m5rC+FD/9uvB7LTjVhst5FdaHRsfLNtJ7zyTT466GSQ=
+github.com/p-arndt/selfupdate v0.2.0/go.mod h1:BVxg6O8zqmneJptlLf0JA4FGveRE4PwNCkjLg9bS4Ik=
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
 github.com/regclient/regclient v0.11.5 h1:OHRsXO0F3qHGfa4HEUv+EkMH9NXNcCTBKjNzyC/UhIA=

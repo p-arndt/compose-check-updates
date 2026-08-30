@@ -7,11 +7,11 @@ package report
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/p-arndt/compose-check-updates/internal/check"
+	"github.com/p-arndt/compose-check-updates/internal/policy"
 	"io"
 	"log/slog"
 	"strings"
-
-	"github.com/p-arndt/compose-check-updates/internal"
 )
 
 // Format is how a run writes its findings.
@@ -67,7 +67,7 @@ type Result struct {
 // belong on stderr in every format.
 type Writer interface {
 	// Update reports one image that can move, along with what was done about it.
-	Update(u internal.UpdateInfo, level string, res Result)
+	Update(u check.Update, level policy.Level, res Result)
 	// Error reports a failure that did not stop the scan.
 	Error(file string, err error)
 	// Close flushes anything held back. Nil for the streaming writers here, but
@@ -127,7 +127,7 @@ type record struct {
 
 type jsonlWriter struct{ enc *json.Encoder }
 
-func (w *jsonlWriter) Update(u internal.UpdateInfo, level string, res Result) {
+func (w *jsonlWriter) Update(u check.Update, level policy.Level, res Result) {
 	// A kind of its own rather than an update with an odd level: a consumer
 	// counting "update" lines is being told what to change, and an image nobody
 	// could read gives it nothing to change.
@@ -140,7 +140,7 @@ func (w *jsonlWriter) Update(u internal.UpdateInfo, level string, res Result) {
 			File:        u.FilePath,
 			ComposeFile: u.ComposePath,
 			Current:     u.CurrentTag,
-			Level:       level,
+			Level:       level.String(),
 			Reason:      u.UnreadableReason,
 			Message:     u.UnreadableMessage,
 		})
@@ -156,9 +156,9 @@ func (w *jsonlWriter) Update(u internal.UpdateInfo, level string, res Result) {
 		ComposeFile:   u.ComposePath,
 		Current:       u.CurrentTag,
 		Latest:        u.LatestTag,
-		Level:         level,
+		Level:         level.String(),
 		CurrentDigest: u.CurrentDigest,
-		Cap:           u.Cap,
+		Cap:           u.Cap.String(),
 	}
 	// Only a digest that actually differs describes the update; repeating the
 	// current one under a "latest" key would claim a change that is not there.
@@ -167,8 +167,8 @@ func (w *jsonlWriter) Update(u internal.UpdateInfo, level string, res Result) {
 	}
 
 	targets := map[string]string{}
-	for _, name := range u.AvailableTargets() {
-		targets[name] = u.TagForTarget(name)
+	for _, level := range u.AvailableTargets() {
+		targets[level.String()] = u.TagForTarget(level)
 	}
 	if len(targets) > 0 {
 		rec.Targets = targets
@@ -196,7 +196,7 @@ func (w *jsonlWriter) Close() error { return nil }
 // through slog, whose handler does the alignment and the colouring.
 type prettyWriter struct{}
 
-func (prettyWriter) Update(u internal.UpdateInfo, level string, res Result) {
+func (prettyWriter) Update(u check.Update, level policy.Level, res Result) {
 	// A warning rather than an info line, and one that carries its own way out:
 	// this is the only place the user hears that an image is being looked at and
 	// understood by nothing.

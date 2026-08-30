@@ -6,13 +6,13 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/p-arndt/compose-check-updates/internal/check"
+	"github.com/p-arndt/compose-check-updates/internal/policy"
+
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/p-arndt/compose-check-updates/internal"
-	"github.com/p-arndt/compose-check-updates/internal/config"
 )
 
 // ansiEscape strips styling so assertions can talk about what the user sees.
@@ -63,7 +63,7 @@ func TestBadgeHasStableVisibleWidth(t *testing.T) {
 	withColor(t)
 	th := DefaultTheme()
 
-	for _, level := range []string{"major", "minor", "patch", "digest", "", "nonsense-level"} {
+	for _, level := range []policy.Level{"major", "minor", "patch", "digest", "", "nonsense-level"} {
 		assert.Equal(t, badgeWidth, lipgloss.Width(th.Badge(level)), "level %q", level)
 		assert.Equal(t, badgeWidth, len([]rune(plain(th.Badge(level)))), "level %q", level)
 	}
@@ -72,7 +72,7 @@ func TestBadgeHasStableVisibleWidth(t *testing.T) {
 
 func sampleRow() Row {
 	return Row{
-		Update: internal.UpdateInfo{
+		Update: check.Update{
 			FilePath:      "tests/docker-compose.yml",
 			RawLine:       "    image: nginx:1.2.3",
 			ImageName:     "nginx",
@@ -105,7 +105,7 @@ func TestRowLineRespectsWidth(t *testing.T) {
 	var m Model
 	m.retarget(&noTarget, TargetPatch)
 	pinned := targetRow()
-	pinned.Pin = config.LevelMinor
+	pinned.Pin = policy.LevelMinor
 	rows = append(rows, applied, failed, targetRow(), noTarget, pinned)
 
 	widths := []int{-5, 0, 1, 2, 5, 20, 21, 24, 30, 40, 60, 80, 120}
@@ -147,7 +147,7 @@ func TestRowLineContent(t *testing.T) {
 // feature exists for: traefik v2.9.3 with 2.9.4, 2.11.0 and 3.7.8 available.
 func targetRow() Row {
 	return Row{
-		Update: internal.UpdateInfo{
+		Update: check.Update{
 			FilePath:      "tests/docker-compose.yml",
 			RawLine:       "    image: traefik:v2.9.3",
 			ImageName:     "traefik",
@@ -303,7 +303,7 @@ func TestRowLineMarksAPinnedImage(t *testing.T) {
 	assert.NotContains(t, plain(th.RowLine(r, false, 120)), "pin",
 		"an image with no saved cap must carry no marker")
 
-	r.Pin = config.LevelMinor
+	r.Pin = policy.LevelMinor
 	out := plain(th.RowLine(r, false, 120))
 	assert.Contains(t, out, "[pin minor]")
 	// The marker sits beside the existing hints rather than replacing them.
@@ -316,7 +316,7 @@ func TestRowLineMarksAPinnedImage(t *testing.T) {
 	nt.Update.PatchTag, nt.Update.MinorTag = "", ""
 	var m Model
 	m.retarget(&nt, TargetPatch)
-	nt.Pin = config.LevelPatch
+	nt.Pin = policy.LevelPatch
 	assert.Contains(t, plain(th.RowLine(nt, false, 120)), "[pin patch]")
 }
 

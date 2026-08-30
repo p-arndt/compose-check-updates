@@ -4,21 +4,23 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/p-arndt/compose-check-updates/internal/check"
+	"github.com/p-arndt/compose-check-updates/internal/policy"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/p-arndt/compose-check-updates/internal"
 	"github.com/p-arndt/compose-check-updates/internal/scanner"
 )
 
 // pinEvent is a floating tag the scan offered a digest for: same tag either
 // side, the digest being the whole of the news.
 func pinEvent(path, image, tag, digest string) scanEventMsg {
-	ev := updateEvent(path, image, tag, tag, internal.LevelPin)
+	ev := updateEvent(path, image, tag, tag, policy.LevelPin)
 	u := &ev.ev.Update
 	u.LatestDigest = digest
 	u.PinsFloating = true
-	ev.ev.Level = u.UpdateLevel()
+	ev.ev.Level = u.Level()
 	return ev
 }
 
@@ -48,7 +50,7 @@ func TestPinRowsAreHiddenUntilAskedFor(t *testing.T) {
 
 // The setting the config and -pin-floating resolved to decides the first frame.
 func TestPinDisplayStartsFromTheSetting(t *testing.T) {
-	m := NewModel(scanner.Options{PinFloating: true})
+	m := NewModel(scanner.Options{Policies: policy.Set{PinFloating: true}})
 	assert.True(t, m.showFloating, "the scan was asked to pin, so the rows are listed")
 
 	assert.False(t, NewModel(scanner.Options{}).showFloating)
@@ -62,7 +64,7 @@ func TestPinRowShowsTheDigestItWouldWrite(t *testing.T) {
 	m = feed(t, m, pinEvent("a/compose.yml", "nginx", "latest", testDigest))
 
 	r := *rowFor(t, m, "nginx")
-	require.Equal(t, internal.LevelPin, r.Level)
+	require.Equal(t, policy.LevelPin, r.Level)
 
 	tail := rowTailPlain(r)
 	assert.Equal(t, "latest → @"+shortDigest(testDigest), tail)
@@ -73,9 +75,9 @@ func TestPinRowShowsTheDigestItWouldWrite(t *testing.T) {
 // a version bump at a glance.
 func TestPinLevelHasItsOwnColour(t *testing.T) {
 	theme := DefaultTheme()
-	assert.Equal(t, theme.Pin, theme.LevelColor(internal.LevelPin))
-	assert.NotEqual(t, theme.Digest, theme.LevelColor(internal.LevelPin))
-	assert.Contains(t, theme.Badge(internal.LevelPin), "PIN")
+	assert.Equal(t, theme.Pin, theme.LevelColor(policy.LevelPin))
+	assert.NotEqual(t, theme.Digest, theme.LevelColor(policy.LevelPin))
+	assert.Contains(t, theme.Badge(policy.LevelPin), "PIN")
 }
 
 // The bar's stop and the `p` key are the same setting, and the stop says which
@@ -104,7 +106,7 @@ func TestTargetKeysLeaveAPinAlone(t *testing.T) {
 	m = feed(t, m, keyMsg("t"), keyMsg("t"))
 
 	r := rowFor(t, m, "nginx")
-	assert.Equal(t, internal.LevelPin, r.Level)
+	assert.Equal(t, policy.LevelPin, r.Level)
 	assert.Equal(t, "latest", r.Update.LatestTag)
 	assert.Equal(t, testDigest, r.Update.LatestDigest)
 	assert.False(t, r.NoTarget, "a pin is applicable, whatever the target says")
@@ -184,7 +186,7 @@ func TestPinRowsIgnoreTheLevelFilter(t *testing.T) {
 // The detail column says what changes. For a pin that is the digest, so the tag
 // is stated once rather than as a "latest → latest" delta that reads as a no-op.
 func TestDetailPaneNamesThePinsTagInsteadOfADelta(t *testing.T) {
-	u := internal.UpdateInfo{
+	u := check.Update{
 		FullImageName: "nginx:latest",
 		ImageName:     "library/nginx",
 		CurrentTag:    "latest",
@@ -194,7 +196,7 @@ func TestDetailPaneNamesThePinsTagInsteadOfADelta(t *testing.T) {
 		FilePath:      "a/compose.yml",
 	}
 
-	out := DefaultTheme().Detail(u, internal.LevelPin, 80)
+	out := DefaultTheme().Detail(u, policy.LevelPin, 80)
 	assert.Contains(t, out, "tag")
 	assert.NotContains(t, out, "latest → latest")
 	assert.Contains(t, out, shortDigest(testDigest))

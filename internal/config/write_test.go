@@ -1,6 +1,7 @@
 package config
 
 import (
+	"github.com/p-arndt/compose-check-updates/internal/policy"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -50,7 +51,7 @@ exclude:
 `
 	path := writeConfig(t, t.TempDir(), original)
 
-	if err := SetImageMax(path, "library/traefik", LevelMinor); err != nil {
+	if err := SetImageMax(path, "library/traefik", policy.LevelMinor); err != nil {
 		t.Fatalf("SetImageMax: %v", err)
 	}
 
@@ -73,15 +74,15 @@ exclude:
 	if len(cfg.Exclude) != 2 || cfg.Exclude[0] != "node_modules" || cfg.Exclude[1] != "vendor" {
 		t.Errorf("exclude = %v, want [node_modules vendor]", cfg.Exclude)
 	}
-	if got := cfg.MaxLevel("library/traefik"); got != LevelMinor {
-		t.Errorf("MaxLevel = %q, want %q", got, LevelMinor)
+	if got := cfg.MaxLevel("library/traefik"); got != policy.LevelMinor {
+		t.Errorf("MaxLevel = %q, want %q", got, policy.LevelMinor)
 	}
 }
 
 func TestSetImageMaxCreatesFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "nested", "dir", "config.yaml")
 
-	if err := SetImageMax(path, "library/redis", LevelPatch); err != nil {
+	if err := SetImageMax(path, "library/redis", policy.LevelPatch); err != nil {
 		t.Fatalf("SetImageMax: %v", err)
 	}
 
@@ -98,8 +99,8 @@ func TestSetImageMaxCreatesFile(t *testing.T) {
 		}
 	}
 
-	if got := parseConfig(t, path).MaxLevel("library/redis"); got != LevelPatch {
-		t.Errorf("MaxLevel = %q, want %q", got, LevelPatch)
+	if got := parseConfig(t, path).MaxLevel("library/redis"); got != policy.LevelPatch {
+		t.Errorf("MaxLevel = %q, want %q", got, policy.LevelPatch)
 	}
 }
 
@@ -111,7 +112,7 @@ func TestSetImageMaxUpdatesInPlace(t *testing.T) {
     max: patch
 `)
 
-	if err := SetImageMax(path, "library/traefik", LevelMajor); err != nil {
+	if err := SetImageMax(path, "library/traefik", policy.LevelMajor); err != nil {
 		t.Fatalf("SetImageMax: %v", err)
 	}
 
@@ -124,11 +125,11 @@ func TestSetImageMaxUpdatesInPlace(t *testing.T) {
 	}
 
 	cfg := parseConfig(t, path)
-	if cfg.MaxLevel("library/traefik") != LevelMajor {
-		t.Errorf("traefik = %q, want %q", cfg.MaxLevel("library/traefik"), LevelMajor)
+	if cfg.MaxLevel("library/traefik") != policy.LevelMajor {
+		t.Errorf("traefik = %q, want %q", cfg.MaxLevel("library/traefik"), policy.LevelMajor)
 	}
-	if cfg.MaxLevel("library/redis") != LevelPatch {
-		t.Errorf("redis = %q, want %q", cfg.MaxLevel("library/redis"), LevelPatch)
+	if cfg.MaxLevel("library/redis") != policy.LevelPatch {
+		t.Errorf("redis = %q, want %q", cfg.MaxLevel("library/redis"), policy.LevelPatch)
 	}
 }
 
@@ -203,7 +204,7 @@ func TestSetImageMaxRejectsInvalidLevel(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
 
-	if err := SetImageMax(path, "library/traefik", Level("mayor")); err == nil {
+	if err := SetImageMax(path, "library/traefik", policy.Level("mayor")); err == nil {
 		t.Fatal("SetImageMax accepted an invalid level")
 	}
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
@@ -215,7 +216,7 @@ func TestClearImageMaxRemovesFileItCreated(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, ".ccu.yaml")
 
-	if err := SetImageMax(path, "library/traefik", LevelMinor); err != nil {
+	if err := SetImageMax(path, "library/traefik", policy.LevelMinor); err != nil {
 		t.Fatalf("SetImageMax: %v", err)
 	}
 	if _, err := os.Stat(path); err != nil {

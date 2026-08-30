@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"github.com/p-arndt/compose-check-updates/internal/policy"
 	"io"
 	"path/filepath"
 	"sort"
@@ -43,7 +44,7 @@ func Show(w io.Writer, loaded Loaded, effective Config) {
 	} else {
 		fmt.Fprintf(w, "  floating_tags: %s (on top of the built-in names)\n", strings.Join(effective.FloatingTags, " "))
 	}
-	fmt.Fprintf(w, "  versioning: %s\n", effective.DefaultVersioning())
+	fmt.Fprintf(w, "  versioning: %s\n", effective.Policies().Versioning)
 	fmt.Fprintf(w, "  pin_floating: %t\n", effective.PinFloatingEnabled())
 	fmt.Fprintf(w, "  dockerfiles: %t\n", effective.DockerfilesEnabled())
 
@@ -54,56 +55,43 @@ func Show(w io.Writer, loaded Loaded, effective Config) {
 // random, and a report whose lines move between two identical runs is one nobody
 // can diff.
 func showImages(w io.Writer, effective Config) {
-	caps := effective.Caps()
-	schemes := effective.Versionings()
-	references := effective.ReferenceTags()
-	floating := effective.ImageFloatingTags()
-	// Shown rather than left implied: a `regex` image is only as good as its
-	// pattern, and "why does this tag not count as a version" is answered by the
-	// pattern itself far more often than by anything else on the line.
-	patterns := effective.VersioningPatterns()
-	if len(caps) == 0 && len(schemes) == 0 && len(references) == 0 && len(floating) == 0 && len(patterns) == 0 {
+	// The resolved policies rather than the raw entries, so what is printed is
+	// what the scan uses: trimmed and deduplicated floating tags included.
+	policies := effective.Policies().Images
+
+	images := make([]string, 0, len(policies))
+	for image, p := range policies {
+		if !p.IsZero() {
+			images = append(images, image)
+		}
+	}
+	if len(images) == 0 {
 		fmt.Fprintln(w, "  images: (nothing set)")
 		return
-	}
-
-	seen := make(map[string]struct{})
-	var images []string
-	add := func(image string) {
-		if _, dup := seen[image]; dup {
-			return
-		}
-		seen[image] = struct{}{}
-		images = append(images, image)
-	}
-	for _, m := range []map[string]string{caps, schemes, references, patterns} {
-		for image := range m {
-			add(image)
-		}
-	}
-	for image := range floating {
-		add(image)
 	}
 	sort.Strings(images)
 
 	fmt.Fprintln(w, "  images:")
 	for _, image := range images {
-		var settings []string
-		if cap, ok := caps[image]; ok {
-			settings = append(settings, "max "+cap)
-		}
-		if scheme, ok := schemes[image]; ok {
-			settings = append(settings, "versioning "+scheme)
-		}
-		if pattern, ok := patterns[image]; ok {
-			settings = append(settings, "pattern "+pattern)
-		}
-		if reference, ok := references[image]; ok {
-			settings = append(settings, "reference_tag "+reference)
-		}
-		if tags, ok := floating[image]; ok {
-			settings = append(settings, "floating_tags "+strings.Join(tags, " "))
-		}
-		fmt.Fprintf(w, "    %s: %s\n", image, strings.Join(settings, ", "))
+		fmt.Fprintf(w, "    %s: %s\n", image, strings.Join(imageSettings(policies[image]), ", "))
 	}
+}
+
+// imageSettings is one image's policy as the labelled values `ccu config`
+// prints. The pattern is shown rather than left implied: "why does this tag not
+// count as a version" is answered by it more often than by anything else.
+func imageSettings(p policy.Image) []string {
+	var settings []string
+	for _, s := range []struct{ label, value string }{
+		{"max", p.Max.String()},
+		{"versioning", p.Versioning.String()},
+		{"pattern", p.VersioningPattern},
+		{"reference_tag", p.ReferenceTag},
+		{"floating_tags", strings.Join(p.FloatingTags, " ")},
+	} {
+		if s.value != "" {
+			settings = append(settings, s.label+" "+s.value)
+		}
+	}
+	return settings
 }

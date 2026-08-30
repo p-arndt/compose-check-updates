@@ -1,19 +1,20 @@
 package config
 
 import (
+	"github.com/p-arndt/compose-check-updates/internal/policy"
 	"path/filepath"
 	"strings"
 	"testing"
 
-	"github.com/p-arndt/compose-check-updates/internal"
+	"github.com/p-arndt/compose-check-updates/internal/versioning"
 )
 
 func TestParseVersioning(t *testing.T) {
 	tests := []struct {
 		name       string
 		yaml       string
-		wantGlobal Versioning
-		wantImage  Versioning
+		wantGlobal policy.Versioning
+		wantImage  policy.Versioning
 		wantErr    string
 	}{
 		{
@@ -23,17 +24,17 @@ func TestParseVersioning(t *testing.T) {
 		{
 			name:       "global scheme",
 			yaml:       "versioning: loose\n",
-			wantGlobal: VersioningLoose,
+			wantGlobal: policy.VersioningLoose,
 		},
 		{
 			name:      "per-image scheme",
 			yaml:      "images:\n  nousresearch/hermes-agent:\n    versioning: loose\n",
-			wantImage: VersioningLoose,
+			wantImage: policy.VersioningLoose,
 		},
 		{
 			name:      "per-image scheme beside a cap",
 			yaml:      "images:\n  nousresearch/hermes-agent:\n    max: minor\n    versioning: loose\n",
-			wantImage: VersioningLoose,
+			wantImage: policy.VersioningLoose,
 		},
 		{
 			// A silently ignored typo looks exactly like a feature that does not
@@ -92,67 +93,66 @@ func TestVersioningPrecedence(t *testing.T) {
 		name   string
 		cfg    Config
 		image  string
-		want   string
+		want   policy.Versioning
 		reason string
 	}{
 		{
 			name:   "nothing set anywhere",
 			cfg:    Config{},
 			image:  "redis",
-			want:   string(VersioningSemver),
+			want:   policy.VersioningSemver,
 			reason: "an image nobody said anything about takes the default",
 		},
 		{
 			name:   "global only",
-			cfg:    Config{Versioning: VersioningLoose},
+			cfg:    Config{Versioning: policy.VersioningLoose},
 			image:  "redis",
-			want:   string(VersioningLoose),
+			want:   policy.VersioningLoose,
 			reason: "the global default reaches an image with no entry",
 		},
 		{
 			name: "per-image only",
-			cfg: Config{Images: map[string]ImagePolicy{
-				"nousresearch/hermes-agent": {Versioning: VersioningLoose},
+			cfg: Config{Images: map[string]policy.Image{
+				"nousresearch/hermes-agent": {Versioning: policy.VersioningLoose},
 			}},
 			image:  "nousresearch/hermes-agent",
-			want:   string(VersioningLoose),
+			want:   policy.VersioningLoose,
 			reason: "the entry applies without any global default",
 		},
 		{
 			name: "per-image beats the default",
 			cfg: Config{
-				Versioning: VersioningLoose,
-				Images:     map[string]ImagePolicy{"redis": {Versioning: VersioningSemver}},
+				Versioning: policy.VersioningLoose,
+				Images:     map[string]policy.Image{"redis": {Versioning: policy.VersioningSemver}},
 			},
 			image:  "redis",
-			want:   string(VersioningSemver),
+			want:   policy.VersioningSemver,
 			reason: "an image may be pulled back to semver out of a loose default",
 		},
 		{
 			name: "an entry with only a cap takes the default",
 			cfg: Config{
-				Versioning: VersioningLoose,
-				Images:     map[string]ImagePolicy{"redis": {Max: LevelMinor}},
+				Versioning: policy.VersioningLoose,
+				Images:     map[string]policy.Image{"redis": {Max: policy.LevelMinor}},
 			},
 			image:  "redis",
-			want:   string(VersioningLoose),
+			want:   policy.VersioningLoose,
 			reason: "capping an image says nothing about how its tags are read",
 		},
 		{
 			name: "another image's entry does not leak",
-			cfg: Config{Images: map[string]ImagePolicy{
-				"nousresearch/hermes-agent": {Versioning: VersioningLoose},
+			cfg: Config{Images: map[string]policy.Image{
+				"nousresearch/hermes-agent": {Versioning: policy.VersioningLoose},
 			}},
 			image:  "redis",
-			want:   string(VersioningSemver),
+			want:   policy.VersioningSemver,
 			reason: "the lookup is exact",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := internal.ResolveVersioning(
-				tt.cfg.Versionings(), tt.cfg.DefaultVersioning(), tt.image)
+			got := tt.cfg.Policies().For(tt.image).Versioning
 			if got != tt.want {
 				t.Errorf("want %q, got %q — %s", tt.want, got, tt.reason)
 			}
@@ -161,24 +161,25 @@ func TestVersioningPrecedence(t *testing.T) {
 }
 
 // TestVersioningNamesResolve guards the seam between the two packages: this one
-// validates the scheme names a config may write, internal is what actually reads
-// tags under them. A name accepted here but unknown there would be a setting
-// taken and then ignored, so every name this package allows has to resolve.
+// validates the scheme names a config may write, versioning is what actually
+// reads tags under them. A name accepted here but unknown there would be a
+// setting taken and then ignored, so every name this package allows has to
+// resolve.
 func TestVersioningNamesResolve(t *testing.T) {
-	for _, name := range versionings {
+	for _, name := range policy.Versionings() {
 		// `regex` reads nothing without one, and a config naming that scheme is
 		// required to carry one, so the seam is only honest with a pattern here.
 		pattern := ""
-		if name == VersioningRegex {
+		if name == policy.VersioningRegex {
 			pattern = calendarPattern
 		}
 
-		scheme, ok := internal.VersioningByName(string(name), pattern)
+		scheme, ok := versioning.ByName(name, pattern)
 		if !ok {
-			t.Errorf("%q passes validation here but internal cannot resolve it", name)
+			t.Errorf("%q passes validation here but versioning cannot resolve it", name)
 			continue
 		}
-		if scheme.Name() != string(name) {
+		if scheme.Name() != name {
 			t.Errorf("%q resolves to a scheme calling itself %q", name, scheme.Name())
 		}
 	}
@@ -192,16 +193,16 @@ func TestVersioningLayers(t *testing.T) {
 		name    string
 		global  string
 		project string
-		want    Versioning
+		want    policy.Versioning
 	}{
 		{name: "neither", want: ""},
-		{name: "global only", global: "versioning: loose\n", want: VersioningLoose},
-		{name: "project only", project: "versioning: loose\n", want: VersioningLoose},
+		{name: "global only", global: "versioning: loose\n", want: policy.VersioningLoose},
+		{name: "project only", project: "versioning: loose\n", want: policy.VersioningLoose},
 		{
 			name:    "project overrides global",
 			global:  "versioning: loose\n",
 			project: "versioning: semver\n",
-			want:    VersioningSemver,
+			want:    policy.VersioningSemver,
 		},
 		{
 			// The whole reason absent and "set to the default" have to stay
@@ -210,7 +211,7 @@ func TestVersioningLayers(t *testing.T) {
 			name:    "silent project leaves global alone",
 			global:  "versioning: loose\n",
 			project: "exclude:\n  - backup\n",
-			want:    VersioningLoose,
+			want:    policy.VersioningLoose,
 		},
 	}
 
@@ -240,28 +241,25 @@ func TestVersioningLayers(t *testing.T) {
 
 func TestVersioningsAndDefault(t *testing.T) {
 	cfg := Config{
-		Versioning: VersioningLoose,
-		Images: map[string]ImagePolicy{
-			"nousresearch/hermes-agent": {Versioning: VersioningLoose},
-			"redis":                     {Max: LevelMinor},
+		Versioning: policy.VersioningLoose,
+		Images: map[string]policy.Image{
+			"nousresearch/hermes-agent": {Versioning: policy.VersioningLoose},
+			"redis":                     {Max: policy.LevelMinor},
 		},
 	}
 
-	schemes := cfg.Versionings()
-	if len(schemes) != 1 || schemes["nousresearch/hermes-agent"] != "loose" {
-		t.Errorf("want only the image that named a scheme, got %v", schemes)
+	policies := cfg.Policies()
+	if got := policies.For("nousresearch/hermes-agent").Versioning; got != policy.VersioningLoose {
+		t.Errorf("per-image: want loose, got %q", got)
 	}
-	if got := cfg.DefaultVersioning(); got != "loose" {
+	if got := policies.Versioning; got != policy.VersioningLoose {
 		t.Errorf("default: want loose, got %q", got)
 	}
 
-	// An empty global default reports the scheme by name rather than "", so the
-	// scanner and `ccu config` never have to know what "" stood for.
-	if got := (Config{}).DefaultVersioning(); got != "semver" {
+	// An empty global default resolves to the scheme by name rather than "", so
+	// nothing downstream has to know what "" stood for.
+	if got := (Config{}).Policies().Versioning; got != policy.VersioningSemver {
 		t.Errorf("default: want semver, got %q", got)
-	}
-	if got := (Config{}).Versionings(); got != nil {
-		t.Errorf("want no per-image schemes, got %v", got)
 	}
 }
 
@@ -339,7 +337,7 @@ func TestParseVersioningPattern(t *testing.T) {
 				t.Fatalf("unexpected error: %v", err)
 			}
 
-			if got := cfg.VersioningPatterns()["acme/dated"]; got != tt.want {
+			if got := cfg.Images["acme/dated"].VersioningPattern; got != tt.want {
 				t.Errorf("want pattern %q, got %q", tt.want, got)
 			}
 		})
@@ -347,9 +345,9 @@ func TestParseVersioningPattern(t *testing.T) {
 }
 
 // TestVersioningPatternsResolve guards the same seam TestVersioningNamesResolve
-// does, one level down: this package decides which patterns a config may carry,
-// internal is what actually reads tags with them. A pattern accepted here but
-// unusable there would be a setting taken and then ignored.
+// does, one level down: validation decides which patterns a config may carry,
+// versioning is what actually reads tags with them. A pattern accepted by one
+// but unusable in the other would be a setting taken and then ignored.
 func TestVersioningPatternsResolve(t *testing.T) {
 	patterns := []string{
 		calendarPattern,
@@ -358,30 +356,28 @@ func TestVersioningPatternsResolve(t *testing.T) {
 	}
 
 	for _, pattern := range patterns {
-		if err := validateVersioningPattern(VersioningRegex, pattern); err != nil {
+		if err := versioning.ValidatePattern(policy.VersioningRegex, pattern); err != nil {
 			t.Errorf("%q: rejected here: %v", pattern, err)
 			continue
 		}
-		if _, ok := internal.VersioningByName(string(VersioningRegex), pattern); !ok {
-			t.Errorf("%q passes validation here but internal cannot read tags with it", pattern)
+		if _, ok := versioning.ByName(policy.VersioningRegex, pattern); !ok {
+			t.Errorf("%q passes validation but versioning cannot read tags with it", pattern)
 		}
 	}
 }
 
-func TestVersioningPatternsMap(t *testing.T) {
-	cfg := Config{Images: map[string]ImagePolicy{
-		"acme/dated": {Versioning: VersioningRegex, VersioningPattern: calendarPattern},
-		"redis":      {Max: LevelMinor},
-	}}
+func TestVersioningPatternResolution(t *testing.T) {
+	policies := Config{Images: map[string]policy.Image{
+		"acme/dated": {Versioning: policy.VersioningRegex, VersioningPattern: calendarPattern},
+		"redis":      {Max: policy.LevelMinor},
+	}}.Policies()
 
-	patterns := cfg.VersioningPatterns()
-	if len(patterns) != 1 || patterns["acme/dated"] != calendarPattern {
-		t.Errorf("want only the image that named a pattern, got %v", patterns)
+	if got := policies.For("acme/dated").VersioningPattern; got != calendarPattern {
+		t.Errorf("want the calendar pattern, got %q", got)
 	}
-
-	// A lookup miss and "this image needs no pattern" are the same thing, so an
-	// image without one contributes no entry at all.
-	if got := (Config{}).VersioningPatterns(); got != nil {
-		t.Errorf("want no patterns, got %v", got)
+	// Only images on the regex scheme carry one, so an empty pattern and "this
+	// image needs none" are the same thing.
+	if got := policies.For("redis").VersioningPattern; got != "" {
+		t.Errorf("want no pattern, got %q", got)
 	}
 }

@@ -2,6 +2,7 @@ package config
 
 import (
 	"bytes"
+	"github.com/p-arndt/compose-check-updates/internal/policy"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -33,11 +34,11 @@ func explain(t *testing.T, global, project, image, flagVersioning string) string
 
 	effective := loaded.Config
 	if flagVersioning != "" {
-		effective.Versioning = Versioning(flagVersioning)
+		effective.Versioning = policy.Versioning(flagVersioning)
 	}
 
 	var buf bytes.Buffer
-	Explain(&buf, loaded, effective, image, flagVersioning)
+	Explain(&buf, loaded, effective, image, policy.Versioning(flagVersioning))
 	return buf.String()
 }
 
@@ -303,7 +304,7 @@ func TestExplainExplicitFile(t *testing.T) {
 // A Config assembled in memory has no file behind it, which the TUI and any
 // future caller can produce. Naming the key without a path beats claiming one.
 func TestExplainWithoutFiles(t *testing.T) {
-	effective := Config{Images: map[string]ImagePolicy{"redis": {Max: LevelMinor}}}
+	effective := Config{Images: map[string]policy.Image{"redis": {Max: policy.LevelMinor}}}
 
 	var buf bytes.Buffer
 	Explain(&buf, Loaded{}, effective, "redis", "")

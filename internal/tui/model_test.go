@@ -8,13 +8,15 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/p-arndt/compose-check-updates/internal/check"
+	"github.com/p-arndt/compose-check-updates/internal/policy"
+
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/p-arndt/compose-check-updates/internal"
 	"github.com/p-arndt/compose-check-updates/internal/config"
 	"github.com/p-arndt/compose-check-updates/internal/scanner"
 )
@@ -34,12 +36,12 @@ func (m Model) withFloatingListed() Model {
 	return m
 }
 
-func updateEvent(path, image, current, latest, level string) scanEventMsg {
+func updateEvent(path, image, current, latest string, level policy.Level) scanEventMsg {
 	return scanEventMsg{ev: scanner.Event{
 		Kind:  scanner.EventUpdate,
 		Path:  path,
 		Level: level,
-		Update: internal.UpdateInfo{
+		Update: check.Update{
 			FilePath:      path,
 			ImageName:     image,
 			FullImageName: image + ":" + current,
@@ -59,7 +61,7 @@ func levelEvent(image, current, patch, minor, major string) scanEventMsg {
 	// The scanner offers the highest available tag, which is what the model then
 	// re-points as the target changes.
 	u.LatestTag = u.TagForTarget("major")
-	ev.ev.Level = u.UpdateLevel()
+	ev.ev.Level = u.Level()
 	return ev
 }
 
@@ -586,7 +588,7 @@ func TestDefaultTargetIsMajor(t *testing.T) {
 	// The historical behaviour — offer the highest version — must survive.
 	assert.Equal(t, TargetMajor, m.target)
 	assert.Equal(t, "3.7.8", rowFor(t, m, "traefik").Update.LatestTag)
-	assert.Equal(t, "major", rowFor(t, m, "traefik").Level)
+	assert.Equal(t, policy.Level("major"), rowFor(t, m, "traefik").Level)
 }
 
 func TestGlobalTargetCyclingRepointsRows(t *testing.T) {
@@ -598,11 +600,11 @@ func TestGlobalTargetCyclingRepointsRows(t *testing.T) {
 	assert.Equal(t, TargetPatch, m.target)
 	row := rowFor(t, m, "traefik")
 	assert.Equal(t, "2.9.4", row.Update.LatestTag)
-	assert.Equal(t, "patch", row.Level, "the badge must follow the selected tag")
+	assert.Equal(t, policy.Level("patch"), row.Level, "the badge must follow the selected tag")
 
 	m = feed(t, m, keyMsg("t")) // patch → minor
 	assert.Equal(t, "2.11.0", rowFor(t, m, "traefik").Update.LatestTag)
-	assert.Equal(t, "minor", rowFor(t, m, "traefik").Level)
+	assert.Equal(t, policy.Level("minor"), rowFor(t, m, "traefik").Level)
 
 	m = feed(t, m, keyMsg("t")) // minor → major, back where we started
 	assert.Equal(t, TargetMajor, m.target)
@@ -665,7 +667,7 @@ func TestRowTargetCyclingStaysWithinAvailableTargets(t *testing.T) {
 	m = feed(t, m, keyMsg("j"), keyMsg("j")) // past the file header, onto traefik
 	require.Equal(t, "traefik", m.currentRow().Update.ImageName)
 	avail := m.currentRow().Update.AvailableTargets()
-	require.Equal(t, []string{"patch", "major"}, avail)
+	require.Equal(t, []policy.Level{"patch", "major"}, avail)
 
 	// The target is changed in the sidebar now, so the focus goes there first.
 	// Forward from major wraps to patch, skipping the minor level it has no
@@ -673,16 +675,16 @@ func TestRowTargetCyclingStaysWithinAvailableTargets(t *testing.T) {
 	m.width = 200
 	m = feed(t, m, keyMsg("tab"), keyMsg("+"))
 	assert.Equal(t, "2.9.4", m.currentRow().Update.LatestTag)
-	assert.Equal(t, "patch", m.currentRow().Level)
+	assert.Equal(t, policy.Level("patch"), m.currentRow().Level)
 
 	m = feed(t, m, keyMsg("+"))
 	assert.Equal(t, "3.7.8", m.currentRow().Update.LatestTag)
-	assert.Equal(t, "major", m.currentRow().Level)
+	assert.Equal(t, policy.Level("major"), m.currentRow().Level)
 
 	// Backwards, too — and never onto a level the image does not have.
 	for i := 0; i < 5; i++ {
 		m = feed(t, m, keyMsg("-"))
-		require.Contains(t, avail, string(m.currentRow().Target))
+		require.Contains(t, avail, m.currentRow().Target)
 		require.False(t, m.currentRow().NoTarget)
 	}
 
@@ -717,7 +719,7 @@ func TestRowTargetIsANoopForDigestOnlyRows(t *testing.T) {
 	m.width = 200
 	m = feed(t, m, keyMsg("j"), keyMsg("t"), keyMsg("tab"), keyMsg("+"))
 	assert.False(t, m.rows[0].NoTarget)
-	assert.Equal(t, "digest", m.rows[0].Level)
+	assert.Equal(t, policy.Level("digest"), m.rows[0].Level)
 	assert.Equal(t, "latest", m.rows[0].Update.LatestTag)
 }
 
@@ -1108,7 +1110,7 @@ func TestRestartPromptAnswers(t *testing.T) {
 type capWrite struct {
 	scope pinScope
 	image string
-	level config.Level
+	level policy.Level
 }
 
 type capRecorder struct {
@@ -1116,7 +1118,7 @@ type capRecorder struct {
 	err    error
 }
 
-func (c *capRecorder) set(scope pinScope, image string, max config.Level) error {
+func (c *capRecorder) set(scope pinScope, image string, max policy.Level) error {
 	c.writes = append(c.writes, capWrite{scope: scope, image: image, level: max})
 	return c.err
 }
@@ -1254,18 +1256,18 @@ func TestSidebarCapFieldStepsThroughLevelsIndependentOfTheTarget(t *testing.T) {
 
 	m = feed(t, m, keyMsg("j"), keyMsg("+"))
 	require.Len(t, rec.writes, 1)
-	assert.Equal(t, config.LevelPatch, rec.writes[0].level, "first step off is patch, not the target's major")
+	assert.Equal(t, policy.LevelPatch, rec.writes[0].level, "first step off is patch, not the target's major")
 	assert.Equal(t, pinProject, rec.writes[0].scope, "a new cap goes to the narrower file")
 	assert.Equal(t, "library/traefik", rec.writes[0].image)
 	assert.Equal(t, StatusSuccess, m.statusKind)
 
 	m = feed(t, m, keyMsg("+"))
-	assert.Equal(t, config.LevelMinor, rec.writes[len(rec.writes)-1].level)
+	assert.Equal(t, policy.LevelMinor, rec.writes[len(rec.writes)-1].level)
 
 	// Nothing in semver sits above major, so capping at it would say exactly what
 	// no cap says. The cycle wraps back to off instead of offering a no-op.
 	m = feed(t, m, keyMsg("+"))
-	assert.Equal(t, config.Level(""), rec.writes[len(rec.writes)-1].level)
+	assert.Equal(t, policy.Level(""), rec.writes[len(rec.writes)-1].level)
 }
 
 // Major is not a no-op in one case: the project file overrides the global one,
@@ -1273,14 +1275,14 @@ func TestSidebarCapFieldStepsThroughLevelsIndependentOfTheTarget(t *testing.T) {
 // offered exactly when it would mean that, and not otherwise.
 func TestCapOffersMajorOnlyToLiftAGlobalCap(t *testing.T) {
 	m, _ := sidebarModel(t)
-	assert.NotContains(t, m.capChoicesFor("library/traefik"), config.LevelMajor,
+	assert.NotContains(t, m.capChoicesFor("library/traefik"), policy.LevelMajor,
 		"with no global cap, major would say the same as off")
 
 	m = m.WithPins(
 		config.Config{},
-		config.Config{Images: map[string]config.ImagePolicy{"library/traefik": {Max: config.LevelMinor}}},
+		config.Config{Images: map[string]policy.Image{"library/traefik": {Max: policy.LevelMinor}}},
 	)
-	assert.Contains(t, m.capChoicesFor("library/traefik"), config.LevelMajor,
+	assert.Contains(t, m.capChoicesFor("library/traefik"), policy.LevelMajor,
 		"with a global cap in force, major is how the project lifts it")
 }
 
@@ -1309,10 +1311,10 @@ func TestSidebarScopeFieldMovesAnExistingCap(t *testing.T) {
 	// is never capped in two files at once.
 	require.GreaterOrEqual(t, len(rec.writes), 2)
 	assert.Equal(t, pinProject, rec.writes[0].scope)
-	assert.Equal(t, config.Level(""), rec.writes[0].level)
+	assert.Equal(t, policy.Level(""), rec.writes[0].level)
 	last := rec.writes[len(rec.writes)-1]
 	assert.Equal(t, pinGlobal, last.scope)
-	assert.Equal(t, config.LevelPatch, last.level)
+	assert.Equal(t, policy.LevelPatch, last.level)
 }
 
 func TestSidebarCapCyclesBackToOff(t *testing.T) {
@@ -1325,7 +1327,7 @@ func TestSidebarCapCyclesBackToOff(t *testing.T) {
 	m = feed(t, m, keyMsg("-"))
 	assert.Empty(t, m.currentRow().Pin, "stepping back off the levels stops capping")
 	last := rec.writes[len(rec.writes)-1]
-	assert.Equal(t, config.Level(""), last.level)
+	assert.Equal(t, policy.Level(""), last.level)
 }
 
 func TestSidebarCapWriteFailureIsAStatusError(t *testing.T) {

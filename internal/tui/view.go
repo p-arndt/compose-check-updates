@@ -40,9 +40,8 @@ func (m Model) View() string {
 }
 
 // frame forces the rendered frame to exactly viewHeight lines, padding the gap
-// above the bottom chrome so the footer lands on the final row. One line too many
-// scrolls the alt screen and the UI shakes on every keypress, so this is the one
-// place allowed to decide the line count.
+// above the bottom chrome so the footer lands on the final row. One line too
+// many scrolls the alt screen and the UI shakes on every keypress.
 func (m Model) frame(top, bottom []string) []string {
 	h := m.viewHeight()
 	// The bottom chrome is the way out of every state, so it is what survives a
@@ -252,9 +251,8 @@ func (m Model) statusLine() string {
 }
 
 // listHeight is how many list lines fit: whatever the fixed chrome leaves over,
-// which keeps the frame exactly as tall as the terminal. When the frame is boxed,
-// the two border rows come out here rather than at the renderer, so scrolling and
-// drawing agree without either having to know about borders.
+// which keeps the frame exactly as tall as the terminal. A boxed frame's two
+// border rows come out here, so scrolling and drawing agree about them.
 func (m Model) listHeight() int {
 	h := m.viewHeight() - topChrome - len(m.bottomBlock())
 	if sidebarWidth(m.width) > 0 {
@@ -343,9 +341,8 @@ func issueParts(err error) (msg string, attrs []string) {
 }
 
 // issueLines renders every captured issue and records the line each one starts
-// on. Entries wrap rather than truncate, the status line already being the
-// one-line summary, so the cursor addresses issues while the window scrolls by
-// lines.
+// on. Entries wrap rather than truncate — the status line is the one-line
+// summary — so the cursor addresses issues while the window scrolls by lines.
 func (m Model) issueLines() (lines []string, starts []int) {
 	for i, e := range m.scanErrs {
 		starts = append(starts, len(lines))
@@ -392,5 +389,5 @@ func (m Model) emptyText() string {
 		return "Everything is up to date"
 	}
 	return fmt.Sprintf("No %s updates at target %s (f changes the filter, t the target)",
-		m.filter.Label(), m.target.Label())
+		m.filter.Label(), targetLabel(m.target))
 }

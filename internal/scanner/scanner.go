@@ -9,7 +9,10 @@ import (
 	"log/slog"
 	"sync"
 
-	"github.com/p-arndt/compose-check-updates/internal"
+	"github.com/p-arndt/compose-check-updates/internal/check"
+	"github.com/p-arndt/compose-check-updates/internal/compose"
+	"github.com/p-arndt/compose-check-updates/internal/policy"
+	"github.com/p-arndt/compose-check-updates/internal/registry"
 )
 
 const (
@@ -20,58 +23,21 @@ const (
 type Options struct {
 	Root    string   // root directory to walk
 	Exclude []string // directories to exclude
-	Major   bool     // passed through to UpdateChecker.Check
-	Minor   bool
-	Patch   bool
 
-	// Caps is the per-image cap the user recorded, keyed by image name without
-	// tag or digest, valued "patch"/"minor"/"major". An image with no entry has
-	// no cap.
-	Caps map[string]string
+	// Major, Minor and Patch are the update levels the run asks for.
+	Major bool
+	Minor bool
+	Patch bool
 
-	// Versionings is the versioning scheme the user recorded per image, keyed by
-	// image name without tag or digest, valued "semver"/"loose"/"regex". An image
-	// with no entry takes DefaultVersioning.
-	Versionings map[string]string
-
-	// ReferenceTags is the tag digest mode compares an image against, keyed by
-	// image name without tag or digest. An image with no entry is compared
-	// against "latest".
-	ReferenceTags map[string]string
-
-	// FloatingTags names the extra tags an image treats as moving, keyed the same
-	// way and added to the built-in ones ("latest", "main", …) rather than
-	// replacing them. It is what gives -pin-floating something to pin for a
-	// repository whose moving tag is spelled "release" or "canary".
-	FloatingTags map[string][]string
-
-	// GlobalFloatingTags names further moving tags, applying to every image and
-	// added to whatever an image named for itself. A registry usually spells its
-	// moving tag the same way across all of its repositories.
-	GlobalFloatingTags []string
-	// VersioningPatterns is the regex the "regex" scheme reads an image's tags
-	// with, keyed the same way. Only the images on that scheme have one, and the
-	// config layer guarantees each of them does.
-	VersioningPatterns map[string]string
-
-	// DefaultVersioning is the scheme for images Versionings says nothing about.
-	// Empty means "semver", which is what every image gets until a config file or
-	// -versioning says otherwise. Never "regex": a pattern belongs to one image,
-	// so there is nothing a run-wide default could read tags with.
-	DefaultVersioning string
-
-	// PinFloating turns on pinning bare floating tags ("latest", "main", …) to
-	// the digest they currently resolve to. Off by default: it costs a request per
-	// floating image and pins a reference the user left mutable on purpose.
-	PinFloating bool
+	// Policies is what the user recorded about the images being checked.
+	Policies policy.Set
 
 	// Dockerfiles turns on checking the base images of the Dockerfiles a compose
 	// file's services build. On by default: a service with `build:` has no image
-	// tag of its own, so without this the only images ccu can say anything about
-	// are the ones nobody builds themselves.
+	// tag of its own.
 	Dockerfiles bool
 
-	Concurrency int // max compose files checked at once; <=0 means a sensible default (8)
+	Concurrency int // compose files checked at once; <=0 means defaultConcurrency
 }
 
 type EventKind int
@@ -79,73 +45,40 @@ type EventKind int
 const (
 	EventDiscovered EventKind = iota // emitted once, first, carrying Total
 	EventFileStart                   // a compose file's check began
-	EventUpdate                      // an image with an available update, or one ccu could not read
+	EventUpdate                      // an image with an update, or one ccu could not read
 	EventFileDone                    // a compose file's check finished
 	EventError                       // a non-fatal error; scan continues
 )
 
 type Event struct {
 	Kind   EventKind
-	Path   string              // compose file involved (empty for EventDiscovered)
-	Total  int                 // number of compose files found; only set on EventDiscovered
-	Update internal.UpdateInfo // only set on EventUpdate
-	// Level is the update level of Update ("major"/"minor"/"patch"/"digest"/"pin",
-	// or "unreadable" for an image that resolved to nothing at all); only on
-	// EventUpdate.
-	Level string
-	Err   error // only set on EventError
+	Path   string       // compose file involved (empty for EventDiscovered)
+	Total  int          // compose files found; only on EventDiscovered
+	Update check.Update // only on EventUpdate
+	Level  policy.Level // level of Update; only on EventUpdate
+	Err    error        // only on EventError
 }
 
 // Scan walks opts.Root and checks every compose file it finds, emitting events
-// on the returned channel as they resolve. The channel is closed when the scan
-// finishes. Cancelling ctx stops the scan promptly and still closes the channel.
-// The error return covers only the initial walk failing; per-file failures are
-// delivered as EventError.
+// as they resolve. Cancelling ctx stops the scan and still closes the channel.
+// The error covers only the initial walk; per-file failures are EventError.
 func Scan(ctx context.Context, opts Options) (<-chan Event, error) {
 	return walk(ctx, opts, true, checkFile)
 }
 
 // ScanPins walks opts.Root like Scan but resolves nothing except the digests
-// bare floating tags point at, emitting one EventUpdate per image it can pin. It
-// is the answer to a user asking for the pins mid-session: a full re-scan would
-// re-fetch every tag list for versions already on screen, while this costs one
-// manifest head per floating image.
-//
-// No progress events are emitted — the file counters belong to the scan that
-// filled the list, and a second run bumping them would report files as checked
-// twice.
+// bare floating tags point at: one manifest head per floating image, no tag
+// lists. No progress events — the file counters belong to the scan that filled
+// the list.
 func ScanPins(ctx context.Context, opts Options) (<-chan Event, error) {
 	return walk(ctx, opts, false, checkFilePins)
 }
 
 // CheckImage re-checks a single image and returns the event a scan would have
-// emitted for it. It is what a caller reaches for after changing one image's
-// settings: re-scanning would re-fetch every tag list for versions already on
-// screen, while this touches the one repository whose answer can have changed.
-//
-// The image is named by the update the earlier scan reported, because that is
-// what identifies the line — the file it sits in, and the reference as the file
-// spells it.
-func CheckImage(opts Options, target internal.UpdateInfo) (Event, error) {
-	registry := internal.NewRegistry("")
-
-	checker := internal.NewUpdateChecker(target.FilePath, registry)
-	if target.ComposePath != "" {
-		// A Dockerfile is only ever reached through the service that builds it, and
-		// a checker that does not know about the two of them would report the update
-		// as belonging to the Dockerfile alone — leaving a restart with no compose
-		// file to act on.
-		checker = internal.NewDockerfileChecker(target.FilePath, target.ComposePath, firstService(target.Services), registry)
-	}
-	// Every setting a full scan applies, or a re-check would answer differently
-	// from the scan that produced the row it is replacing.
-	checker = checker.
-		WithPinFloating(opts.PinFloating).
-		WithVersioning(opts.Versionings, opts.DefaultVersioning, opts.VersioningPatterns).
-		WithReferenceTags(opts.ReferenceTags).
-		WithFloatingTags(opts.FloatingTags, opts.GlobalFloatingTags)
-
-	info, found, err := checker.CheckImage(target.FullImageName, opts.Major, opts.Minor, opts.Patch)
+// emitted for it, for the caller that changed one image's settings. The update
+// an earlier scan reported is what identifies the line.
+func CheckImage(opts Options, target check.Update) (Event, error) {
+	update, found, err := checkerFor(opts, target).CheckImage(target.FullImageName, opts.Major, opts.Minor, opts.Patch)
 	if err != nil {
 		return Event{}, err
 	}
@@ -153,29 +86,31 @@ func CheckImage(opts Options, target internal.UpdateInfo) (Event, error) {
 		return Event{}, fmt.Errorf("%s no longer names %s", target.FilePath, target.FullImageName)
 	}
 
-	applyCap(&info, opts.Caps[info.ImageName], registry)
-
-	// Path is the compose file, as it is on every event a scan emits: a consumer
-	// groups rows by it, and a Dockerfile's row belongs under the stack that
-	// builds it.
-	return Event{Kind: EventUpdate, Path: info.RestartPath(), Update: info, Level: info.UpdateLevel()}, nil
+	// Path is the compose file, as on every event a scan emits: a consumer groups
+	// rows by it, and a Dockerfile's row belongs under the stack that builds it.
+	return Event{Kind: EventUpdate, Path: update.RestartPath(), Update: update, Level: update.Level()}, nil
 }
 
-// firstService is the service to hand a Dockerfile checker. One name, because
-// that is all a checker records; the update the re-check produces carries it
-// alone rather than the full list the first scan collapsed into the row.
-func firstService(services []string) string {
-	if len(services) == 0 {
-		return ""
+func checkerFor(opts Options, target check.Update) *check.Checker {
+	reg := registry.New("")
+	if target.ComposePath == "" {
+		return check.New(target.FilePath, reg, opts.Policies)
 	}
-	return services[0]
+
+	// A Dockerfile is only ever reached through the service that builds it; a
+	// checker that did not know about the two would leave a restart with no
+	// compose file to act on.
+	service := ""
+	if len(target.Services) > 0 {
+		service = target.Services[0]
+	}
+	return check.NewDockerfile(target.FilePath, target.ComposePath, service, reg, opts.Policies)
 }
 
-// walk is the shared body of the two scans: discover the compose files, then run
-// check over them with bounded concurrency. progress decides whether the
-// file-level events are emitted at all.
+// walk discovers the compose files, then runs check over them with bounded
+// concurrency. progress decides whether the file-level events are emitted.
 func walk(ctx context.Context, opts Options, progress bool, check func(context.Context, chan<- Event, Options, string)) (<-chan Event, error) {
-	paths, err := internal.GetComposeFilePaths(opts.Root, opts.Exclude)
+	paths, err := compose.Files(opts.Root, opts.Exclude)
 	if err != nil {
 		return nil, err
 	}
@@ -208,11 +143,11 @@ func walk(ctx context.Context, opts Options, progress bool, check func(context.C
 			}
 
 			wg.Add(1)
-			go func(path string) {
+			go func() {
 				defer wg.Done()
 				defer func() { <-sem }()
 				check(ctx, events, opts, path)
-			}(path)
+			}()
 		}
 
 		wg.Wait()
@@ -226,49 +161,22 @@ func checkFile(ctx context.Context, events chan<- Event, opts Options, path stri
 		return
 	}
 
-	registry := internal.NewRegistry("")
-	checker := internal.NewUpdateChecker(path, registry).
-		WithPinFloating(opts.PinFloating).
-		WithVersioning(opts.Versionings, opts.DefaultVersioning, opts.VersioningPatterns).
-		WithReferenceTags(opts.ReferenceTags).
-		WithFloatingTags(opts.FloatingTags, opts.GlobalFloatingTags)
-	infos, err := checker.Check(opts.Major, opts.Minor, opts.Patch)
+	updates, err := checkAll(opts, path, func(c *check.Checker) ([]check.Update, error) {
+		return c.Check(opts.Major, opts.Minor, opts.Patch)
+	})
 	if err != nil {
 		send(ctx, events, Event{Kind: EventError, Path: path, Err: err})
 		return
 	}
 
-	// The Dockerfiles this compose file builds are checked as part of it: their
-	// updates belong to the same stack, and the file counters count compose
-	// files, which is what the user pointed ccu at.
-	for _, d := range dockerfileCheckers(opts, registry, path) {
-		more, err := d.checker.Check(opts.Major, opts.Minor, opts.Patch)
-		if err != nil {
-			// Not an EventError: a consumer counts those against the compose
-			// files it is waiting for, and this failure is one file below. The
-			// Dockerfile is named rather than the compose file, which read fine.
-			slog.Warn("Skipping (failed reading Dockerfile)", "path", d.path, "error", err)
+	for _, u := range updates {
+		// An image ccu could not read is reported rather than dropped: dropping it
+		// left a warning on stderr as its only trace, which no row and no report
+		// line could be hung off.
+		if !u.HasNewVersion() && !u.IsUnreadable() {
 			continue
 		}
-		infos = append(infos, more...)
-	}
-
-	for _, info := range infos {
-		// Check resolved the highest tag the level flags allow, which for a
-		// capped image may be a release it is not allowed to take. Re-pointing it
-		// at the cap here — rather than letting HasNewVersion drop it — is what
-		// makes a cap mean "no further than this" instead of "hide this image":
-		// an image capped at minor still has its minor update offered.
-		applyCap(&info, opts.Caps[info.ImageName], registry)
-
-		// An image ccu could not read is reported rather than dropped. Dropping it
-		// left a warning on stderr as its only trace, which no row, no report line
-		// and no key in the TUI could be hung off — so the one thing the user could
-		// do about it was the one thing nothing told them how to do.
-		if !info.HasNewVersion(opts.Major, opts.Minor, opts.Patch) && !info.IsUnreadable() {
-			continue
-		}
-		if !send(ctx, events, Event{Kind: EventUpdate, Path: path, Update: info, Level: info.UpdateLevel()}) {
+		if !send(ctx, events, Event{Kind: EventUpdate, Path: path, Update: u, Level: u.Level()}) {
 			return
 		}
 	}
@@ -276,101 +184,55 @@ func checkFile(ctx context.Context, events chan<- Event, opts Options, path stri
 	send(ctx, events, Event{Kind: EventFileDone, Path: path})
 }
 
-// dockerfileCheckers returns a checker for every Dockerfile the compose file at
-// path builds, in declaration order. Nothing when the option is off.
-func dockerfileCheckers(opts Options, registry *internal.Registry, path string) []dockerfileChecker {
-	if !opts.Dockerfiles {
-		return nil
-	}
-
-	var checkers []dockerfileChecker
-	for _, target := range internal.GetBuildTargets(path) {
-		checkers = append(checkers, dockerfileChecker{
-			path: target.Dockerfile,
-			checker: internal.NewDockerfileChecker(target.Dockerfile, path, target.Service, registry).
-				WithPinFloating(opts.PinFloating).
-				WithVersioning(opts.Versionings, opts.DefaultVersioning, opts.VersioningPatterns).
-				WithReferenceTags(opts.ReferenceTags).
-				WithFloatingTags(opts.FloatingTags, opts.GlobalFloatingTags),
-		})
-	}
-	return checkers
-}
-
-// dockerfileChecker pairs a checker with the file it reads, so a failure can
-// name it. A slice rather than a map keyed by path: the order the Dockerfiles
-// were declared in is the order their updates are reported in.
-type dockerfileChecker struct {
-	path    string
-	checker *internal.UpdateChecker
-}
-
 // checkFilePins is ScanPins' per-file work: the floating tags of one compose
-// file and nothing else. Caps are not consulted — a pin moves no version, so
-// there is no level for a cap to clamp.
+// file and nothing else.
 func checkFilePins(ctx context.Context, events chan<- Event, opts Options, path string) {
-	registry := internal.NewRegistry("")
-	// The floating tags are the one setting this path cannot do without: CheckPins
-	// decides what to pin by asking whether the tag floats, so an image whose
-	// moving tag ccu does not know would silently have nothing to pin here even
-	// though the full scan pins it.
-	pins, err := internal.NewUpdateChecker(path, registry).
-		WithFloatingTags(opts.FloatingTags, opts.GlobalFloatingTags).
-		CheckPins()
+	pins, err := checkAll(opts, path, (*check.Checker).CheckPins)
 	if err != nil {
 		send(ctx, events, Event{Kind: EventError, Path: path, Err: err})
 		return
 	}
 
-	for _, d := range dockerfileCheckers(opts, registry, path) {
-		more, err := d.checker.CheckPins()
-		if err != nil {
-			slog.Warn("Skipping (failed reading Dockerfile)", "path", d.path, "error", err)
-			continue
-		}
-		pins = append(pins, more...)
-	}
-
-	for _, info := range pins {
-		if !send(ctx, events, Event{Kind: EventUpdate, Path: path, Update: info, Level: info.UpdateLevel()}) {
+	for _, u := range pins {
+		if !send(ctx, events, Event{Kind: EventUpdate, Path: path, Update: u, Level: u.Level()}) {
 			return
 		}
 	}
 }
 
-// applyCap records the cap on info and moves its selection down to it when the
-// tag Check picked sits above it. A no-op for an uncapped image, which is every
-// image until the user pins one.
-func applyCap(info *internal.UpdateInfo, cap string, registry *internal.Registry) {
-	if cap == "" {
-		return
+// checkAll runs one kind of check over a compose file and the Dockerfiles its
+// services build. Their updates belong to the same stack, and the file counters
+// count compose files, which is what the user pointed ccu at.
+func checkAll(opts Options, path string, run func(*check.Checker) ([]check.Update, error)) ([]check.Update, error) {
+	reg := registry.New("")
+
+	updates, err := run(check.New(path, reg, opts.Policies))
+	if err != nil {
+		return nil, err
 	}
 
-	info.Cap = cap
-
-	// Only a selection the cap actually forbids is moved; re-selecting an
-	// already-permitted tag would throw away the digest Check resolved for it.
-	if info.LatestTag == "" || info.AllowsLevel(info.UpdateLevel()) {
-		return
+	if !opts.Dockerfiles {
+		return updates, nil
 	}
 
-	info.SelectTarget(cap)
-
-	// SelectTarget drops a digest resolved for the tag it replaced, and a
-	// reference that pins one cannot be written without it.
-	if info.CurrentDigest != "" && info.LatestTag != "" {
-		if err := info.ResolveDigest(registry); err != nil {
-			slog.Warn("Skipping (failed resolving digest for capped tag)", "image", info.ImageName, "tag", info.LatestTag, "path", info.FilePath)
-			info.LatestTag = ""
+	for _, target := range compose.BuildTargets(path) {
+		more, err := run(check.NewDockerfile(target.Dockerfile, path, target.Service, reg, opts.Policies))
+		if err != nil {
+			// Not an EventError: a consumer counts those against the compose files
+			// it is waiting for, and this failure is one file below.
+			slog.Warn("Skipping (failed reading Dockerfile)", "path", target.Dockerfile, "error", err)
+			continue
 		}
+		updates = append(updates, more...)
 	}
+
+	return updates, nil
 }
 
-// send reports whether the event was delivered; a false result means ctx was
-// cancelled and the caller should stop rather than block on a consumer that has
-// gone away.
+// send reports whether the event was delivered; false means ctx was cancelled
+// and the caller should stop rather than block on a consumer that has gone away.
 func send(ctx context.Context, events chan<- Event, ev Event) bool {
-	// Checked before the select below, which would otherwise pick a still-open
+	// Checked first, because the select below would otherwise pick a still-open
 	// buffered channel over an already cancelled context at random.
 	select {
 	case <-ctx.Done():

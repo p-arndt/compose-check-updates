@@ -1,12 +1,12 @@
-// Package config reads ccu's persistent settings: the options a user does not
-// want to retype on every run. Two files are read, a global one for personal
-// preferences that hold across projects and a project-local one that travels
-// with the compose files, and the command line still wins over both.
+// Package config reads ccu's persistent settings from a global file and a
+// project-local one. The command line still wins over both.
 package config
 
 import (
 	"errors"
 	"fmt"
+	"github.com/p-arndt/compose-check-updates/internal/policy"
+	"github.com/p-arndt/compose-check-updates/internal/versioning"
 	"io"
 	"os"
 	"path/filepath"
@@ -15,9 +15,8 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Config is the on-disk shape of a ccu config file. Fields are pointers or
-// slices that can be absent, because merging has to tell "not set here" apart
-// from "set to the zero value here".
+// Config is the on-disk shape of a ccu config file. Absent has to stay
+// distinguishable from the zero value, hence the pointers.
 type Config struct {
 	// Exclude lists directories never to walk into. Entries are unioned across
 	// the files and with -exclude rather than replacing each other: the point of
@@ -25,38 +24,26 @@ type Config struct {
 	Exclude []string `yaml:"exclude"`
 
 	// Images holds the per-image preferences, keyed by image name without tag or
-	// digest. Unlike Exclude these replace rather than union when merged: a
-	// project has to be able to raise a cap the global file set, not only
-	// tighten it.
-	Images map[string]ImagePolicy `yaml:"images"`
+	// digest. These replace rather than union when merged, so a project can raise
+	// a cap the global file set.
+	Images map[string]policy.Image `yaml:"images"`
 
 	// PinFloating turns on pinning bare floating tags to the digest they resolve
-	// to. A pointer because absent and `false` have to stay distinguishable: a
-	// project file that says nothing must not switch off what the global one
-	// turned on.
+	// to. Absent, so a project file that says nothing leaves the global one be.
 	PinFloating *bool `yaml:"pin_floating"`
 
-	// FloatingTags names further tags to treat as moving, on top of the built-in
-	// ones and for every image. A registry that spells its moving tag "release"
-	// usually does so across all of its repositories, so writing that down once
-	// beats repeating it under every image.
-	//
-	// Entries are unioned across the files and with the per-image lists rather
-	// than replacing them, the way Exclude is: the built-in names are a fact
-	// about how registries work rather than a preference, and nothing here ever
-	// takes one away.
+	// FloatingTags names further tags to treat as moving, for every image. Union
+	// rather than replacement, like Exclude: the built-in names are a fact about
+	// how registries work, not a preference to be overridden.
 	FloatingTags []string `yaml:"floating_tags"`
 
 	// Versioning is the scheme every image's tags are read under unless the image
-	// names one of its own. Empty means `semver`. A plain string rather than a
-	// pointer because "" is already the "not set here" the merge below needs, and
-	// there is no false to tell apart from absent.
-	Versioning Versioning `yaml:"versioning"`
+	// names one of its own. Empty means `semver`; "" is already the "not set
+	// here" the merge needs, so no pointer.
+	Versioning policy.Versioning `yaml:"versioning"`
 
 	// Dockerfiles turns off checking the base images of Dockerfiles built by a
-	// compose service. A pointer for the same reason PinFloating is one, and
-	// absent means on: a service built from a Dockerfile has no image tag of its
-	// own, so leaving it out would mean ccu has nothing to say about it at all.
+	// compose service. Absent means on: it is the only way `build:` is covered.
 	Dockerfiles *bool `yaml:"dockerfiles"`
 }
 
@@ -89,26 +76,20 @@ type Loaded struct {
 	Config
 	Sources []string // absolute paths actually read, in merge order
 
-	// Global and Project are the two layers before merging. A caller that only
-	// wants the resolved settings reads the embedded Config; the TUI needs the
-	// layers apart, because a pin is added to or removed from one scope and must
-	// not be confused by what the other one says.
+	// Global and Project are the two layers before merging. The TUI needs them
+	// apart: a pin is added to or removed from one scope.
 	Global  Config
 	Project Config
 
-	// GlobalPath and ProjectPath are where those two layers were read from, empty
-	// when the layer is not backed by a file. Sources alone cannot answer that:
-	// it is one list, and a run that found only one file gives no way to tell
-	// which of the two scopes it was — which is exactly what an explanation of
-	// "why is this image not updating" has to name.
+	// GlobalPath and ProjectPath are where those layers were read from, empty when
+	// the layer is not backed by a file. Sources is one flat list and cannot say
+	// which scope a single file belonged to.
 	GlobalPath  string
 	ProjectPath string
 }
 
-// Load resolves the configuration for a scan rooted at root. explicit, when
-// non-empty, is a path named on the command line: it replaces the search
-// entirely, and a missing file is then an error rather than a silent skip —
-// the user pointed at something specific.
+// Load resolves the configuration for a scan rooted at root. A non-empty
+// explicit path replaces the search, and is an error when missing.
 func Load(root, explicit string) (Loaded, error) {
 	if explicit != "" {
 		cfg, err := readFile(explicit)
@@ -149,10 +130,9 @@ func Load(root, explicit string) (Loaded, error) {
 }
 
 // globalDirs lists the per-user config directories to try, in preference order.
-// ~/.config/ccu comes first, that being where a CLI's hand-edited dotfile is
-// looked for — including on macOS, where os.UserConfigDir points at Application
-// Support. That location is still accepted, since ccu keeps its update-check
-// state there. An empty list means there is no home, which is not an error.
+// ~/.config/ccu comes first — where a CLI's hand-edited dotfile is looked for,
+// macOS included. os.UserConfigDir is still accepted, since the update-check
+// state lives there. An empty list means there is no home, which is not an error.
 func globalDirs() []string {
 	// The tests' way in, and an escape hatch for anyone keeping their config
 	// somewhere else entirely.
@@ -191,9 +171,8 @@ func globalFile() string {
 }
 
 // findProjectFile looks for a project config at root and then in each parent
-// directory. Walking up is what makes `ccu -d ./services/api` behave the same as
-// a run from the repository root: the file belongs to the project, not to the
-// directory the scan happened to start in.
+// directory, so `ccu -d ./services/api` reads the same file a run from the
+// repository root does.
 func findProjectFile(root string) string {
 	dir, err := filepath.Abs(root)
 	if err != nil {
@@ -264,7 +243,7 @@ func Parse(r io.Reader) (Config, error) {
 		}
 	}
 
-	if err := ValidateDefaultVersioning(cfg.Versioning); err != nil {
+	if err := versioning.ValidateDefault(cfg.Versioning); err != nil {
 		return Config{}, err
 	}
 

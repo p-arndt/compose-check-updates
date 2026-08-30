@@ -5,11 +5,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/p-arndt/compose-check-updates/internal/check"
+	"github.com/p-arndt/compose-check-updates/internal/policy"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/p-arndt/compose-check-updates/internal"
-	"github.com/p-arndt/compose-check-updates/internal/config"
 	"github.com/p-arndt/compose-check-updates/internal/scanner"
 )
 
@@ -17,13 +18,13 @@ import (
 type versioningWrite struct {
 	scope      pinScope
 	image      string
-	versioning config.Versioning
+	versioning policy.Versioning
 }
 
 // withVersioningWriter swaps the config writer for a recorder, so a test can see
 // what would have been saved without a config file existing anywhere.
 func (m Model) withVersioningWriter(writes *[]versioningWrite) Model {
-	m.setVersioning = func(scope pinScope, image string, v config.Versioning) error {
+	m.setVersioning = func(scope pinScope, image string, v policy.Versioning) error {
 		*writes = append(*writes, versioningWrite{scope, image, v})
 		return nil
 	}
@@ -46,7 +47,7 @@ func onSidebar(t *testing.T, m Model, field sideField) Model {
 func TestVersioningFieldOnlyShowsOnUnreadableRows(t *testing.T) {
 	m := newTestModel()
 	m = feed(t, m,
-		unreadableEvent("a/compose.yml", "vert", "sha-e1c83ba", internal.ReasonNoTagForDigest),
+		unreadableEvent("a/compose.yml", "vert", "sha-e1c83ba", check.ReasonNoTagForDigest),
 		updateEvent("a/compose.yml", "traefik", "v2.9.3", "v2.9.4", "patch"),
 	)
 
@@ -62,7 +63,7 @@ func TestVersioningFieldOnlyShowsOnUnreadableRows(t *testing.T) {
 	panel := sidebarText(m)
 	assert.Contains(t, panel, "versioning")
 	assert.Contains(t, panel, "default")
-	assert.Contains(t, panel, string(config.VersioningSemver), "default alone says nothing about what it is")
+	assert.Contains(t, panel, string(policy.VersioningSemver), "default alone says nothing about what it is")
 }
 
 // sidebarText is the panel for the row under the cursor as one string, which is
@@ -77,7 +78,7 @@ func TestCyclingVersioningWritesAndRechecks(t *testing.T) {
 	var writes []versioningWrite
 
 	m := newTestModel().withVersioningWriter(&writes)
-	m = feed(t, m, unreadableEvent("a/compose.yml", "vert", "sha-e1c83ba", internal.ReasonNoTagForDigest))
+	m = feed(t, m, unreadableEvent("a/compose.yml", "vert", "sha-e1c83ba", check.ReasonNoTagForDigest))
 	m = onSidebar(t, m, fieldVersioning)
 
 	cmd := m.cycleSideValue(1)
@@ -87,22 +88,22 @@ func TestCyclingVersioningWritesAndRechecks(t *testing.T) {
 	require.Len(t, writes, 3)
 	assert.Equal(t, versioningWrite{pinProject, "vert", ""}, writes[0])
 	assert.Equal(t, versioningWrite{pinGlobal, "vert", ""}, writes[1])
-	assert.Equal(t, versioningWrite{pinProject, "vert", config.VersioningSemver}, writes[2])
+	assert.Equal(t, versioningWrite{pinProject, "vert", policy.VersioningSemver}, writes[2])
 
 	// What was written is what the field shows and what the next check reads.
-	assert.Equal(t, config.VersioningSemver, m.versioningFor("vert"))
-	assert.Equal(t, string(config.VersioningSemver), m.opts.Versionings["vert"])
+	assert.Equal(t, policy.VersioningSemver, m.versioningFor("vert"))
+	assert.Equal(t, policy.VersioningSemver, m.opts.Policies.For("vert").Versioning)
 
 	writes = writes[:0]
 	require.NotNil(t, m.cycleSideValue(1))
-	assert.Equal(t, config.VersioningLoose, m.versioningFor("vert"))
-	assert.Equal(t, string(config.VersioningLoose), m.opts.Versionings["vert"])
+	assert.Equal(t, policy.VersioningLoose, m.versioningFor("vert"))
+	assert.Equal(t, policy.VersioningLoose, m.opts.Policies.For("vert").Versioning)
 
 	// And round to no preference at all, which is a removal, not a value.
 	writes = writes[:0]
 	require.NotNil(t, m.cycleSideValue(1))
 	assert.Empty(t, m.versioningFor("vert"))
-	assert.NotContains(t, m.opts.Versionings, "vert")
+	assert.Empty(t, m.opts.Policies.For("vert").Versioning)
 	for _, w := range writes {
 		assert.Empty(t, w.versioning)
 	}
@@ -112,8 +113,8 @@ func TestCyclingVersioningWritesAndRechecks(t *testing.T) {
 // is not on disk, and there is nothing to re-check either.
 func TestFailedVersioningWriteChangesNothing(t *testing.T) {
 	m := newTestModel()
-	m.setVersioning = func(pinScope, string, config.Versioning) error { return errors.New("read-only file system") }
-	m = feed(t, m, unreadableEvent("a/compose.yml", "vert", "sha-e1c83ba", internal.ReasonNoTagForDigest))
+	m.setVersioning = func(pinScope, string, policy.Versioning) error { return errors.New("read-only file system") }
+	m = feed(t, m, unreadableEvent("a/compose.yml", "vert", "sha-e1c83ba", check.ReasonNoTagForDigest))
 	m = onSidebar(t, m, fieldVersioning)
 
 	assert.Nil(t, m.cycleSideValue(1))
@@ -126,12 +127,12 @@ func TestFailedVersioningWriteChangesNothing(t *testing.T) {
 func TestRecheckReplacesOnlyItsOwnRow(t *testing.T) {
 	m := newTestModel()
 	m = feed(t, m,
-		unreadableEvent("a/compose.yml", "vert", "sha-e1c83ba", internal.ReasonNoTagForDigest),
+		unreadableEvent("a/compose.yml", "vert", "sha-e1c83ba", check.ReasonNoTagForDigest),
 		updateEvent("a/compose.yml", "traefik", "v2.9.3", "v2.9.4", "patch"),
 	)
 
 	key := rowKey(*rowFor(t, m, "vert"))
-	resolved := internal.UpdateInfo{
+	resolved := check.Update{
 		FilePath:      "a/compose.yml",
 		ImageName:     "vert",
 		FullImageName: "vert:sha-e1c83ba",
@@ -141,12 +142,12 @@ func TestRecheckReplacesOnlyItsOwnRow(t *testing.T) {
 		LatestDigest:  testDigest,
 	}
 	m = feed(t, m, recheckDoneMsg{key: key, ev: scanner.Event{
-		Kind: scanner.EventUpdate, Path: "a/compose.yml", Update: resolved, Level: resolved.UpdateLevel(),
+		Kind: scanner.EventUpdate, Path: "a/compose.yml", Update: resolved, Level: resolved.Level(),
 	}})
 
 	r := rowFor(t, m, "vert")
 	assert.False(t, r.Update.IsUnreadable())
-	assert.Equal(t, "digest", r.Level)
+	assert.Equal(t, policy.Level("digest"), r.Level)
 	assert.True(t, r.Actionable(), "it can be applied now, which is the point of having changed anything")
 
 	assert.Equal(t, "v2.9.4", rowFor(t, m, "traefik").Update.LatestTag)
@@ -158,7 +159,7 @@ func TestRecheckReplacesOnlyItsOwnRow(t *testing.T) {
 func TestRecheckDropsARowThatNeedsNothing(t *testing.T) {
 	m := newTestModel()
 	m = feed(t, m,
-		unreadableEvent("a/compose.yml", "vert", "1.2.3", internal.ReasonNoComparableTag),
+		unreadableEvent("a/compose.yml", "vert", "1.2.3", check.ReasonNoComparableTag),
 		updateEvent("a/compose.yml", "traefik", "v2.9.3", "v2.9.4", "patch"),
 	)
 
@@ -166,7 +167,7 @@ func TestRecheckDropsARowThatNeedsNothing(t *testing.T) {
 	m = feed(t, m, recheckDoneMsg{key: key, ev: scanner.Event{
 		Kind: scanner.EventUpdate,
 		Path: "a/compose.yml",
-		Update: internal.UpdateInfo{
+		Update: check.Update{
 			FilePath:      "a/compose.yml",
 			ImageName:     "vert",
 			FullImageName: "vert:1.2.3",
@@ -183,7 +184,7 @@ func TestRecheckDropsARowThatNeedsNothing(t *testing.T) {
 // still cannot be read, and pretending otherwise would hide that.
 func TestFailedRecheckKeepsTheRow(t *testing.T) {
 	m := newTestModel()
-	m = feed(t, m, unreadableEvent("a/compose.yml", "vert", "sha-e1c83ba", internal.ReasonNoTagForDigest))
+	m = feed(t, m, unreadableEvent("a/compose.yml", "vert", "sha-e1c83ba", check.ReasonNoTagForDigest))
 
 	key := rowKey(*rowFor(t, m, "vert"))
 	m = feed(t, m, recheckDoneMsg{key: key, err: errors.New("fetching tags: 429")})

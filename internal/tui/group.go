@@ -70,9 +70,8 @@ func (m Model) groupInfo(nodeIdx int, cursor bool) GroupInfo {
 //	▾ tests/                        (7 updates, 1 selected)
 //	  ▸ folder1/compose.yaml        (2 updates, 1 selected)
 //
-// with ▾ when the group is expanded. Like every renderer it emits no trailing
-// newline and never exceeds width. The label is truncated from the left because
-// the tail identifies the node, not the segments leading up to it.
+// with ▾ when the group is expanded. Truncated from the left, because the tail
+// identifies the node.
 func (t Theme) GroupHeader(g GroupInfo, width int) string {
 	w := clampWidth(width)
 

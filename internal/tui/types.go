@@ -1,16 +1,13 @@
 // Package tui implements the interactive terminal UI shown by `ccu -i`.
 //
-// The UI is a Bubble Tea program that consumes the streaming scanner: rows
-// appear while registries are still being queried, and once the scan settles
-// the user selects which updates to apply and, optionally, which compose files
-// to restart afterwards.
+// It consumes the streaming scanner, so rows appear while registries are still
+// being queried.
 package tui
 
 import (
 	"github.com/charmbracelet/lipgloss"
-
-	"github.com/p-arndt/compose-check-updates/internal"
-	"github.com/p-arndt/compose-check-updates/internal/config"
+	"github.com/p-arndt/compose-check-updates/internal/check"
+	"github.com/p-arndt/compose-check-updates/internal/policy"
 )
 
 // Filter is the set of update levels the list is currently showing. It is a
@@ -51,32 +48,30 @@ func (f Filter) Label() string {
 }
 
 // Matches reports whether an update of the given level (as returned by
-// internal.UpdateInfo.UpdateLevel) should be shown under this filter.
-func (f Filter) Matches(level string) bool {
+// check.Update.UpdateLevel) should be shown under this filter.
+func (f Filter) Matches(level policy.Level) bool {
 	if f == FilterAll {
 		return true
 	}
-	return f.Label() == level
+	return f.Label() == level.String()
 }
 
-// Target is the update level a row's tag is pointed at. It is deliberately
-// distinct from Filter: Filter only decides what is *shown*, Target decides
-// what the apply keys actually write into the compose file. The values match
-// the vocabulary internal.UpdateInfo.TagForTarget speaks.
-type Target string
+// Target is the update level a row's tag is pointed at. Filter only decides what
+// is *shown*; Target decides what the apply keys write into the compose file.
+type Target = policy.Level
 
 const (
-	TargetPatch Target = "patch"
-	TargetMinor Target = "minor"
-	TargetMajor Target = "major"
+	TargetPatch = policy.LevelPatch
+	TargetMinor = policy.LevelMinor
+	TargetMajor = policy.LevelMajor
 )
 
-// targetOrder is the cycle order, lowest-risk first. Major is last so the default
-// wraps round to the most conservative choice on the first press.
+// targetOrder is the cycle order, lowest-risk first. Major is last so the
+// default wraps round to the most conservative choice on the first press.
 var targetOrder = []Target{TargetPatch, TargetMinor, TargetMajor}
 
-// Next cycles to the following target, wrapping around at the end.
-func (t Target) Next() Target {
+// nextTarget cycles to the following target, wrapping around at the end.
+func nextTarget(t Target) Target {
 	for i, c := range targetOrder {
 		if c == t {
 			return targetOrder[(i+1)%len(targetOrder)]
@@ -85,12 +80,12 @@ func (t Target) Next() Target {
 	return TargetMajor
 }
 
-// Label is the human-readable name used in the legend and footer.
-func (t Target) Label() string {
+// targetLabel is the human-readable name used in the legend and footer.
+func targetLabel(t Target) string {
 	if t == "" {
-		return string(TargetMajor)
+		return TargetMajor.String()
 	}
-	return string(t)
+	return t.String()
 }
 
 // RowState is what has happened to a row so far. Rows start Pending, become
@@ -106,8 +101,8 @@ const (
 // Row is one image with an available update, as displayed in the list. Rows are
 // flattened across compose files; FilePath groups them under file headers.
 type Row struct {
-	Update   internal.UpdateInfo
-	Level    string // "major" | "minor" | "patch" | "digest" | "pin" | "unreadable" — of the SELECTED tag
+	Update   check.Update
+	Level    policy.Level // of the SELECTED tag
 	Selected bool
 	State    RowState
 	Err      error // set when State is RowFailed
@@ -121,7 +116,7 @@ type Row struct {
 	// Pin is the cap recorded for this image, or "" when there is none. Carried on
 	// the row rather than looked up while rendering, so the list line stays a pure
 	// function of the row.
-	Pin config.Level
+	Pin policy.Level
 }
 
 // FilePath is the compose file this row's image lives in.

@@ -2,10 +2,7 @@ package scanner
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
-	"net/http"
-	"net/http/httptest"
+	"github.com/p-arndt/compose-check-updates/internal/registrytest"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -14,7 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/p-arndt/compose-check-updates/internal"
+	"github.com/p-arndt/compose-check-updates/internal/check"
+	composepkg "github.com/p-arndt/compose-check-updates/internal/compose"
+	"github.com/p-arndt/compose-check-updates/internal/policy"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -182,59 +181,34 @@ func TestDockerfileCheckers(t *testing.T) {
   postgres:
     image: postgres:16.2
 `), 0644))
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "Dockerfile"), []byte("FROM keycloak/keycloak:26.7.2\n"), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "Dockerfile"), []byte("FROM library/postgres:latest\n"), 0644))
+	require.Len(t, composepkg.BuildTargets(compose), 1)
 
-	assert.Len(t, dockerfileCheckers(Options{Dockerfiles: true}, nil, compose), 1)
-	assert.Empty(t, dockerfileCheckers(Options{}, nil, compose))
+	const digest = "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+	server := registrytest.Server(t, "library/postgres", []string{"16.2", "latest"}, map[string]string{"latest": digest})
+	t.Setenv("CCU_REGISTRY_HOST", strings.TrimPrefix(server.URL, "http://"))
+
+	// Only the Dockerfile's FROM floats, so a pin appearing at all is proof the
+	// Dockerfile was read.
+	withDockerfiles, err := checkAll(Options{Dockerfiles: true}, compose, (*check.Checker).CheckPins)
+	require.NoError(t, err)
+	require.Len(t, withDockerfiles, 1)
+	assert.Equal(t, "keycloak", withDockerfiles[0].Services[0])
+
+	without, err := checkAll(Options{}, compose, (*check.Checker).CheckPins)
+	require.NoError(t, err)
+	assert.Empty(t, without)
 }
 
-// newRegistryTestServer serves the two endpoints a check needs: the tag list and
-// a manifest per tag. Pointed at through CCU_REGISTRY_HOST below, so the images
-// in the compose file read as ordinary Docker Hub references.
-func newRegistryTestServer(t *testing.T, repo string, tags []string, tagDigests map[string]string) *httptest.Server {
-	t.Helper()
-
-	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasSuffix(r.URL.Path, "/tags/list") {
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]any{"name": repo, "tags": tags})
-			return
-		}
-
-		if i := strings.Index(r.URL.Path, "/manifests/"); i != -1 {
-			digest, ok := tagDigests[r.URL.Path[i+len("/manifests/"):]]
-			if !ok {
-				w.WriteHeader(http.StatusNotFound)
-				return
-			}
-			body := []byte(`{"schemaVersion":2,"mediaType":"application/vnd.oci.image.manifest.v1+json"}`)
-			w.Header().Set("Content-Type", "application/vnd.oci.image.manifest.v1+json")
-			w.Header().Set("Docker-Content-Digest", digest)
-			w.Header().Set("Content-Length", fmt.Sprint(len(body)))
-			w.WriteHeader(http.StatusOK)
-			if r.Method != http.MethodHead {
-				w.Write(body)
-			}
-			return
-		}
-
-		w.WriteHeader(http.StatusNotFound)
-	}))
-}
-
-// An image ccu can resolve nothing for reaches the consumer as an update event
-// of its own level. It used to be dropped here, which left the only trace of it
-// in a log line nobody can act on.
 func TestScanEmitsUnreadableImages(t *testing.T) {
 	const (
 		digestOld = "sha256:1111111111111111111111111111111111111111111111111111111111111111"
 		digestNew = "sha256:2222222222222222222222222222222222222222222222222222222222222222"
 	)
 
-	server := newRegistryTestServer(t, "library/myimage",
+	server := registrytest.Server(t, "library/myimage",
 		[]string{"latest", "sha-e1c83ba"},
 		map[string]string{"latest": digestNew, "sha-e1c83ba": digestOld})
-	defer server.Close()
 
 	serverURL, err := url.Parse(server.URL)
 	require.NoError(t, err)
@@ -255,7 +229,7 @@ func TestScanEmitsUnreadableImages(t *testing.T) {
 	}
 
 	require.Len(t, updates, 1)
-	assert.Equal(t, internal.LevelUnreadable, updates[0].Level)
+	assert.Equal(t, policy.LevelUnreadable, updates[0].Level)
 	assert.True(t, updates[0].Update.IsUnreadable())
-	assert.Equal(t, internal.ReasonNoTagForDigest, updates[0].Update.UnreadableReason)
+	assert.Equal(t, check.ReasonNoTagForDigest, updates[0].Update.UnreadableReason)
 }
