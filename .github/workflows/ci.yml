@@ -15,11 +15,12 @@ jobs:
   test:
     # Windows is in the matrix on purpose: ccu walks the filesystem for compose
     # files and renders a TUI, both of which have path- and terminal-handling
-    # behaviour a Linux-only CI would never exercise.
+    # behaviour a Linux-only CI would never exercise. macOS is there because it
+    # is the primary development platform and ships a binary in every release.
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
 
@@ -40,8 +41,11 @@ jobs:
         run: go vet ./...
 
       - name: Test
-        # ./... covers the fixture-driven suite under tests/ as well.
-        run: go test ./...
+        # ./... covers the fixture-driven suite under tests/ as well. -race is
+        # worth the slower run: the scanner's worker pool and the registry probe
+        # queue both share state across goroutines, where a data race would
+        # otherwise only show up as a rare, unreproducible failure.
+        run: go test -race ./...
 
       - name: Build
         run: go build ./...
