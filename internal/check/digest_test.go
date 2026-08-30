@@ -13,6 +13,8 @@ import (
 )
 
 func TestTagFamily(t *testing.T) {
+	t.Parallel()
+
 	assert.Equal(t, "sha-", tagFamily("sha-e1c83ba"))
 	assert.Equal(t, "sha256-", tagFamily("sha256-e1c83ba"))
 	assert.Equal(t, "", tagFamily("latest"))
@@ -20,7 +22,11 @@ func TestTagFamily(t *testing.T) {
 }
 
 func TestDigestCandidates(t *testing.T) {
+	t.Parallel()
+
 	t.Run("keeps only tags of the same family", func(t *testing.T) {
+		t.Parallel()
+
 		tags := []string{"latest", "main", "sha-e1c83ba", "sha-49821e5", "sha-438f91a", "v2-beta"}
 
 		candidates, dropped := digestCandidates(tags, "sha-e1c83ba", policy.Image{ReferenceTag: policy.DefaultReferenceTag})
@@ -30,6 +36,8 @@ func TestDigestCandidates(t *testing.T) {
 	})
 
 	t.Run("reports how many tags were dropped by the cap", func(t *testing.T) {
+		t.Parallel()
+
 		var tags []string
 		for i := range maxDigestCandidates + 10 {
 			tags = append(tags, fmt.Sprintf("sha-%04d", i))
@@ -43,6 +51,8 @@ func TestDigestCandidates(t *testing.T) {
 }
 
 func TestCheckDigestPinned(t *testing.T) {
+	t.Parallel()
+
 	server := registrytest.Server(t, "library/myimage", []string{"latest"}, map[string]string{
 		"latest": registrytest.DigestNew,
 	})
@@ -75,6 +85,8 @@ func TestCheckDigestPinned(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			file := writeComposeFile(t, "image: "+tt.reference)
 
 			checker := New(file, registry.New(serverURL.Host), policy.Set{})
@@ -98,6 +110,8 @@ func TestCheckDigestPinned(t *testing.T) {
 // TestCheckShaTagMovesToNewestTag covers the case from issue #5: an image that
 // publishes commit tags instead of semver, pinned to one of those tags.
 func TestCheckShaTagMovesToNewestTag(t *testing.T) {
+	t.Parallel()
+
 	server := registrytest.Server(t, "vert-sh/vert",
 		[]string{"latest", "main", "sha-e1c83ba", "sha-49821e5"},
 		map[string]string{
@@ -129,6 +143,8 @@ func TestCheckShaTagMovesToNewestTag(t *testing.T) {
 }
 
 func TestCheckDigestSkipsUpToDateAndFloatingTags(t *testing.T) {
+	t.Parallel()
+
 	server := registrytest.Server(t, "library/myimage",
 		[]string{"latest", "sha-49821e5"},
 		map[string]string{"latest": registrytest.DigestNew, "sha-49821e5": registrytest.DigestNew})
@@ -147,6 +163,8 @@ func TestCheckDigestSkipsUpToDateAndFloatingTags(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			file := writeComposeFile(t, "image: "+tt.reference)
 
 			checker := New(file, registry.New(serverURL.Host), policy.Set{})
@@ -164,6 +182,8 @@ func TestCheckDigestSkipsUpToDateAndFloatingTags(t *testing.T) {
 // TestCheckSemverWithDigestMovesBoth guards the trap of bumping a version tag
 // while leaving the pinned digest of the previous release behind.
 func TestCheckSemverWithDigestMovesBoth(t *testing.T) {
+	t.Parallel()
+
 	server := registrytest.Server(t, "library/myimage",
 		[]string{"1.19.0", "1.20.0"},
 		map[string]string{"1.19.0": registrytest.DigestOld, "1.20.0": registrytest.DigestNew})

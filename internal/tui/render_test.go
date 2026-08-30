@@ -53,6 +53,8 @@ func TestVersionDeltaColorsOnlyChangedSegments(t *testing.T) {
 }
 
 func TestVersionDeltaPlainForms(t *testing.T) {
+	t.Parallel()
+
 	th := DefaultTheme()
 	assert.Equal(t, "v1.2.3 → v1.3.0", plain(th.VersionDelta("v1.2.3", "v1.3.0", "minor")))
 	assert.Equal(t, "latest", plain(th.VersionDelta("", "latest", "digest")))
@@ -122,6 +124,8 @@ func TestRowLineRespectsWidth(t *testing.T) {
 }
 
 func TestRowLineContent(t *testing.T) {
+	t.Parallel()
+
 	th := DefaultTheme()
 
 	r := sampleRow()
@@ -164,6 +168,8 @@ func targetRow() Row {
 }
 
 func TestRowLineShowsSelectedTargetAndHintsOthers(t *testing.T) {
+	t.Parallel()
+
 	th := DefaultTheme()
 
 	r := targetRow()
@@ -185,6 +191,8 @@ func TestRowLineShowsSelectedTargetAndHintsOthers(t *testing.T) {
 }
 
 func TestRowLineNoTargetIsInert(t *testing.T) {
+	t.Parallel()
+
 	th := DefaultTheme()
 
 	// Only a major release exists, so asking for patch leaves nothing to apply.
@@ -203,6 +211,8 @@ func TestRowLineNoTargetIsInert(t *testing.T) {
 }
 
 func TestDetailDigestLines(t *testing.T) {
+	t.Parallel()
+
 	th := DefaultTheme()
 
 	u := sampleRow().Update
@@ -267,6 +277,8 @@ func TestRenderersSurviveDegenerateWidths(t *testing.T) {
 }
 
 func TestStatusContent(t *testing.T) {
+	t.Parallel()
+
 	th := DefaultTheme()
 
 	assert.Equal(t, "✓ applied 3 updates", plain(th.Status(StatusSuccess, "applied 3 updates")))
@@ -276,6 +288,8 @@ func TestStatusContent(t *testing.T) {
 }
 
 func TestFileHeaderShowsCounts(t *testing.T) {
+	t.Parallel()
+
 	th := DefaultTheme()
 	assert.Equal(t,
 		"tests/docker-compose.yml (3 of 5)",
@@ -283,6 +297,8 @@ func TestFileHeaderShowsCounts(t *testing.T) {
 }
 
 func TestNoTrailingWhitespaceOnSingleLineRenderers(t *testing.T) {
+	t.Parallel()
+
 	th := DefaultTheme()
 	r := sampleRow()
 
@@ -297,6 +313,8 @@ func TestNoTrailingWhitespaceOnSingleLineRenderers(t *testing.T) {
 }
 
 func TestRowLineMarksAPinnedImage(t *testing.T) {
+	t.Parallel()
+
 	th := DefaultTheme()
 
 	r := targetRow()
@@ -325,6 +343,8 @@ func TestRowLineMarksAPinnedImage(t *testing.T) {
 // up as a right-hand frame that does not close: every pane line has to render to
 // one width, with the second box starting on one column.
 func TestPaneColumnsLineUpRegardlessOfStyling(t *testing.T) {
+	t.Parallel()
+
 	for _, width := range []int{96, 118, 160, 240} {
 		m := newTestModel()
 		m = feed(t, m,
@@ -360,6 +380,8 @@ func TestPaneColumnsLineUpRegardlessOfStyling(t *testing.T) {
 // The cap and target values carry the same coloured chip the row carries in the
 // list, so the level being set and the level being shown read as one thing.
 func TestSidebarValuesUseLevelBadges(t *testing.T) {
+	t.Parallel()
+
 	m, _ := sidebarModel(t)
 	m = feed(t, m, keyMsg("tab"), keyMsg("j"), keyMsg("+")) // cap -> patch
 
@@ -379,6 +401,8 @@ func TestSidebarValuesUseLevelBadges(t *testing.T) {
 // Colour alone is invisible on a terminal told not to use any, so the focused
 // box changes weight too. Both borders are one cell wide, so nothing moves.
 func TestFocusedBoxIsDrawnHeavierThanTheUnfocusedOne(t *testing.T) {
+	t.Parallel()
+
 	th := DefaultTheme()
 
 	focused := th.Box([]string{"x"}, 10, 1, true)
@@ -399,6 +423,8 @@ func TestFocusedBoxIsDrawnHeavierThanTheUnfocusedOne(t *testing.T) {
 // A terminal too short for everything keeps what can be changed and drops what
 // is only context: hiding the cap field would put the setting out of reach.
 func TestSidebarKeepsItsFieldsWhenSpaceRunsOut(t *testing.T) {
+	t.Parallel()
+
 	m, _ := sidebarModel(t)
 	m = feed(t, m, keyMsg("tab"), keyMsg("j"), keyMsg("+")) // a cap, so all four lines exist
 
@@ -418,6 +444,8 @@ func TestSidebarKeepsItsFieldsWhenSpaceRunsOut(t *testing.T) {
 // The chevrons say a value can be stepped, so the path is dropped rather than
 // truncated: a missing closing chevron looks broken, not abbreviated.
 func TestSidebarScopeDropsThePathRatherThanTheChevron(t *testing.T) {
+	t.Parallel()
+
 	m, _ := sidebarModel(t)
 	m = feed(t, m, keyMsg("tab"), keyMsg("j"), keyMsg("+"))
 

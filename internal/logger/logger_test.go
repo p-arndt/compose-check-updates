@@ -21,6 +21,8 @@ const (
 )
 
 func TestColorizeChangedSegments(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name        string
 		current     string
@@ -129,12 +131,16 @@ func TestColorizeChangedSegments(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			assert.Equal(t, tt.want, colorizeChangedSegments(tt.current, tt.latest, tt.updateLevel))
 		})
 	}
 }
 
 func TestVisibleLen(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name string
 		in   string
@@ -150,12 +156,16 @@ func TestVisibleLen(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			assert.Equal(t, tt.want, visibleLen(tt.in))
 		})
 	}
 }
 
 func TestPadRight(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name  string
 		in    string
@@ -178,6 +188,8 @@ func TestPadRight(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			assert.Equal(t, tt.want, padRight(tt.in, tt.width))
 		})
 	}
@@ -186,6 +198,8 @@ func TestPadRight(t *testing.T) {
 // A colorized cell and its plain equivalent must occupy the same number of
 // columns; if the escapes were counted the terminal layout would smear.
 func TestPadRightColorizedMatchesPlainVisibleWidth(t *testing.T) {
+	t.Parallel()
+
 	plain := padRight("1.2.3", versionWidth)
 	colored := padRight("1.2."+green+"3"+reset, versionWidth)
 
@@ -194,6 +208,8 @@ func TestPadRightColorizedMatchesPlainVisibleWidth(t *testing.T) {
 }
 
 func TestEnabled(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name    string
 		min     slog.Level
@@ -208,6 +224,8 @@ func TestEnabled(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			h := NewCustomHandler(tt.min, os.Stdout)
 			assert.Equal(t, tt.enabled, h.Enabled(context.Background(), tt.level))
 		})
@@ -215,6 +233,8 @@ func TestEnabled(t *testing.T) {
 }
 
 func TestGetLevelStringAndColor(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name      string
 		level     slog.Level
@@ -231,6 +251,8 @@ func TestGetLevelStringAndColor(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			label, color := getLevelStringAndColor(tt.level)
 			assert.Equal(t, tt.wantLabel, label)
 			assert.Equal(t, tt.wantColor, color)
@@ -241,6 +263,8 @@ func TestGetLevelStringAndColor(t *testing.T) {
 }
 
 func TestGetUpdateLevelColor(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name        string
 		updateLevel string
@@ -256,12 +280,16 @@ func TestGetUpdateLevelColor(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			assert.Equal(t, tt.want, getUpdateLevelColor(tt.updateLevel))
 		})
 	}
 }
 
 func TestWithAttrsAndWithGroup(t *testing.T) {
+	t.Parallel()
+
 	h := NewCustomHandler(slog.LevelWarn, os.Stdout)
 
 	withAttrs := h.WithAttrs([]slog.Attr{slog.String("image", "nginx")})
@@ -298,7 +326,11 @@ func handle(t *testing.T, level slog.Level, msg string, attrs ...slog.Attr) stri
 }
 
 func TestHandle(t *testing.T) {
+	t.Parallel()
+
 	t.Run("plain message", func(t *testing.T) {
+		t.Parallel()
+
 		line := handle(t, slog.LevelInfo, "Up to date")
 
 		assert.True(t, strings.HasPrefix(line, green+"[INFO] "+reset+"  "), line)
@@ -308,6 +340,8 @@ func TestHandle(t *testing.T) {
 	})
 
 	t.Run("update record", func(t *testing.T) {
+		t.Parallel()
+
 		line := handle(t, slog.LevelWarn, "Update available",
 			slog.String("image", "nginx"),
 			slog.String("current", "1.2.3"),
@@ -328,6 +362,8 @@ func TestHandle(t *testing.T) {
 	})
 
 	t.Run("file attribute stands in for path", func(t *testing.T) {
+		t.Parallel()
+
 		line := handle(t, slog.LevelError, "Broken", slog.String("file", "compose.yaml"))
 
 		assert.Contains(t, line, red+"[ERROR]"+reset)
@@ -335,12 +371,16 @@ func TestHandle(t *testing.T) {
 	})
 
 	t.Run("unknown attributes are appended as key=value", func(t *testing.T) {
+		t.Parallel()
+
 		line := handle(t, slog.LevelDebug, "Fetching", slog.String("registry", "docker.io"))
 
 		assert.Contains(t, line, "registry=docker.io")
 	})
 
 	t.Run("a lone version attribute is not rendered", func(t *testing.T) {
+		t.Parallel()
+
 		// Only current+latest together form the version column; a half-filled
 		// pair would otherwise print a dangling arrow.
 		line := handle(t, slog.LevelInfo, "Partial", slog.String("current", "1.2.3"))

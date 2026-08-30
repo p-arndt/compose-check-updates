@@ -10,6 +10,8 @@ import (
 // three ordered levels has to be rejected at the door rather than silently
 // behaving like one of them.
 func TestLevelValid(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name  string
 		level Level
@@ -30,6 +32,8 @@ func TestLevelValid(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			assert.Equal(t, tt.want, tt.level.Valid())
 		})
 	}
@@ -38,6 +42,8 @@ func TestLevelValid(t *testing.T) {
 // The string form is what lands in config files and in the report, so it stays
 // the bare word with nothing added around it.
 func TestLevelString(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name  string
 		level Level
@@ -55,6 +61,8 @@ func TestLevelString(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			assert.Equal(t, tt.want, tt.level.String())
 		})
 	}
@@ -64,6 +72,8 @@ func TestLevelString(t *testing.T) {
 // level matrix is covered: a wrong cell here hides a real update or offers one
 // the user asked never to see.
 func TestLevelAllows(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name  string
 		cap   Level
@@ -105,6 +115,8 @@ func TestLevelAllows(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			assert.Equal(t, tt.want, tt.cap.Allows(tt.level))
 		})
 	}

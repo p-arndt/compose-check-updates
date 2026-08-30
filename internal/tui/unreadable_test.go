@@ -24,6 +24,8 @@ func unreadableEvent(path, image, tag, reason string) scanEventMsg {
 // The row exists at all, which is the whole point: before this the image left
 // the scan without a line anywhere.
 func TestUnreadableRowIsListed(t *testing.T) {
+	t.Parallel()
+
 	m := newTestModel()
 	m = feed(t, m, unreadableEvent("a/compose.yml", "vert", "sha-e1c83ba", check.ReasonNoTagForDigest))
 
@@ -35,6 +37,8 @@ func TestUnreadableRowIsListed(t *testing.T) {
 // The filter speaks about update levels and this row has none, so hiding it
 // under anything but "all" would put it out of reach of the field that fixes it.
 func TestUnreadableRowSurvivesEveryFilter(t *testing.T) {
+	t.Parallel()
+
 	m := newTestModel()
 	m = feed(t, m,
 		unreadableEvent("a/compose.yml", "vert", "sha-e1c83ba", check.ReasonNoTagForDigest),
@@ -50,6 +54,8 @@ func TestUnreadableRowSurvivesEveryFilter(t *testing.T) {
 // Nothing was resolved for it, so there is nothing to write: neither space nor
 // the sweeping selects may tick it.
 func TestUnreadableRowCannotBeSelected(t *testing.T) {
+	t.Parallel()
+
 	m := newTestModel()
 	m = feed(t, m, unreadableEvent("a/compose.yml", "vert", "sha-e1c83ba", check.ReasonNoTagForDigest))
 
@@ -67,6 +73,8 @@ func TestUnreadableRowCannotBeSelected(t *testing.T) {
 // `u` on the row says why rather than starting an apply that Update() would
 // refuse: the reason is what the user is here for.
 func TestApplyRowOnAnUnreadableRowExplainsItself(t *testing.T) {
+	t.Parallel()
+
 	m := newTestModel()
 	m = feed(t, m, unreadableEvent("a/compose.yml", "vert", "sha-e1c83ba", check.ReasonNoTagForDigest))
 	m = feed(t, m, keyMsg("j"), keyMsg("u"))
@@ -79,6 +87,8 @@ func TestApplyRowOnAnUnreadableRowExplainsItself(t *testing.T) {
 // The row has to read as a state of its own: not an update waiting to be ticked,
 // and not a row that merely has nothing at the current target.
 func TestUnreadableRowRendersAsItsOwnState(t *testing.T) {
+	t.Parallel()
+
 	m := newTestModel()
 	m = feed(t, m, unreadableEvent("a/compose.yml", "vert", "sha-e1c83ba", check.ReasonNoTagForDigest))
 

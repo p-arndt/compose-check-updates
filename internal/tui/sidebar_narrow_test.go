@@ -12,6 +12,8 @@ import (
 // column the fields are still on screen, so the settings behind them are still
 // reachable.
 func TestStackedSidebarIsDrawnBelowTheList(t *testing.T) {
+	t.Parallel()
+
 	m, _ := sidebarModel(t)
 	m.width, m.height = sidebarMinTotal-1, 30
 	require.Equal(t, sidebarStacked, m.sidebarPlacement())
@@ -24,6 +26,8 @@ func TestStackedSidebarIsDrawnBelowTheList(t *testing.T) {
 // Below the stacked width there is genuinely nothing to draw, and the frame
 // must not try.
 func TestNoSidebarAtAllWhenThereIsNoRoom(t *testing.T) {
+	t.Parallel()
+
 	m, _ := sidebarModel(t)
 	m.width, m.height = sidebarMinStacked-1, 30
 	require.Equal(t, sidebarNowhere, m.sidebarPlacement())
@@ -34,6 +38,8 @@ func TestNoSidebarAtAllWhenThereIsNoRoom(t *testing.T) {
 // The panel comes out of the list's rows rather than out of the terminal, or
 // the frame would run past the last line and the whole UI would shake.
 func TestStackedSidebarKeepsTheFrameHeight(t *testing.T) {
+	t.Parallel()
+
 	for _, width := range []int{sidebarMinStacked, 60, sidebarMinTotal - 1, sidebarMinTotal, 140} {
 		m, _ := sidebarModel(t)
 		m.width, m.height = width, 30
@@ -46,6 +52,8 @@ func TestStackedSidebarKeepsTheFrameHeight(t *testing.T) {
 // A cap set from the stacked panel has to reach the same place it would from
 // the column: the layout decides where the fields are drawn, nothing else.
 func TestCapIsSettableFromTheStackedSidebar(t *testing.T) {
+	t.Parallel()
+
 	m, _ := sidebarModel(t)
 	m.width, m.height = sidebarMinTotal-1, 30
 	require.Equal(t, sidebarStacked, m.sidebarPlacement())
@@ -62,6 +70,8 @@ func TestCapIsSettableFromTheStackedSidebar(t *testing.T) {
 // A short terminal is the case the stacked panel is most likely to meet, and it
 // must not eat the list entirely or push the footer off screen.
 func TestStackedSidebarOnAShortTerminal(t *testing.T) {
+	t.Parallel()
+
 	m, _ := sidebarModel(t)
 	m.width, m.height = 70, minViewHeight
 

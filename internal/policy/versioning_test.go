@@ -10,6 +10,8 @@ import (
 // known names has to be caught rather than falling through to a default that
 // reads the user's tags differently than they asked.
 func TestVersioningValid(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name       string
 		versioning Versioning
@@ -27,12 +29,16 @@ func TestVersioningValid(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			assert.Equal(t, tt.want, tt.versioning.Valid())
 		})
 	}
 }
 
 func TestVersioningString(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name       string
 		versioning Versioning
@@ -47,6 +53,8 @@ func TestVersioningString(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			assert.Equal(t, tt.want, tt.versioning.String())
 		})
 	}
@@ -56,6 +64,8 @@ func TestVersioningString(t *testing.T) {
 // agree with Valid in both directions: a scheme listed but rejected, or accepted
 // but never listed, leaves the user with no way to guess the right spelling.
 func TestVersioningsAgreesWithValid(t *testing.T) {
+	t.Parallel()
+
 	listed := Versionings()
 
 	assert.Equal(t, []Versioning{VersioningSemver, VersioningLoose, VersioningRegex}, listed)
@@ -68,6 +78,8 @@ func TestVersioningsAgreesWithValid(t *testing.T) {
 // that sorts or overwrites the result change which schemes every other caller is
 // allowed to name.
 func TestVersioningsReturnsACopy(t *testing.T) {
+	t.Parallel()
+
 	Versionings()[0] = "clobbered"
 
 	assert.Equal(t, VersioningSemver, Versionings()[0])

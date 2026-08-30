@@ -31,6 +31,8 @@ var hermesTags = []string{
 }
 
 func TestFindLatestVersion(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name     string
 		testData TestFindLatestVersionStruct
@@ -363,6 +365,8 @@ func TestFindLatestVersion(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			scheme, ok := ByName(tt.testData.Versioning, "")
 			assert.True(t, ok, "unknown versioning scheme")
 
@@ -373,6 +377,8 @@ func TestFindLatestVersion(t *testing.T) {
 }
 
 func TestFindLatestPerLevel(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name                            string
 		current                         string
@@ -436,6 +442,8 @@ func TestFindLatestPerLevel(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			patch, minor, major := LatestPerLevel(Default(), tt.current, tt.tags)
 			assert.Equal(t, tt.wantPatch, patch, "patch")
 			assert.Equal(t, tt.wantMinor, minor, "minor")
@@ -445,6 +453,8 @@ func TestFindLatestPerLevel(t *testing.T) {
 }
 
 func TestSuffixMismatch(t *testing.T) {
+	t.Parallel()
+
 	test := TestFindLatestVersionStruct{
 		Current:  "1.0.0-beta",
 		Tags:     []string{"1.0.1-alpha", "1.1.0-beta", "1.1.0"},
@@ -463,6 +473,8 @@ func TestSuffixMismatch(t *testing.T) {
 // the upgrade target is looked for, so an image on "16" reported nothing and
 // fell through to no fallback either.
 func TestSemverVersioningParse(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		tag          string
 		wantOK       bool
@@ -489,6 +501,8 @@ func TestSemverVersioningParse(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.tag, func(t *testing.T) {
+			t.Parallel()
+
 			v, ok := Default().Parse(tt.tag)
 			assert.Equal(t, tt.wantOK, ok)
 			if !tt.wantOK {
@@ -506,6 +520,8 @@ func TestSemverVersioningParse(t *testing.T) {
 // across its major line, so it neither replaces nor is replaced by a tag that
 // pins more than that.
 func TestSameTagFamily(t *testing.T) {
+	t.Parallel()
+
 	assert.True(t, SameFamily(1, 1))
 	assert.True(t, SameFamily(2, 3))
 	assert.True(t, SameFamily(3, 2))
@@ -514,6 +530,8 @@ func TestSameTagFamily(t *testing.T) {
 }
 
 func TestFindLatestPerLevelLoose(t *testing.T) {
+	t.Parallel()
+
 	loose, ok := ByName(policy.VersioningLoose, "")
 	assert.True(t, ok)
 

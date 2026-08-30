@@ -9,6 +9,8 @@ import (
 )
 
 func TestGetComposeFilePaths(t *testing.T) {
+	t.Parallel()
+
 	expectedPaths := []string{
 		"../../tests/docker-compose.yml",
 		"../../tests/folder1/compose.yml",
@@ -44,6 +46,8 @@ func TestGetComposeFilePaths(t *testing.T) {
 }
 
 func TestGetComposeFilePathsWithExclude(t *testing.T) {
+	t.Parallel()
+
 	tmpDir, err := os.MkdirTemp("", "ccu-test-*")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
@@ -137,6 +141,8 @@ func TestGetComposeFilePathsWithExclude(t *testing.T) {
 }
 
 func TestGetComposeFilePathsIgnoresPermissionDenied(t *testing.T) {
+	t.Parallel()
+
 	if runtime.GOOS == "windows" {
 		t.Skip("Skipping permission denied test on Windows")
 	}
@@ -170,6 +176,8 @@ func TestGetComposeFilePathsIgnoresPermissionDenied(t *testing.T) {
 // written for: a bare name, meant to hold wherever that directory turns up,
 // rather than only at the root the scan started from.
 func TestGetComposeFilePathsExcludesByName(t *testing.T) {
+	t.Parallel()
+
 	tmpDir := t.TempDir()
 
 	dirs := []string{".", "keep", filepath.Join("keep", "backup"), "backup"}
@@ -210,6 +218,8 @@ func TestGetComposeFilePathsExcludesByName(t *testing.T) {
 // to get wrong: the scan root was reached through a symlinked parent, so the
 // paths the walk produces are a different spelling of the ones the entry names.
 func TestGetComposeFilePathsExcludesAbsolutePath(t *testing.T) {
+	t.Parallel()
+
 	if runtime.GOOS == "windows" {
 		t.Skip("Skipping symlink test on Windows")
 	}

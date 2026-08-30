@@ -13,6 +13,8 @@ import (
 // A repository whose moving tag is "release": nothing in the built-in set names
 // it, so without the setting there is nothing to pin.
 func TestFloatingTagsPinsATagCcuDoesNotKnow(t *testing.T) {
+	t.Parallel()
+
 	server := registrytest.Server(t, "internal/thing",
 		[]string{"release", "latest"},
 		map[string]string{"release": registrytest.DigestNew, "latest": registrytest.DigestOld})
@@ -41,6 +43,8 @@ func TestFloatingTagsPinsATagCcuDoesNotKnow(t *testing.T) {
 // The same image without the setting: "release" is an ordinary tag, so it is
 // compared against "latest" like any other unreadable tag rather than pinned.
 func TestWithoutFloatingTagsAnUnknownMovingTagIsNotPinned(t *testing.T) {
+	t.Parallel()
+
 	server := registrytest.Server(t, "internal/thing",
 		[]string{"release", "latest"},
 		map[string]string{"release": registrytest.DigestNew, "latest": registrytest.DigestOld})
@@ -58,6 +62,8 @@ func TestWithoutFloatingTagsAnUnknownMovingTagIsNotPinned(t *testing.T) {
 
 // CheckPins is the TUI's way in, and it decides what to pin by the same rule.
 func TestCheckPinsHonoursTheExtraFloatingTags(t *testing.T) {
+	t.Parallel()
+
 	server := registrytest.Server(t, "internal/thing",
 		[]string{"release"},
 		map[string]string{"release": registrytest.DigestNew})
@@ -80,6 +86,8 @@ func TestCheckPinsHonoursTheExtraFloatingTags(t *testing.T) {
 }
 
 func TestDigestCandidatesDropsTheExtraFloatingTags(t *testing.T) {
+	t.Parallel()
+
 	// Date tags, so the floating "release" shares their family (none) and is only
 	// dropped because it was named floating.
 	tags := []string{"latest", "release", "20260830", "20260101"}

@@ -16,6 +16,8 @@ func looseScheme(t *testing.T) Scheme {
 }
 
 func TestLooseVersioningParse(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		tag         string
 		wantOK      bool
@@ -38,6 +40,8 @@ func TestLooseVersioningParse(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.tag, func(t *testing.T) {
+			t.Parallel()
+
 			v, ok := looseScheme(t).Parse(tt.tag)
 			assert.Equal(t, tt.wantOK, ok)
 			if !tt.wantOK {
@@ -54,6 +58,8 @@ func TestLooseVersioningParse(t *testing.T) {
 // order after the release it extends and before the next one. Treating it as
 // semver build metadata would have made all three of these compare equal.
 func TestLooseVersioningOrder(t *testing.T) {
+	t.Parallel()
+
 	scheme := looseScheme(t)
 
 	ordered := []string{
@@ -82,6 +88,8 @@ func TestLooseVersioningOrder(t *testing.T) {
 }
 
 func TestVersionCompare(t *testing.T) {
+	t.Parallel()
+
 	scheme := looseScheme(t)
 
 	cmp := func(a, b string) int {
@@ -106,6 +114,8 @@ func TestVersionCompare(t *testing.T) {
 }
 
 func TestByName(t *testing.T) {
+	t.Parallel()
+
 	// Empty is the default rather than an error: it is what an image that was
 	// never given a scheme has.
 	for _, name := range []policy.Versioning{"", policy.VersioningSemver} {
@@ -148,6 +158,8 @@ func regexSchemeFrom(t *testing.T, pattern string) Scheme {
 }
 
 func TestRegexVersioningParse(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name        string
 		pattern     string
@@ -184,6 +196,8 @@ func TestRegexVersioningParse(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			v, ok := regexSchemeFrom(t, tt.pattern).Parse(tt.tag)
 			assert.Equal(t, tt.wantOK, ok)
 			if !tt.wantOK {
@@ -201,6 +215,8 @@ func TestRegexVersioningParse(t *testing.T) {
 // suffix, which puts "2024-12-31" before "2024-02-01" — the alphabet, not the
 // calendar.
 func TestRegexVersioningOrder(t *testing.T) {
+	t.Parallel()
+
 	scheme := regexSchemeFrom(t, calendarPattern)
 
 	ordered := []string{"2024-01-01", "2024-02-01", "2024-02-28", "2024-12-31", "2025-01-01"}

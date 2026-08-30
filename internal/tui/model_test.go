@@ -103,6 +103,8 @@ func visibleNames(m Model) []string {
 }
 
 func TestUpdateEventsAppendSortedRows(t *testing.T) {
+	t.Parallel()
+
 	m := newTestModel()
 	m = feed(t, m,
 		updateEvent("b/compose.yml", "redis", "7.0", "7.2", "minor"),
@@ -119,6 +121,8 @@ func TestUpdateEventsAppendSortedRows(t *testing.T) {
 }
 
 func TestCursorStaysOnSameRowWhenRowInsertedAbove(t *testing.T) {
+	t.Parallel()
+
 	m := newTestModel()
 	m = feed(t, m,
 		updateEvent("b/compose.yml", "redis", "7.0", "7.2", "minor"),
@@ -137,6 +141,8 @@ func TestCursorStaysOnSameRowWhenRowInsertedAbove(t *testing.T) {
 }
 
 func TestFilterCyclingChangesVisibleRows(t *testing.T) {
+	t.Parallel()
+
 	m := newTestModel()
 	m = feed(t, m,
 		updateEvent("a/compose.yml", "caddy", "2.7", "2.8", "minor"),
@@ -166,6 +172,8 @@ func TestFilterCyclingChangesVisibleRows(t *testing.T) {
 }
 
 func TestSelectAllOnlySelectsVisibleRows(t *testing.T) {
+	t.Parallel()
+
 	m := newTestModel()
 	m = feed(t, m,
 		updateEvent("a/compose.yml", "caddy", "2.7", "2.8", "minor"),
@@ -181,6 +189,8 @@ func TestSelectAllOnlySelectsVisibleRows(t *testing.T) {
 }
 
 func TestToggleAndSelectNone(t *testing.T) {
+	t.Parallel()
+
 	m := newTestModel()
 	m = feed(t, m,
 		updateEvent("a/compose.yml", "caddy", "2.7", "2.8", "minor"),
@@ -200,6 +210,8 @@ func TestToggleAndSelectNone(t *testing.T) {
 }
 
 func TestApplyResultsSetRowState(t *testing.T) {
+	t.Parallel()
+
 	m := newTestModel()
 	m = feed(t, m,
 		updateEvent("a/compose.yml", "caddy", "2.7", "2.8", "minor"),
@@ -228,6 +240,8 @@ func TestApplyResultsSetRowState(t *testing.T) {
 }
 
 func TestApplyAllFailedSkipsRestartPrompt(t *testing.T) {
+	t.Parallel()
+
 	m := newTestModel()
 	m = feed(t, m, updateEvent("a/compose.yml", "caddy", "2.7", "2.8", "minor"))
 	m = feed(t, m, keyMsg("a"))
@@ -241,6 +255,8 @@ func TestApplyAllFailedSkipsRestartPrompt(t *testing.T) {
 }
 
 func TestAffectedFilesAreDeduplicated(t *testing.T) {
+	t.Parallel()
+
 	m := newTestModel()
 	m = feed(t, m,
 		updateEvent("a/compose.yml", "caddy", "2.7", "2.8", "minor"),
@@ -258,6 +274,8 @@ func TestAffectedFilesAreDeduplicated(t *testing.T) {
 }
 
 func TestApplyWithNothingSelectedStaysBrowsing(t *testing.T) {
+	t.Parallel()
+
 	m := newTestModel()
 	m = feed(t, m, updateEvent("a/compose.yml", "caddy", "2.7", "2.8", "minor"))
 
@@ -269,6 +287,8 @@ func TestApplyWithNothingSelectedStaysBrowsing(t *testing.T) {
 }
 
 func TestApplyWithSelectionEntersApplying(t *testing.T) {
+	t.Parallel()
+
 	m := newTestModel()
 	m = feed(t, m, updateEvent("a/compose.yml", "caddy", "2.7", "2.8", "minor"))
 	m = feed(t, m, keyMsg("j"), keyMsg(" "))
@@ -284,6 +304,8 @@ func TestApplyWithSelectionEntersApplying(t *testing.T) {
 // The safety property the whole rebinding exists for: enter is the key a user
 // hits by reflex, so it must never reach the disk.
 func TestEnterOnlyTogglesAndNeverApplies(t *testing.T) {
+	t.Parallel()
+
 	m := newTestModel()
 	m = feed(t, m, updateEvent("a/compose.yml", "caddy", "2.7", "2.8", "minor"))
 
@@ -309,6 +331,8 @@ func TestEnterOnlyTogglesAndNeverApplies(t *testing.T) {
 // `a` and `A` are distinct keys; a select-all that also wrote files would be the
 // worst possible confusion of the two.
 func TestLowercaseAOnlySelectsAndNeverApplies(t *testing.T) {
+	t.Parallel()
+
 	m := newTestModel()
 	m = feed(t, m,
 		updateEvent("a/compose.yml", "caddy", "2.7", "2.8", "minor"),
@@ -332,6 +356,8 @@ func TestLowercaseAOnlySelectsAndNeverApplies(t *testing.T) {
 }
 
 func TestApplyRowAppliesOnlyTheCursorRowAndLeavesTheSelection(t *testing.T) {
+	t.Parallel()
+
 	m := newTestModel()
 	m = feed(t, m,
 		updateEvent("a/compose.yml", "caddy", "2.7", "2.8", "minor"),
@@ -361,6 +387,8 @@ func TestApplyRowAppliesOnlyTheCursorRowAndLeavesTheSelection(t *testing.T) {
 }
 
 func TestApplyRowIsANoopOnHeaderNoTargetAndAppliedRows(t *testing.T) {
+	t.Parallel()
+
 	// On a header: the cursor starts there.
 	m := newTestModel()
 	m = feed(t, m, updateEvent("a/compose.yml", "caddy", "2.7", "2.8", "minor"))
@@ -405,8 +433,12 @@ func TestApplyRowIsANoopOnHeaderNoTargetAndAppliedRows(t *testing.T) {
 // what matters is that the row reports a *fetch* failure, which only happens if
 // ResolveDigest ran, and never Update()'s "refusing to update" refusal.
 func TestBothApplyPathsResolveDigestsBeforeWriting(t *testing.T) {
+	t.Parallel()
+
 	for _, k := range []string{"A", "u"} {
 		t.Run(k, func(t *testing.T) {
+			t.Parallel()
+
 			m := newTestModel()
 			ev := updateEvent("a/compose.yml", "127.0.0.1:1/myrepo/myapp", "1.0", "2.0", "major")
 			// A digest resolved for the OLD tag: exactly the state re-pointing leaves.
@@ -441,6 +473,8 @@ func TestBothApplyPathsResolveDigestsBeforeWriting(t *testing.T) {
 }
 
 func TestCursorClampsAndEmptyListIsSafe(t *testing.T) {
+	t.Parallel()
+
 	m := newTestModel()
 
 	// Nothing to move over: must not panic or index out of range.
@@ -467,6 +501,8 @@ func TestCursorClampsAndEmptyListIsSafe(t *testing.T) {
 }
 
 func TestScanErrorsAreCollectedAndCounted(t *testing.T) {
+	t.Parallel()
+
 	m := NewModel(scanner.Options{})
 	m = feed(t, m,
 		scanEventMsg{ev: scanner.Event{Kind: scanner.EventDiscovered, Total: 2}},
@@ -481,6 +517,8 @@ func TestScanErrorsAreCollectedAndCounted(t *testing.T) {
 }
 
 func TestLogCaptureIsConcurrencySafe(t *testing.T) {
+	t.Parallel()
+
 	c := newLogCapture(slog.LevelWarn)
 	log := slog.New(c)
 
@@ -515,6 +553,8 @@ func TestLogCaptureIsConcurrencySafe(t *testing.T) {
 }
 
 func TestLogCaptureFiltersBelowLevelAndFlattensAttrs(t *testing.T) {
+	t.Parallel()
+
 	c := newLogCapture(slog.LevelWarn)
 	log := slog.New(c)
 
@@ -529,6 +569,8 @@ func TestLogCaptureFiltersBelowLevelAndFlattensAttrs(t *testing.T) {
 }
 
 func TestCaptureSlogInstallsAndRestoresDefault(t *testing.T) {
+	t.Parallel()
+
 	prev := slog.Default()
 
 	c, restore := captureSlog(slog.LevelWarn)
@@ -542,6 +584,8 @@ func TestCaptureSlogInstallsAndRestoresDefault(t *testing.T) {
 }
 
 func TestCapturedLogsSurfaceInTheStatusLine(t *testing.T) {
+	t.Parallel()
+
 	c := newLogCapture(slog.LevelWarn)
 	m := NewModel(scanner.Options{}).WithLogCapture(c)
 
@@ -563,6 +607,8 @@ func TestCapturedLogsSurfaceInTheStatusLine(t *testing.T) {
 }
 
 func TestScanDoneMovesToBrowsing(t *testing.T) {
+	t.Parallel()
+
 	m := NewModel(scanner.Options{})
 	m = feed(t, m, scanDoneMsg{})
 	assert.Equal(t, phaseBrowsing, m.phase)
@@ -582,6 +628,8 @@ func rowFor(t *testing.T, m Model, image string) *Row {
 }
 
 func TestDefaultTargetIsMajor(t *testing.T) {
+	t.Parallel()
+
 	m := newTestModel()
 	m = feed(t, m, levelEvent("traefik", "v2.9.3", "2.9.4", "2.11.0", "3.7.8"))
 
@@ -592,6 +640,8 @@ func TestDefaultTargetIsMajor(t *testing.T) {
 }
 
 func TestGlobalTargetCyclingRepointsRows(t *testing.T) {
+	t.Parallel()
+
 	m := newTestModel()
 	m = feed(t, m, levelEvent("traefik", "v2.9.3", "2.9.4", "2.11.0", "3.7.8"))
 	require.Equal(t, "3.7.8", rowFor(t, m, "traefik").Update.LatestTag)
@@ -612,6 +662,8 @@ func TestGlobalTargetCyclingRepointsRows(t *testing.T) {
 }
 
 func TestGlobalTargetDeselectsRowsWithNothingAtThatLevel(t *testing.T) {
+	t.Parallel()
+
 	m := newTestModel()
 	m = feed(t, m,
 		levelEvent("traefik", "v2.9.3", "2.9.4", "2.11.0", "3.7.8"),
@@ -645,6 +697,8 @@ func TestGlobalTargetDeselectsRowsWithNothingAtThatLevel(t *testing.T) {
 }
 
 func TestToggleCannotSelectARowWithNoTarget(t *testing.T) {
+	t.Parallel()
+
 	m := newTestModel()
 	m = feed(t, m, levelEvent("postgres", "15", "", "", "16"))
 	m = feed(t, m, keyMsg("t")) // → patch, nothing available
@@ -655,6 +709,8 @@ func TestToggleCannotSelectARowWithNoTarget(t *testing.T) {
 }
 
 func TestRowTargetCyclingStaysWithinAvailableTargets(t *testing.T) {
+	t.Parallel()
+
 	m := newTestModel()
 	m = feed(t, m,
 		levelEvent("traefik", "v2.9.3", "2.9.4", "", "3.7.8"), // no minor release
@@ -693,6 +749,8 @@ func TestRowTargetCyclingStaysWithinAvailableTargets(t *testing.T) {
 }
 
 func TestRowTargetCyclingRecoversARowWithNoGlobalTarget(t *testing.T) {
+	t.Parallel()
+
 	m := newTestModel()
 	m = feed(t, m, levelEvent("postgres", "15", "", "", "16"))
 	m = feed(t, m, keyMsg("t")) // → patch
@@ -709,6 +767,8 @@ func TestRowTargetCyclingRecoversARowWithNoGlobalTarget(t *testing.T) {
 }
 
 func TestRowTargetIsANoopForDigestOnlyRows(t *testing.T) {
+	t.Parallel()
+
 	m := newTestModel()
 	ev := updateEvent("a/compose.yml", "myapp", "latest", "latest", "digest")
 	ev.ev.Update.CurrentDigest = "sha256:aaaa"
@@ -729,6 +789,8 @@ func TestRowTargetIsANoopForDigestOnlyRows(t *testing.T) {
 func frameHeight(s string) int { return len(strings.Split(s, "\n")) }
 
 func TestFrameIsExactlyTerminalHeight(t *testing.T) {
+	t.Parallel()
+
 	issue := scanEventMsg{ev: scanner.Event{
 		Kind: scanner.EventError, Path: "x",
 		Err: errors.New("a deliberately long failure message that has to wrap somewhere on a narrow terminal"),
@@ -771,6 +833,8 @@ func TestFrameIsExactlyTerminalHeight(t *testing.T) {
 }
 
 func TestFooterIsPinnedToTheLastRow(t *testing.T) {
+	t.Parallel()
+
 	m := newTestModel()
 	m = feed(t, m, updateEvent("a/compose.yml", "caddy", "2.7", "2.8", "minor"))
 	m.width, m.height = 200, 40 // far taller than the two-entry list needs
@@ -793,6 +857,8 @@ func TestFooterIsPinnedToTheLastRow(t *testing.T) {
 // Two bindings answering the same key in the same phase means one of them
 // silently never fires, which is exactly the bug adding fold keys could cause.
 func TestNoKeyIsBoundTwiceInTheBrowsingPhase(t *testing.T) {
+	t.Parallel()
+
 	k := DefaultKeyMap()
 	named := map[string][]key.Binding{
 		"up": {k.Up}, "down": {k.Down}, "pgup": {k.PageUp}, "pgdown": {k.PageDown},
@@ -856,6 +922,8 @@ func TestNoKeyIsBoundTwiceInTheBrowsingPhase(t *testing.T) {
 // The hint footer is the only thing telling a first-time user the keys exist,
 // so it must be on screen without pressing anything.
 func TestKeyHintFooterIsAlwaysVisible(t *testing.T) {
+	t.Parallel()
+
 	m := newTestModel()
 	m = feed(t, m, updateEvent("a/compose.yml", "caddy", "2.7", "2.8", "minor"))
 	m.width, m.height = 200, 24
@@ -900,6 +968,8 @@ func TestKeyHintFooterIsAlwaysVisible(t *testing.T) {
 // to be inert until it is closed — and esc has to close it rather than quit the
 // program behind it.
 func TestHelpDialogOwnsTheKeyboardUntilItIsClosed(t *testing.T) {
+	t.Parallel()
+
 	m := newTestModel()
 	m = feed(t, m, updateEvent("a/compose.yml", "caddy", "2.7", "2.8", "minor"))
 	m.width, m.height = 200, 30
@@ -917,6 +987,8 @@ func TestHelpDialogOwnsTheKeyboardUntilItIsClosed(t *testing.T) {
 }
 
 func TestHintFooterIsContextualPerPhase(t *testing.T) {
+	t.Parallel()
+
 	m := newTestModel()
 	m = feed(t, m, updateEvent("a/compose.yml", "caddy", "2.7", "2.8", "minor"))
 	m.width = 200
@@ -947,6 +1019,8 @@ func issueEvent(path, msg string) scanEventMsg {
 
 // The whole point: the status line shows one issue, the pane shows all of them.
 func TestIssuesViewListsEveryIssue(t *testing.T) {
+	t.Parallel()
+
 	m := newTestModel()
 	m = feed(t, m,
 		issueEvent("a", "broken yaml in a"),
@@ -972,6 +1046,8 @@ func TestIssuesViewListsEveryIssue(t *testing.T) {
 // Captured slog records carry the image and path as attributes; a pane that
 // only showed the message would be no better than the truncated status line.
 func TestIssuesViewShowsRecordAttributes(t *testing.T) {
+	t.Parallel()
+
 	c := newLogCapture(slog.LevelWarn)
 	m := NewModel(scanner.Options{}).WithLogCapture(c)
 	m.width, m.height = 100, 30
@@ -988,6 +1064,8 @@ func TestIssuesViewShowsRecordAttributes(t *testing.T) {
 }
 
 func TestIssuesViewTogglesAndSwapsTheFooter(t *testing.T) {
+	t.Parallel()
+
 	m := newTestModel()
 	m = feed(t, m, updateEvent("a/compose.yml", "caddy", "2.7", "2.8", "minor"), issueEvent("a", "broken yaml"))
 	m.width, m.height = 200, 24
@@ -1020,6 +1098,8 @@ func TestIssuesViewTogglesAndSwapsTheFooter(t *testing.T) {
 }
 
 func TestIssuesKeyIsANoopWithoutIssues(t *testing.T) {
+	t.Parallel()
+
 	m := newTestModel()
 	m = feed(t, m, updateEvent("a/compose.yml", "caddy", "2.7", "2.8", "minor"))
 	m.width, m.height = 100, 24
@@ -1036,6 +1116,8 @@ func TestIssuesKeyIsANoopWithoutIssues(t *testing.T) {
 }
 
 func TestIssuesPaneScrollsAndClampsTheCursor(t *testing.T) {
+	t.Parallel()
+
 	m := newTestModel()
 	for i := 0; i < 40; i++ {
 		m = feed(t, m, issueEvent("f", fmt.Sprintf("issue number %d with a fairly long message attached to it", i)))
@@ -1078,6 +1160,8 @@ func TestIssuesPaneScrollsAndClampsTheCursor(t *testing.T) {
 }
 
 func TestWrapPlainNeverExceedsWidth(t *testing.T) {
+	t.Parallel()
+
 	long := "Skipping (failed fetching tags) (Image=127.0.0.1:5000/a/very/long/repository/name/that/never/ends, Path=x)"
 	for _, w := range []int{-1, 0, 1, 3, 10, 40} {
 		for _, l := range wrapPlain(long, w) {
@@ -1089,6 +1173,8 @@ func TestWrapPlainNeverExceedsWidth(t *testing.T) {
 }
 
 func TestRestartPromptAnswers(t *testing.T) {
+	t.Parallel()
+
 	base := newTestModel()
 	base = feed(t, base, updateEvent("a/compose.yml", "caddy", "2.7", "2.8", "minor"))
 	base.rows[0].State = RowApplied
@@ -1159,6 +1245,8 @@ func sidebarModel(t *testing.T) (Model, *capRecorder) {
 }
 
 func TestTabMovesFocusToTheSidebarAndBack(t *testing.T) {
+	t.Parallel()
+
 	m, _ := sidebarModel(t)
 	require.Equal(t, focusList, m.focus)
 
@@ -1173,6 +1261,8 @@ func TestTabMovesFocusToTheSidebarAndBack(t *testing.T) {
 // up to the bar instead, which acts on the whole list and is just as meaningful
 // standing on a directory as on a row.
 func TestTabOnAHeaderGoesToTheBar(t *testing.T) {
+	t.Parallel()
+
 	m, _ := sidebarModel(t)
 	m.cursor = 0
 	require.Nil(t, m.currentRow(), "this test needs the cursor on a header")
@@ -1187,6 +1277,8 @@ func TestTabOnAHeaderGoesToTheBar(t *testing.T) {
 // any width, so tab still has somewhere to go — which is the point of putting
 // the list-wide controls there rather than in a column that can vanish.
 func TestTabGoesToTheBarWhenTheSidebarIsTooNarrowToDraw(t *testing.T) {
+	t.Parallel()
+
 	m, _ := sidebarModel(t)
 	m.width = sidebarMinStacked - 1
 	require.Equal(t, sidebarNowhere, m.sidebarPlacement())
@@ -1200,6 +1292,8 @@ func TestTabGoesToTheBarWhenTheSidebarIsTooNarrowToDraw(t *testing.T) {
 // cap and the per-image target have no keys of their own, so a layout that
 // dropped it would take the settings with it.
 func TestTabReachesTheStackedSidebar(t *testing.T) {
+	t.Parallel()
+
 	m, _ := sidebarModel(t)
 	m.width = sidebarMinTotal - 1
 	require.Equal(t, sidebarStacked, m.sidebarPlacement())
@@ -1213,6 +1307,8 @@ func TestTabReachesTheStackedSidebar(t *testing.T) {
 // must not be stopped on: a cursor on a line the user cannot see reads as a
 // dead keypress.
 func TestSidebarSkipsTheScopeFieldUntilACapExists(t *testing.T) {
+	t.Parallel()
+
 	m, _ := sidebarModel(t)
 	m = feed(t, m, keyMsg("tab"))
 	require.Equal(t, fieldTarget, m.sideField)
@@ -1228,6 +1324,8 @@ func TestSidebarSkipsTheScopeFieldUntilACapExists(t *testing.T) {
 }
 
 func TestSidebarReachesTheScopeFieldOnceACapIsSet(t *testing.T) {
+	t.Parallel()
+
 	m, _ := sidebarModel(t)
 	m = feed(t, m, keyMsg("tab"), keyMsg("j"), keyMsg("+"))
 	require.NotEmpty(t, m.currentRow().Pin, "the cap should be set now")
@@ -1237,6 +1335,8 @@ func TestSidebarReachesTheScopeFieldOnceACapIsSet(t *testing.T) {
 }
 
 func TestSidebarTargetFieldRetargetsTheRow(t *testing.T) {
+	t.Parallel()
+
 	m, rec := sidebarModel(t)
 	m = feed(t, m, keyMsg("tab"))
 	before := m.currentRow().Update.LatestTag
@@ -1250,6 +1350,8 @@ func TestSidebarTargetFieldRetargetsTheRow(t *testing.T) {
 // two fields impossible to tell apart, so the first step from "off" is the
 // lowest level and never whatever the target happens to show.
 func TestSidebarCapFieldStepsThroughLevelsIndependentOfTheTarget(t *testing.T) {
+	t.Parallel()
+
 	m, rec := sidebarModel(t)
 	m = feed(t, m, keyMsg("tab"))
 	require.Equal(t, TargetMajor, m.currentRow().Target, "this test needs the target on major")
@@ -1274,6 +1376,8 @@ func TestSidebarCapFieldStepsThroughLevelsIndependentOfTheTarget(t *testing.T) {
 // so a project cap of major is how a project lifts a global ceiling. It is
 // offered exactly when it would mean that, and not otherwise.
 func TestCapOffersMajorOnlyToLiftAGlobalCap(t *testing.T) {
+	t.Parallel()
+
 	m, _ := sidebarModel(t)
 	assert.NotContains(t, m.capChoicesFor("library/traefik"), policy.LevelMajor,
 		"with no global cap, major would say the same as off")
@@ -1289,6 +1393,8 @@ func TestCapOffersMajorOnlyToLiftAGlobalCap(t *testing.T) {
 // A cap is a ceiling on the image, so it has to bind the selection too —
 // otherwise `A` would write exactly the release the user just forbade.
 func TestSettingACapPullsTheTargetDownToIt(t *testing.T) {
+	t.Parallel()
+
 	m, _ := sidebarModel(t)
 	m = feed(t, m, keyMsg("tab"))
 	require.Equal(t, TargetMajor, m.currentRow().Target)
@@ -1299,6 +1405,8 @@ func TestSettingACapPullsTheTargetDownToIt(t *testing.T) {
 }
 
 func TestSidebarScopeFieldMovesAnExistingCap(t *testing.T) {
+	t.Parallel()
+
 	m, rec := sidebarModel(t)
 	m = feed(t, m, keyMsg("tab"), keyMsg("j"), keyMsg("+")) // cap on, project
 	m = feed(t, m, keyMsg("j"))                             // onto the scope field
@@ -1318,6 +1426,8 @@ func TestSidebarScopeFieldMovesAnExistingCap(t *testing.T) {
 }
 
 func TestSidebarCapCyclesBackToOff(t *testing.T) {
+	t.Parallel()
+
 	m, rec := sidebarModel(t)
 	m = feed(t, m, keyMsg("tab"), keyMsg("j"))
 
@@ -1331,6 +1441,8 @@ func TestSidebarCapCyclesBackToOff(t *testing.T) {
 }
 
 func TestSidebarCapWriteFailureIsAStatusError(t *testing.T) {
+	t.Parallel()
+
 	m, rec := sidebarModel(t)
 	rec.err = errors.New("permission denied writing .ccu.yaml")
 
@@ -1344,6 +1456,8 @@ func TestSidebarCapWriteFailureIsAStatusError(t *testing.T) {
 // The detail column claims only the keys it needs. A key it does not claim has
 // to reach the list, or tabbing across would trap the user in a mode.
 func TestSidebarPassesUnclaimedKeysToTheList(t *testing.T) {
+	t.Parallel()
+
 	m, _ := sidebarModel(t)
 	m = feed(t, m, keyMsg("tab"))
 	require.Equal(t, focusSide, m.focus)
@@ -1357,6 +1471,8 @@ func TestSidebarPassesUnclaimedKeysToTheList(t *testing.T) {
 // space acts on whatever has the focus. In the column that is the field under
 // the cursor, so it steps that setting rather than selecting the row.
 func TestSpaceInTheColumnStepsTheFieldNotTheRow(t *testing.T) {
+	t.Parallel()
+
 	m, _ := sidebarModel(t)
 	m = feed(t, m, keyMsg("tab"))
 	selected := m.currentRow().Selected
@@ -1370,6 +1486,8 @@ func TestSpaceInTheColumnStepsTheFieldNotTheRow(t *testing.T) {
 // The footer has to advertise the keys that actually work right now. While the
 // sidebar holds the keyboard, that is its own set and not the browsing one.
 func TestSidebarFocusSwapsTheFooterHints(t *testing.T) {
+	t.Parallel()
+
 	m, _ := sidebarModel(t)
 	assert.Equal(t, m.keys.BrowseHints(), m.hintBindings())
 
@@ -1378,6 +1496,8 @@ func TestSidebarFocusSwapsTheFooterHints(t *testing.T) {
 }
 
 func TestSidebarRendersTheCurrentImage(t *testing.T) {
+	t.Parallel()
+
 	m, _ := sidebarModel(t)
 	out := plainText(strings.Join(m.sidebarLines(sidebarWidth(m.width)-boxChrome, 20), "\n"))
 
@@ -1396,6 +1516,8 @@ func TestSidebarRendersTheCurrentImage(t *testing.T) {
 // The panel says how to reach it only while the list still has the keyboard;
 // once the sidebar holds it, the footer names the same keys.
 func TestSidebarHintOnlyShowsWhileTheListHasFocus(t *testing.T) {
+	t.Parallel()
+
 	m, _ := sidebarModel(t)
 	assert.Contains(t, plainText(strings.Join(m.sidebarLines(40, 20), "\n")), "→ to change")
 
@@ -1404,6 +1526,8 @@ func TestSidebarHintOnlyShowsWhileTheListHasFocus(t *testing.T) {
 }
 
 func TestHelpDialogSwapsTheFooterHints(t *testing.T) {
+	t.Parallel()
+
 	m := newTestModel()
 	m = feed(t, m, updateEvent("a/compose.yml", "caddy", "2.7", "2.8", "minor"))
 	m.width, m.height = 200, 30
@@ -1415,8 +1539,12 @@ func TestHelpDialogSwapsTheFooterHints(t *testing.T) {
 // →/l on a row is the way into the detail column. It used to step to the next
 // row of the same file, which is what `j` already does — a key spent on nothing.
 func TestRightOpensTheDetailColumnOnARow(t *testing.T) {
+	t.Parallel()
+
 	for _, k := range []string{"right", "l"} {
 		t.Run(k, func(t *testing.T) {
+			t.Parallel()
+
 			m, _ := sidebarModel(t)
 			require.NotNil(t, m.currentRow())
 
@@ -1430,8 +1558,12 @@ func TestRightOpensTheDetailColumnOnARow(t *testing.T) {
 // settings is walked along, not folded, so the arrows are worth more here than a
 // second way out — which tab and esc already are.
 func TestArrowsStepTheColumnsOptions(t *testing.T) {
+	t.Parallel()
+
 	for _, keys := range [][2]string{{"right", "left"}, {"l", "h"}} {
 		t.Run(keys[0], func(t *testing.T) {
+			t.Parallel()
+
 			m, _ := sidebarModel(t)
 			m = feed(t, m, keyMsg("tab"))
 			require.Equal(t, focusSide, m.focus)
@@ -1451,8 +1583,12 @@ func TestArrowsStepTheColumnsOptions(t *testing.T) {
 // With the arrows spent on the options, tab and esc are the whole way out — and
 // both have to work, or a user who reaches for either is stuck in the column.
 func TestTabAndEscLeaveTheDetailColumn(t *testing.T) {
+	t.Parallel()
+
 	for _, k := range []string{"tab", "esc"} {
 		t.Run(k, func(t *testing.T) {
+			t.Parallel()
+
 			m, _ := sidebarModel(t)
 			m = feed(t, m, keyMsg("tab"))
 			require.Equal(t, focusSide, m.focus)
@@ -1466,6 +1602,8 @@ func TestTabAndEscLeaveTheDetailColumn(t *testing.T) {
 // On a header the tree keys still walk the tree: there is no column to open
 // beside a directory.
 func TestRightStillExpandsOnAHeader(t *testing.T) {
+	t.Parallel()
+
 	m, _ := sidebarModel(t)
 	m.cursor = 0
 	require.Nil(t, m.currentRow())
@@ -1480,6 +1618,8 @@ func TestRightStillExpandsOnAHeader(t *testing.T) {
 // With no column to open, →/l falls back to walking the tree rather than
 // silently doing nothing.
 func TestRightWalksTheTreeWhenTheColumnIsTooNarrow(t *testing.T) {
+	t.Parallel()
+
 	m, _ := sidebarModel(t)
 	m.width = sidebarMinStacked - 1
 	require.Equal(t, sidebarNowhere, m.sidebarPlacement())
@@ -1492,6 +1632,8 @@ func TestRightWalksTheTreeWhenTheColumnIsTooNarrow(t *testing.T) {
 // The values in the column moved off the arrows and onto +/-, which is what
 // freed ←/h and →/l to mean the same thing in both panes.
 func TestColumnValuesStepWithPlusAndMinus(t *testing.T) {
+	t.Parallel()
+
 	m, _ := sidebarModel(t)
 	m = feed(t, m, keyMsg("tab"))
 	require.Equal(t, focusSide, m.focus)

@@ -32,6 +32,8 @@ func newStableOnlyServer(t *testing.T) (host, image string) {
 // The named tag is what "newest" means for this image, so the commit tag
 // carrying that digest is the update.
 func TestReferenceTagMovesTagToTheNamedReference(t *testing.T) {
+	t.Parallel()
+
 	host, image := newStableOnlyServer(t)
 	file := writeComposeFile(t, "image: "+image+":sha-e1c83ba")
 
@@ -53,6 +55,8 @@ func TestReferenceTagMovesTagToTheNamedReference(t *testing.T) {
 
 // A digest-pinned reference is rewritten in place, against the same tag.
 func TestReferenceTagRefreshesAPinnedDigest(t *testing.T) {
+	t.Parallel()
+
 	host, image := newStableOnlyServer(t)
 	file := writeComposeFile(t, "image: "+image+"@"+registrytest.DigestOld)
 
@@ -71,6 +75,8 @@ func TestReferenceTagRefreshesAPinnedDigest(t *testing.T) {
 // so ccu has nothing to report — which is exactly what it did before, and what
 // the setting exists to fix.
 func TestWithoutAReferenceTagAnImageWithoutLatestIsSkipped(t *testing.T) {
+	t.Parallel()
+
 	host, image := newStableOnlyServer(t)
 	file := writeComposeFile(t, "image: "+image+":sha-e1c83ba")
 
@@ -82,6 +88,8 @@ func TestWithoutAReferenceTagAnImageWithoutLatestIsSkipped(t *testing.T) {
 }
 
 func TestDigestCandidatesDropsTheReferenceTag(t *testing.T) {
+	t.Parallel()
+
 	tags := []string{"stable", "stable-49821e5", "stable-e1c83ba"}
 
 	candidates, dropped := digestCandidates(tags, "stable-e1c83ba", policy.Image{ReferenceTag: "stable"})

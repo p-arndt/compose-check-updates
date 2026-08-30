@@ -55,6 +55,8 @@ func file(key, label string, depth, parent int) node {
 // The tree is the whole feature: a directory chain nobody branched at is one
 // row, and every branch point is a row of its own.
 func TestTreeConstruction(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name  string
 		paths []string
@@ -169,6 +171,8 @@ func TestTreeConstruction(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			m := treeOf(t, tt.paths...)
 			assert.Equal(t, tt.want, m.nodes)
 		})
@@ -178,6 +182,8 @@ func TestTreeConstruction(t *testing.T) {
 // Nodes are listed in depth-first pre-order, which is what makes an entry list
 // built by walking them come out in reading order.
 func TestTreeNodesArePreOrderAndParentsPrecedeChildren(t *testing.T) {
+	t.Parallel()
+
 	m := treeOf(t,
 		"srv/apps/db/compose.yml",
 		"srv/apps/web/compose.yml",
@@ -201,6 +207,8 @@ func TestTreeNodesArePreOrderAndParentsPrecedeChildren(t *testing.T) {
 // the tree may not depend on arrival order — addRow sorts the rows, and the tree
 // has to be a pure function of the resulting set.
 func TestTreeIsDeterministicRegardlessOfArrivalOrder(t *testing.T) {
+	t.Parallel()
+
 	paths := []string{
 		"srv/apps/web/compose.yml",
 		"srv/other/compose.yml",
@@ -224,6 +232,8 @@ func TestTreeIsDeterministicRegardlessOfArrivalOrder(t *testing.T) {
 // and compresses away, exactly as it would had the other files never scanned.
 // Total still counts the hidden rows, so nothing is concealed — see groupInfo.
 func TestTreeFollowsTheFilter(t *testing.T) {
+	t.Parallel()
+
 	m := newTestModel()
 	m = feed(t, m,
 		updateEvent("stacks/blue/compose.yml", "caddy", "2.7", "2.8", "minor"),
@@ -276,6 +286,8 @@ func nestedEntries() []string {
 }
 
 func TestNestedEntriesAreHeadersInReadingOrder(t *testing.T) {
+	t.Parallel()
+
 	m := nestedTree(t)
 	require.Equal(t, nestedEntries(), entryPaths(m))
 
@@ -295,6 +307,8 @@ func TestNestedEntriesAreHeadersInReadingOrder(t *testing.T) {
 }
 
 func TestCollapsingADirectoryHidesEveryDescendantHeaderAndRow(t *testing.T) {
+	t.Parallel()
+
 	m := nestedTree(t)
 	m.toggleGroup("stacks")
 
@@ -312,6 +326,8 @@ func TestCollapsingADirectoryHidesEveryDescendantHeaderAndRow(t *testing.T) {
 }
 
 func TestCollapsingAFileHidesOnlyItsOwnRows(t *testing.T) {
+	t.Parallel()
+
 	m := nestedTree(t)
 	m.toggleGroup("stacks/blue/compose.yml")
 
@@ -326,6 +342,8 @@ func TestCollapsingAFileHidesOnlyItsOwnRows(t *testing.T) {
 // A collapsed ancestor wins outright: expanding a node inside it changes what
 // would be shown if the ancestor opened, and nothing on screen right now.
 func TestACollapsedAncestorHidesAnExpandedDescendant(t *testing.T) {
+	t.Parallel()
+
 	m := nestedTree(t)
 	m.toggleGroup("stacks/blue/compose.yml") // fold the file
 	m.toggleGroup("stacks")                  // then its directory
@@ -344,6 +362,8 @@ func TestACollapsedAncestorHidesAnExpandedDescendant(t *testing.T) {
 }
 
 func TestSetAllCollapsedFoldsAndUnfoldsEveryDepth(t *testing.T) {
+	t.Parallel()
+
 	m := nestedTree(t)
 
 	m.setAllCollapsed(true)
@@ -361,6 +381,8 @@ func TestSetAllCollapsedFoldsAndUnfoldsEveryDepth(t *testing.T) {
 }
 
 func TestCollapseAllAndExpandAllKeysReachEveryDepth(t *testing.T) {
+	t.Parallel()
+
 	m := nestedTree(t)
 	m = feed(t, m, keyMsg("C"))
 	assert.Equal(t, []string{"solo/compose.yml", "stacks"}, entryPaths(m))
@@ -372,6 +394,8 @@ func TestCollapseAllAndExpandAllKeysReachEveryDepth(t *testing.T) {
 // The cursor is the user's place in the list. Folding a directory it was deep
 // inside has exactly one sensible landing spot: the directory they just folded.
 func TestCollapsingAnAncestorLandsTheCursorOnThatAncestor(t *testing.T) {
+	t.Parallel()
+
 	m := nestedTree(t)
 	m.cursor = 4 // stacks/blue/compose.yml → caddy
 	require.Equal(t, "caddy", m.currentRow().Update.ImageName)
@@ -390,6 +414,8 @@ func TestCollapsingAnAncestorLandsTheCursorOnThatAncestor(t *testing.T) {
 }
 
 func TestCollapsingAFileLandsTheCursorOnThatFile(t *testing.T) {
+	t.Parallel()
+
 	m := nestedTree(t)
 	m.cursor = 5 // postgres, the second row of stacks/blue
 	require.Equal(t, "postgres", m.currentRow().Update.ImageName)
@@ -402,6 +428,8 @@ func TestCollapsingAFileLandsTheCursorOnThatFile(t *testing.T) {
 // A row streaming in mid-scan re-sorts the list and rebuilds the tree; the
 // cursor has to come out on the same image it went in on.
 func TestRebuildAfterAddRowKeepsTheCursorOnTheSameEntry(t *testing.T) {
+	t.Parallel()
+
 	m := nestedTree(t)
 	m.cursor = 7 // stacks/green → redis, the last entry
 	require.Equal(t, "redis", m.currentRow().Update.ImageName)
@@ -428,6 +456,8 @@ func TestRebuildAfterAddRowKeepsTheCursorOnTheSameEntry(t *testing.T) {
 // A new file arriving under a folded directory must not spring it open, no
 // matter how deep the branch it creates.
 func TestCollapseStateSurvivesANewBranchBelowIt(t *testing.T) {
+	t.Parallel()
+
 	m := nestedTree(t)
 	m.toggleGroup("stacks")
 	require.True(t, m.collapsed["stacks"])
@@ -442,6 +472,8 @@ func TestCollapseStateSurvivesANewBranchBelowIt(t *testing.T) {
 }
 
 func TestCursorNodeResolvesRowsToTheirFileNode(t *testing.T) {
+	t.Parallel()
+
 	m := nestedTree(t)
 
 	m.cursor = 4 // caddy
@@ -459,6 +491,8 @@ func TestCursorNodeResolvesRowsToTheirFileNode(t *testing.T) {
 }
 
 func TestSubtreeRowsAndFiles(t *testing.T) {
+	t.Parallel()
+
 	m := nestedTree(t)
 
 	imagesUnder := func(m Model, key string) []string {
@@ -500,6 +534,8 @@ func TestSubtreeRowsAndFiles(t *testing.T) {
 }
 
 func TestGroupInfoAggregatesOverTheWholeSubtree(t *testing.T) {
+	t.Parallel()
+
 	m := nestedTree(t)
 	// `a` is scoped to the cursor's subtree, so stacks/ is selected from its own
 	// header — which is the case this test is about.
@@ -531,6 +567,8 @@ func TestGroupInfoAggregatesOverTheWholeSubtree(t *testing.T) {
 // still counted, and a directory has to add up the hidden ones under every file
 // beneath it or folding could conceal an entire branch's staged writes.
 func TestGroupInfoOnADirectoryCountsSelectionsTheFilterHides(t *testing.T) {
+	t.Parallel()
+
 	// Both files keep a major row, so the branch survives the filter and the
 	// directory header is still there to under-report if it gets this wrong.
 	m := newTestModel()
@@ -556,6 +594,8 @@ func TestGroupInfoOnADirectoryCountsSelectionsTheFilterHides(t *testing.T) {
 }
 
 func TestGroupInfoOnAnInvalidNodeIsEmpty(t *testing.T) {
+	t.Parallel()
+
 	m := nestedTree(t)
 	for _, idx := range []int{-1, len(m.nodes), len(m.nodes) + 5} {
 		g := m.groupInfo(idx, true)
@@ -564,6 +604,8 @@ func TestGroupInfoOnAnInvalidNodeIsEmpty(t *testing.T) {
 }
 
 func TestCollapseOrParentFoldsThenClimbs(t *testing.T) {
+	t.Parallel()
+
 	m := nestedTree(t)
 	m.cursor = 3 // stacks/blue/compose.yml's header, one level down
 	require.Equal(t, "stacks/blue/compose.yml", m.cursorGroup())
@@ -588,6 +630,8 @@ func TestCollapseOrParentFoldsThenClimbs(t *testing.T) {
 
 // From a row the key means "get me out of here": fold the file the row lives in.
 func TestCollapseOrParentFromARowFoldsItsFile(t *testing.T) {
+	t.Parallel()
+
 	m := nestedTree(t)
 	m.cursor = 5 // postgres
 	require.Equal(t, "postgres", m.currentRow().Update.ImageName)
@@ -599,6 +643,8 @@ func TestCollapseOrParentFromARowFoldsItsFile(t *testing.T) {
 }
 
 func TestExpandOrChildUnfoldsThenDescends(t *testing.T) {
+	t.Parallel()
+
 	m := nestedTree(t)
 	m.setAllCollapsed(true)
 	m.cursor = 1 // the stacks/ header, everything below it folded
@@ -626,6 +672,8 @@ func TestExpandOrChildUnfoldsThenDescends(t *testing.T) {
 // A row has nothing to expand, so → walks on to the next row of the same file
 // and stops at its end: descending never leaves the group the cursor is in.
 func TestExpandOrChildFromARowStaysInsideItsFile(t *testing.T) {
+	t.Parallel()
+
 	m := nestedTree(t)
 	m.cursor = 4 // caddy, the first of stacks/blue's two rows
 	require.Equal(t, "caddy", m.currentRow().Update.ImageName)
@@ -641,6 +689,8 @@ func TestExpandOrChildFromARowStaysInsideItsFile(t *testing.T) {
 }
 
 func TestTreeNavigationOnDegenerateLists(t *testing.T) {
+	t.Parallel()
+
 	// Empty list: every tree key is a safe no-op.
 	m := newTestModel()
 	require.NotPanics(t, func() {
@@ -663,6 +713,8 @@ func TestTreeNavigationOnDegenerateLists(t *testing.T) {
 }
 
 func TestDeepTreeNavigationKeepsTheCursorInRange(t *testing.T) {
+	t.Parallel()
+
 	m := newTestModel()
 	for _, p := range []string{
 		"root/a/x/compose.yml", "root/a/y/compose.yml",
@@ -709,6 +761,8 @@ func TestDeepTreeNavigationKeepsTheCursorInRange(t *testing.T) {
 
 // Selections live on rows, so nothing about the tree may change what is applied.
 func TestSelectionsSurviveFoldingAtEveryDepth(t *testing.T) {
+	t.Parallel()
+
 	m := nestedTree(t)
 	// `a` selects the subtree under the cursor, so covering all four rows means
 	// selecting each root: solo/compose.yml, then stacks/ with its two files.

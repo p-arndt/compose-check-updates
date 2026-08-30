@@ -9,6 +9,8 @@ import (
 // An image nobody named keeps comparing against "latest", so one entry cannot
 // change what every other image is checked against.
 func TestReferenceTagLookupIsExact(t *testing.T) {
+	t.Parallel()
+
 	set := Set{Images: map[string]Image{
 		"internal/thing": {ReferenceTag: "stable"},
 		// A key written with nothing after it is not a tag; it takes the default
@@ -30,6 +32,8 @@ func TestReferenceTagLookupIsExact(t *testing.T) {
 // all, so every field has to count: dropping an entry that only names a floating
 // tag would silently undo what the user recorded.
 func TestImageIsZero(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name  string
 		image Image
@@ -55,6 +59,8 @@ func TestImageIsZero(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			assert.Equal(t, tt.want, tt.image.IsZero())
 		})
 	}
@@ -64,5 +70,7 @@ func TestImageIsZero(t *testing.T) {
 // no longer the zero policy — a caller must not use IsZero to decide the user
 // recorded nothing after resolving.
 func TestResolvedImageIsNotZero(t *testing.T) {
+	t.Parallel()
+
 	assert.False(t, Set{}.For("library/redis").IsZero())
 }

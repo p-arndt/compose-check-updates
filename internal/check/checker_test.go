@@ -16,6 +16,8 @@ import (
 )
 
 func TestCreateUpdateInfos(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name     string
 		fileData string
@@ -89,6 +91,8 @@ image: library/ubuntu
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			file, err := os.CreateTemp("", "testfile.yaml")
 			assert.NoError(t, err)
 			defer os.Remove(file.Name())
@@ -134,6 +138,8 @@ image: library/ubuntu
 }
 
 func TestUpdateCheckerCheck(t *testing.T) {
+	t.Parallel()
+
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.Contains(r.URL.Path, "/tags/list") {
 			w.WriteHeader(http.StatusOK)
@@ -171,6 +177,8 @@ image: %s/library/myimage:1.19.0
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			file, err := os.CreateTemp("", "testfile.yaml")
 			assert.NoError(t, err)
 			defer os.Remove(file.Name())
@@ -198,6 +206,8 @@ image: %s/library/myimage:1.19.0
 // dies on: the pattern is recorded per image and has to arrive at the scheme
 // that reads that one image's tags, and nowhere else.
 func TestVersioningPatternReachesTheScheme(t *testing.T) {
+	t.Parallel()
+
 	const calendar = `^(?P<major>\d{4})-(?P<minor>\d{2})-(?P<patch>\d{2})$`
 
 	policies := policy.Set{

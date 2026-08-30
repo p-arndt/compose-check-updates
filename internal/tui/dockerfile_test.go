@@ -49,6 +49,8 @@ func dockerfileModel(t *testing.T) Model {
 // written to a file that is not a compose file: it becomes a leaf of its own,
 // under the directory header the stack already had.
 func TestDockerfileRowSitsBesideItsComposeFile(t *testing.T) {
+	t.Parallel()
+
 	m := dockerfileModel(t)
 
 	var headers []string
@@ -68,6 +70,8 @@ func TestDockerfileRowSitsBesideItsComposeFile(t *testing.T) {
 // TestDockerfileSidebarNamesTheFile guards the one thing the row itself cannot
 // say: which file the update will be written to.
 func TestDockerfileSidebarNamesTheFile(t *testing.T) {
+	t.Parallel()
+
 	m := dockerfileModel(t)
 	m = feed(t, m, keyMsg("k")) // onto the Dockerfile row
 
@@ -81,6 +85,8 @@ func TestDockerfileSidebarNamesTheFile(t *testing.T) {
 // stack whose compose file and Dockerfile both changed is one `up`, and it has to
 // be the rebuilding one.
 func TestAffectedFilesRestartsTheStackOnce(t *testing.T) {
+	t.Parallel()
+
 	m := dockerfileModel(t)
 	for i := range m.rows {
 		m.rows[i].State = RowApplied
@@ -98,6 +104,8 @@ func TestAffectedFilesRestartsTheStackOnce(t *testing.T) {
 // Dockerfile. Two rows would share a rowKey, and rowByKey would then resolve
 // both to the first: one apply would write it twice and leave the other pending.
 func TestDuplicateDockerfileRowIsFoldedIn(t *testing.T) {
+	t.Parallel()
+
 	m := newTestModel()
 	m = feed(t, m, tea.WindowSizeMsg{Width: 110, Height: 24}, dockerfileEvent())
 

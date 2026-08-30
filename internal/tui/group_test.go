@@ -54,6 +54,8 @@ func twoGroups(t *testing.T) Model {
 }
 
 func TestHeadersAreEntriesAndCollapseHidesOnlyRows(t *testing.T) {
+	t.Parallel()
+
 	m := twoGroups(t)
 	require.Equal(t, []string{
 		"a/compose.yml", "a/compose.yml/caddy", "a/compose.yml/postgres",
@@ -74,8 +76,12 @@ func TestHeadersAreEntriesAndCollapseHidesOnlyRows(t *testing.T) {
 // space and enter are the same key as far as the list is concerned, so the same
 // table drives both rather than a near-copy of this test drifting out of sync.
 func TestSpaceOnHeaderFoldsAndOnRowSelects(t *testing.T) {
+	t.Parallel()
+
 	for _, k := range []string{" ", "enter"} {
 		t.Run(k, func(t *testing.T) {
+			t.Parallel()
+
 			m := twoGroups(t)
 
 			m = feed(t, m, keyMsg(k)) // on the header: folds
@@ -93,6 +99,8 @@ func TestSpaceOnHeaderFoldsAndOnRowSelects(t *testing.T) {
 }
 
 func TestCollapseStateSurvivesNewRowsAndResorts(t *testing.T) {
+	t.Parallel()
+
 	m := twoGroups(t)
 	m = feed(t, m, keyMsg("z")) // fold a/compose.yml
 	require.True(t, m.collapsed["a/compose.yml"])
@@ -115,6 +123,8 @@ func TestCollapseStateSurvivesNewRowsAndResorts(t *testing.T) {
 }
 
 func TestCollapsingMovesTheCursorToTheHeader(t *testing.T) {
+	t.Parallel()
+
 	m := twoGroups(t)
 	m = feed(t, m, keyMsg("j"), keyMsg("j")) // onto a/postgres, inside the group
 	require.Equal(t, "postgres", m.currentRow().Update.ImageName)
@@ -132,6 +142,8 @@ func TestCollapsingMovesTheCursorToTheHeader(t *testing.T) {
 }
 
 func TestNavigationSkipsHiddenRows(t *testing.T) {
+	t.Parallel()
+
 	m := twoGroups(t)
 	m = feed(t, m, keyMsg("z")) // fold the first group
 	require.True(t, cursorOnHeader(m))
@@ -148,6 +160,8 @@ func TestNavigationSkipsHiddenRows(t *testing.T) {
 }
 
 func TestCollapseAllAndExpandAllKeepTheCursorInRange(t *testing.T) {
+	t.Parallel()
+
 	m := twoGroups(t)
 	m = feed(t, m, endKey()) // last entry
 	require.Equal(t, len(m.entries)-1, m.cursor)
@@ -177,6 +191,8 @@ func TestCollapseAllAndExpandAllKeepTheCursorInRange(t *testing.T) {
 // THE correctness requirement: collapsing is a display operation. A selection
 // made before folding must still be applied.
 func TestSelectionsInsideACollapsedGroupStillApply(t *testing.T) {
+	t.Parallel()
+
 	m := twoGroups(t)
 	m = feed(t, m, keyMsg("j"), keyMsg(" ")) // select a/caddy
 	require.Equal(t, 1, m.selectedCount())
@@ -207,6 +223,8 @@ func TestSelectionsInsideACollapsedGroupStillApply(t *testing.T) {
 // deliberately collapse-blind: it selects every row the *filter* shows, folded
 // or not. The header's counts are what make the folded ones visible.
 func TestSelectAllIgnoresCollapseAndHeaderReportsIt(t *testing.T) {
+	t.Parallel()
+
 	m := twoGroups(t)
 	m = feed(t, m, keyMsg("z")) // fold a/compose.yml, the cursor's group
 	m = feed(t, m, keyMsg("a"))
@@ -236,6 +254,8 @@ func TestSelectAllIgnoresCollapseAndHeaderReportsIt(t *testing.T) {
 }
 
 func TestGroupHeaderRendersCountsAndArrow(t *testing.T) {
+	t.Parallel()
+
 	th := DefaultTheme()
 
 	expanded := plainText(th.GroupHeader(GroupInfo{
@@ -266,6 +286,8 @@ func TestGroupHeaderRendersCountsAndArrow(t *testing.T) {
 // printing the full key at every level is exactly the redundancy the tree
 // replaces.
 func TestGroupHeaderPrintsTheLabelIndentedByDepth(t *testing.T) {
+	t.Parallel()
+
 	th := DefaultTheme()
 
 	root := plainText(th.GroupHeader(GroupInfo{
@@ -289,6 +311,8 @@ func TestGroupHeaderPrintsTheLabelIndentedByDepth(t *testing.T) {
 }
 
 func TestGroupHeaderNeverExceedsWidthAndSurvivesTinyTerminals(t *testing.T) {
+	t.Parallel()
+
 	th := DefaultTheme()
 	g := GroupInfo{
 		Path:  "some/deeply/nested/path/docker-compose.yml",
@@ -315,6 +339,8 @@ func TestGroupHeaderNeverExceedsWidthAndSurvivesTinyTerminals(t *testing.T) {
 }
 
 func TestGroupInfoCountsSelectionsHiddenByTheFilter(t *testing.T) {
+	t.Parallel()
+
 	m := twoGroups(t)
 	m = feed(t, m, keyMsg("a")) // select everything
 	m = feed(t, m, keyMsg("f")) // filter=major: a/compose.yml shows only postgres
@@ -326,6 +352,8 @@ func TestGroupInfoCountsSelectionsHiddenByTheFilter(t *testing.T) {
 }
 
 func TestDisplayIndexAndWindowStayConsistentWhenCollapsed(t *testing.T) {
+	t.Parallel()
+
 	m := twoGroups(t)
 	m.width, m.height = 80, 24
 
@@ -354,6 +382,8 @@ func TestDisplayIndexAndWindowStayConsistentWhenCollapsed(t *testing.T) {
 }
 
 func TestScrollingKeepsTheCursorVisibleWithGroupsCollapsed(t *testing.T) {
+	t.Parallel()
+
 	m := newTestModel()
 	for _, p := range []string{"a", "b", "c", "d", "e", "f", "g"} {
 		m = feed(t, m,
@@ -392,6 +422,8 @@ func TestScrollingKeepsTheCursorVisibleWithGroupsCollapsed(t *testing.T) {
 }
 
 func TestCollapseOnDegenerateLists(t *testing.T) {
+	t.Parallel()
+
 	// Empty list: every fold key must be a safe no-op.
 	m := newTestModel()
 	m = feed(t, m, keyMsg("z"), keyMsg("C"), keyMsg("E"), keyMsg(" "))

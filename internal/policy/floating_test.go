@@ -10,6 +10,8 @@ import (
 // publishing "release" almost certainly publishes "latest" beside it, and that
 // one must not turn back into a pinnable version tag.
 func TestFloatingTagsAddToTheBuiltInSet(t *testing.T) {
+	t.Parallel()
+
 	assert.True(t, Image{FloatingTags: []string{"release"}}.Floats("latest"))
 	assert.True(t, Image{FloatingTags: []string{"release"}}.Floats("release"))
 	assert.True(t, Image{}.Floats("nightly"))
@@ -19,6 +21,8 @@ func TestFloatingTagsAddToTheBuiltInSet(t *testing.T) {
 
 // One image's list does not reach another's.
 func TestFloatingTagsLookupIsExact(t *testing.T) {
+	t.Parallel()
+
 	set := Set{Images: map[string]Image{"internal/thing": {FloatingTags: []string{"release"}}}}
 
 	assert.Equal(t, []string{"release"}, set.For("internal/thing").FloatingTags)
@@ -35,6 +39,8 @@ func TestFloatingTagsLookupIsExact(t *testing.T) {
 // spells its moving tag "release" across every repository is a global fact, and
 // a single repository adding "canary" on top must not lose it again.
 func TestFloatingTagsCombine(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name     string
 		perImage map[string]Image
@@ -77,6 +83,8 @@ func TestFloatingTagsCombine(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			set := Set{Images: tt.perImage, FloatingTags: tt.global}
 
 			assert.Equal(t, tt.want, set.For(tt.image).FloatingTags)
@@ -92,6 +100,8 @@ func TestFloatingTagsCombine(t *testing.T) {
 // with Floats: a tag listed but not treated as floating would tell the user ccu
 // protects them from something it does not.
 func TestBuiltInFloatingTagsAgreesWithFloats(t *testing.T) {
+	t.Parallel()
+
 	tags := BuiltInFloatingTags()
 
 	assert.ElementsMatch(t,
@@ -105,6 +115,8 @@ func TestBuiltInFloatingTagsAgreesWithFloats(t *testing.T) {
 // Each call builds its own slice, so a caller sorting or appending to what it
 // got back cannot change what the next caller sees.
 func TestBuiltInFloatingTagsIsACopy(t *testing.T) {
+	t.Parallel()
+
 	tags := BuiltInFloatingTags()
 	for i := range tags {
 		tags[i] = "clobbered"
