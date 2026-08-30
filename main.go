@@ -71,7 +71,9 @@ func main() {
 	// entries, and internal.ResolveVersioning consults them first.
 	if ccuFlags.Versioning != "" {
 		scheme := config.Versioning(ccuFlags.Versioning)
-		if err := config.ValidateVersioning(scheme); err != nil {
+		// The stricter check of the two: a default has no image to take a pattern
+		// from, so `regex` is a scheme only an entry naming an image may ask for.
+		if err := config.ValidateDefaultVersioning(scheme); err != nil {
 			slog.Error("Error reading flags", "error", err)
 			os.Exit(exitError)
 		}
@@ -104,8 +106,9 @@ func main() {
 		Minor:   ccuFlags.Minor,
 		Patch:   ccuFlags.Patch,
 
-		Versionings:       effective.Versionings(),
-		DefaultVersioning: effective.DefaultVersioning(),
+		Versionings:        effective.Versionings(),
+		VersioningPatterns: effective.VersioningPatterns(),
+		DefaultVersioning:  effective.DefaultVersioning(),
 
 		PinFloating: effective.PinFloatingEnabled(),
 		Dockerfiles: effective.DockerfilesEnabled(),

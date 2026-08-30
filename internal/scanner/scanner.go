@@ -29,13 +29,19 @@ type Options struct {
 	Caps map[string]string
 
 	// Versionings is the versioning scheme the user recorded per image, keyed by
-	// image name without tag or digest, valued "semver"/"loose". An image with no
-	// entry takes DefaultVersioning.
+	// image name without tag or digest, valued "semver"/"loose"/"regex". An image
+	// with no entry takes DefaultVersioning.
 	Versionings map[string]string
+
+	// VersioningPatterns is the regex the "regex" scheme reads an image's tags
+	// with, keyed the same way. Only the images on that scheme have one, and the
+	// config layer guarantees each of them does.
+	VersioningPatterns map[string]string
 
 	// DefaultVersioning is the scheme for images Versionings says nothing about.
 	// Empty means "semver", which is what every image gets until a config file or
-	// -versioning says otherwise.
+	// -versioning says otherwise. Never "regex": a pattern belongs to one image,
+	// so there is nothing a run-wide default could read tags with.
 	DefaultVersioning string
 
 	// PinFloating turns on pinning bare floating tags ("latest", "main", …) to
@@ -151,7 +157,7 @@ func checkFile(ctx context.Context, events chan<- Event, opts Options, path stri
 	registry := internal.NewRegistry("")
 	checker := internal.NewUpdateChecker(path, registry).
 		WithPinFloating(opts.PinFloating).
-		WithVersioning(opts.Versionings, opts.DefaultVersioning)
+		WithVersioning(opts.Versionings, opts.DefaultVersioning, opts.VersioningPatterns)
 	infos, err := checker.Check(opts.Major, opts.Minor, opts.Patch)
 	if err != nil {
 		send(ctx, events, Event{Kind: EventError, Path: path, Err: err})
@@ -205,7 +211,7 @@ func dockerfileCheckers(opts Options, registry *internal.Registry, path string) 
 			path: target.Dockerfile,
 			checker: internal.NewDockerfileChecker(target.Dockerfile, path, target.Service, registry).
 				WithPinFloating(opts.PinFloating).
-				WithVersioning(opts.Versionings, opts.DefaultVersioning),
+				WithVersioning(opts.Versionings, opts.DefaultVersioning, opts.VersioningPatterns),
 		})
 	}
 	return checkers

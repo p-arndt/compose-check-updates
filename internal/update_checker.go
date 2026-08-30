@@ -27,6 +27,13 @@ type UpdateChecker struct {
 	versionings       map[string]string
 	defaultVersioning string
 
+	// versioningPatterns is the regex an image on the `regex` scheme reads its
+	// tags with, keyed the same way. Only an image given that scheme has one, so
+	// a lookup miss and "this image needs no pattern" are the same thing. Held as
+	// the pattern the user wrote, for the same reason the schemes above are held
+	// as names: compiling it is the reading side's job, not this one's.
+	versioningPatterns map[string]string
+
 	// composePath is the compose file that builds path, set only when path is a
 	// Dockerfile reached through a service's `build:`. It is what tells the two
 	// kinds of file apart here — and what a restart has to act on later, since
@@ -61,10 +68,16 @@ func (u *UpdateChecker) WithPinFloating(on bool) *UpdateChecker {
 	return u
 }
 
-// WithVersioning sets the per-image versioning schemes and the default for
-// images without one. See UpdateChecker.versionings.
-func (u *UpdateChecker) WithVersioning(perImage map[string]string, def string) *UpdateChecker {
-	u.versionings, u.defaultVersioning = perImage, def
+// WithVersioning sets the per-image versioning schemes, the default for images
+// without one, and the patterns the `regex` scheme reads its tags with. See
+// UpdateChecker.versionings.
+//
+// The patterns arrive through this same call rather than a builder step of their
+// own: an image on `regex` whose pattern was left behind reads no tag at all and
+// drops to comparing digests, which is exactly the kind of setting taken and
+// then quietly ignored the rest of this package refuses to allow.
+func (u *UpdateChecker) WithVersioning(perImage map[string]string, def string, patterns map[string]string) *UpdateChecker {
+	u.versionings, u.defaultVersioning, u.versioningPatterns = perImage, def, patterns
 	return u
 }
 
@@ -86,13 +99,14 @@ func (u *UpdateChecker) Check(major, minor, patch bool) ([]UpdateInfo, error) {
 		// Recorded on the update itself, because the level and the cap are worked
 		// out again from the tags after this checker is gone.
 		info.Versioning = u.versioningFor(info.ImageName)
-		scheme, ok := VersioningByName(info.Versioning)
+		info.VersioningPattern = u.versioningPatterns[info.ImageName]
+		scheme, ok := VersioningByName(info.Versioning, info.VersioningPattern)
 		if !ok {
-			// The config layer rejects these on load, so one reaching here means
-			// the two lists of scheme names have drifted apart. Falling back is
-			// still the safe move, but doing it quietly would accept the user's
-			// setting and then ignore it.
-			slog.Warn("Unknown versioning scheme, falling back to the default", "scheme", info.Versioning, "image", info.ImageName, "path", info.FilePath)
+			// The config layer rejects an unknown name and an unusable pattern
+			// alike on load, so one reaching here means the two sides have drifted
+			// apart. Falling back is still the safe move, but doing it quietly
+			// would accept the user's setting and then ignore it.
+			slog.Warn("Unusable versioning scheme, falling back to the default", "scheme", info.Versioning, "pattern", info.VersioningPattern, "image", info.ImageName, "path", info.FilePath)
 			scheme = DefaultVersioning()
 		}
 

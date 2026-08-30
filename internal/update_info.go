@@ -49,11 +49,18 @@ type UpdateInfo struct {
 	// independent of wherever the preference was read from.
 	Cap string
 
-	// Versioning names the scheme this image's tags are read under ("semver" or
-	// "loose"); empty means the default. A plain string for the same reason Cap
-	// is one, and carried on the update itself because the level and the cap are
-	// re-derived from the tags long after the checker that resolved them is gone.
+	// Versioning names the scheme this image's tags are read under ("semver",
+	// "loose" or "regex"); empty means the default. A plain string for the same
+	// reason Cap is one, and carried on the update itself because the level and
+	// the cap are re-derived from the tags long after the checker that resolved
+	// them is gone.
 	Versioning string
+
+	// VersioningPattern is the regex the "regex" scheme reads this image's tags
+	// with, empty under every other scheme. It travels with the update for the
+	// same reason Versioning does: the scheme cannot be rebuilt without it, and a
+	// level re-derived under the wrong one is worse than no level at all.
+	VersioningPattern string
 
 	// PinsFloating marks the one update that adds a digest instead of changing
 	// one: a bare floating tag ("latest") gaining the digest it resolves to right
@@ -292,10 +299,11 @@ func (u *UpdateInfo) UpdateLevel() string {
 }
 
 // versioning is the scheme this image's tags are read under. An unrecognised
-// name falls back to the default rather than failing: the config layer rejects
-// those on load, so one reaching this far is not worth hiding every update over.
+// name, or a pattern that will not compile, falls back to the default rather
+// than failing: the config layer rejects both on load, so one reaching this far
+// is not worth hiding every update over.
 func (u *UpdateInfo) versioning() Versioning {
-	scheme, ok := VersioningByName(u.Versioning)
+	scheme, ok := VersioningByName(u.Versioning, u.VersioningPattern)
 	if !ok {
 		return DefaultVersioning()
 	}

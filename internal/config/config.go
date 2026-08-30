@@ -236,7 +236,7 @@ func Parse(r io.Reader) (Config, error) {
 	}
 	cfg.Exclude = nonEmpty(cfg.Exclude)
 
-	if err := ValidateVersioning(cfg.Versioning); err != nil {
+	if err := ValidateDefaultVersioning(cfg.Versioning); err != nil {
 		return Config{}, err
 	}
 
