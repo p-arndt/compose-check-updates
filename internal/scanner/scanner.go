@@ -33,6 +33,11 @@ type Options struct {
 	// entry takes DefaultVersioning.
 	Versionings map[string]string
 
+	// ReferenceTags is the tag digest mode compares an image against, keyed by
+	// image name without tag or digest. An image with no entry is compared
+	// against "latest".
+	ReferenceTags map[string]string
+
 	// DefaultVersioning is the scheme for images Versionings says nothing about.
 	// Empty means "semver", which is what every image gets until a config file or
 	// -versioning says otherwise.
@@ -151,7 +156,8 @@ func checkFile(ctx context.Context, events chan<- Event, opts Options, path stri
 	registry := internal.NewRegistry("")
 	checker := internal.NewUpdateChecker(path, registry).
 		WithPinFloating(opts.PinFloating).
-		WithVersioning(opts.Versionings, opts.DefaultVersioning)
+		WithVersioning(opts.Versionings, opts.DefaultVersioning).
+		WithReferenceTags(opts.ReferenceTags)
 	infos, err := checker.Check(opts.Major, opts.Minor, opts.Patch)
 	if err != nil {
 		send(ctx, events, Event{Kind: EventError, Path: path, Err: err})
@@ -205,7 +211,8 @@ func dockerfileCheckers(opts Options, registry *internal.Registry, path string) 
 			path: target.Dockerfile,
 			checker: internal.NewDockerfileChecker(target.Dockerfile, path, target.Service, registry).
 				WithPinFloating(opts.PinFloating).
-				WithVersioning(opts.Versionings, opts.DefaultVersioning),
+				WithVersioning(opts.Versionings, opts.DefaultVersioning).
+				WithReferenceTags(opts.ReferenceTags),
 		})
 	}
 	return checkers

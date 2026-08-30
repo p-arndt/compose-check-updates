@@ -27,6 +27,12 @@ type UpdateChecker struct {
 	versionings       map[string]string
 	defaultVersioning string
 
+	// referenceTags is the tag digest mode compares an image against, keyed by
+	// image name without tag or digest. An image with no entry takes
+	// defaultReferenceTag, which is what every image got before this was
+	// configurable.
+	referenceTags map[string]string
+
 	// composePath is the compose file that builds path, set only when path is a
 	// Dockerfile reached through a service's `build:`. It is what tells the two
 	// kinds of file apart here — and what a restart has to act on later, since
@@ -70,6 +76,23 @@ func (u *UpdateChecker) WithVersioning(perImage map[string]string, def string) *
 
 // versioningFor returns the scheme name recorded for an image, falling back to
 // the run's default. See ResolveVersioning.
+// WithReferenceTags sets the per-image reference tags digest mode compares
+// against. See UpdateChecker.referenceTags.
+func (u *UpdateChecker) WithReferenceTags(perImage map[string]string) *UpdateChecker {
+	u.referenceTags = perImage
+	return u
+}
+
+// referenceTagFor returns the tag recorded for an image, falling back to the
+// built-in default. An entry spelled empty is treated as no entry: it says the
+// user wrote the key and nothing after it, not that the empty tag is meant.
+func (u *UpdateChecker) referenceTagFor(image string) string {
+	if tag, ok := u.referenceTags[image]; ok && tag != "" {
+		return tag
+	}
+	return defaultReferenceTag
+}
+
 func (u *UpdateChecker) versioningFor(image string) string {
 	return ResolveVersioning(u.versionings, u.defaultVersioning, image)
 }
@@ -163,9 +186,10 @@ func (u *UpdateChecker) checkDigest(info *UpdateInfo) {
 		return
 	}
 
-	latestDigest, err := u.registry.FetchImageDigest(info.ImageName + ":" + referenceTag)
+	reference := u.referenceTagFor(info.ImageName)
+	latestDigest, err := u.registry.FetchImageDigest(info.ImageName + ":" + reference)
 	if err != nil {
-		slog.Warn("Skipping (no "+referenceTag+" tag to compare against)", "image", info.ImageName, "path", info.FilePath)
+		slog.Warn("Skipping (no "+reference+" tag to compare against); if this image publishes its newest build under another tag, name it with `reference_tag`", "image", info.ImageName, "path", info.FilePath)
 		return
 	}
 
@@ -200,7 +224,7 @@ func (u *UpdateChecker) checkDigest(info *UpdateInfo) {
 		return
 	}
 
-	candidates, dropped := digestCandidates(tags, info.CurrentTag)
+	candidates, dropped := digestCandidates(tags, info.CurrentTag, reference)
 	if dropped > 0 {
 		slog.Warn("Only probing a subset of tags", "image", info.ImageName, "probed", len(candidates), "skipped", dropped)
 	}

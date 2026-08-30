@@ -354,6 +354,27 @@ version number, and reports the update as level `digest`:
 | `image: vert:1.2.3@sha256:abc…` | Bumps the tag **and** the digest together, so they stay consistent       |
 | `image: vert:latest`            | Pinned to the digest it resolves to today, with `-pin-floating` (see below) |
 
+### The reference tag
+
+All of that hangs on one tag: `latest`, whose digest is what "newest" means for
+an image with no readable version. A repository that publishes no `latest` has
+nothing to be compared against, so `ccu` skips it entirely — it says
+`no latest tag to compare against` and moves on. Name the moving tag it *does*
+publish and it is back in the game:
+
+```yaml
+# .ccu.yaml or ~/.config/ccu/config.yaml
+images:
+  internal/thing:
+    reference_tag: stable
+```
+
+Now `internal/thing:sha-e1c83ba` is compared against the digest of
+`internal/thing:stable`, and the commit tag carrying that digest is the update.
+The reference tag itself is never offered as the new tag — trading a fixed
+reference for a moving one is not an update — and it applies to that image only:
+everything else keeps comparing against `latest`.
+
 ### Floating tags
 
 `latest`, `main`, `edge`, `nightly` and friends always resolve to whatever is
