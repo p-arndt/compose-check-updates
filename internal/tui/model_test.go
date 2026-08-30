@@ -308,9 +308,9 @@ func TestEnterOnlyTogglesAndNeverApplies(t *testing.T) {
 	m := newTestModel()
 	m = feed(t, m, updateEvent("a/compose.yml", "caddy", "2.7", "2.8", "minor"))
 
-	next, cmd := m.Update(keyMsg("j"))
+	next, _ := m.Update(keyMsg("j"))
 	m = next.(Model)
-	next, cmd = m.Update(keyMsg("enter"))
+	next, cmd := m.Update(keyMsg("enter"))
 	m = next.(Model)
 
 	assert.Equal(t, 1, m.selectedCount(), "enter still toggles")

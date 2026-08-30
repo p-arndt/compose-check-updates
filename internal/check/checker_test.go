@@ -109,7 +109,7 @@ image: library/ubuntu
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if strings.Contains(r.URL.Path, "/v2/repositories/") {
 					w.WriteHeader(http.StatusOK)
-					w.Write([]byte(`{"count": 4, "results": [
+					_, _ = w.Write([]byte(`{"count": 4, "results": [
 						{"name": "1.18.0"},
 						{"name": "1.18.1"},
 						{"name": "1.19.0"},
@@ -119,7 +119,7 @@ image: library/ubuntu
 				}
 				if strings.Contains(r.URL.Path, "/tags/list") {
 					w.WriteHeader(http.StatusOK)
-					w.Write([]byte(`{"name":"library/ubuntu","tags":["1.18.0","1.18.1","1.19.0","1.20.0"]}`))
+					_, _ = w.Write([]byte(`{"name":"library/ubuntu","tags":["1.18.0","1.18.1","1.19.0","1.20.0"]}`))
 					return
 				}
 				w.WriteHeader(http.StatusNotFound)
@@ -144,7 +144,7 @@ func TestUpdateCheckerCheck(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.Contains(r.URL.Path, "/tags/list") {
 			w.WriteHeader(http.StatusOK)
-			w.Write([]byte(`{"name":"library/myimage","tags":["1.18.0","1.18.1","1.19.0","1.20.0"]}`))
+			_, _ = w.Write([]byte(`{"name":"library/myimage","tags":["1.18.0","1.18.1","1.19.0","1.20.0"]}`))
 			return
 		}
 		w.WriteHeader(http.StatusNotFound)

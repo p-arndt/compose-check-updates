@@ -16,12 +16,12 @@ func TestTags(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.Contains(r.URL.Path, "/v2/repositories/") {
 			w.WriteHeader(http.StatusOK)
-			w.Write([]byte(`{"count": 4, "results": [{"name": "latest"}, {"name": "18.04"}, {"name": "20.04"}, {"name": "22.04"}],"next": null}`))
+			_, _ = w.Write([]byte(`{"count": 4, "results": [{"name": "latest"}, {"name": "18.04"}, {"name": "20.04"}, {"name": "22.04"}],"next": null}`))
 			return
 		}
 		if strings.Contains(r.URL.Path, "/tags/list") {
 			w.WriteHeader(http.StatusOK)
-			w.Write([]byte(`{"name":"ubuntu","tags":["latest","18.04","20.04","22.04"]}`))
+			_, _ = w.Write([]byte(`{"name":"ubuntu","tags":["latest","18.04","20.04","22.04"]}`))
 			return
 		}
 		w.WriteHeader(http.StatusNotFound)
