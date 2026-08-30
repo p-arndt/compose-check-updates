@@ -86,8 +86,24 @@ fmt-check:
 fmt-check:
     @if (gofmt -l .) { Write-Error "unformatted files (run: just fmt)"; exit 1 }
 
+# Run golangci-lint. Installs the pinned version into GOPATH/bin on first use,
+# so this works without a separate install step; keep the version in step with
+# the one the CI lint job pins.
+[unix]
+lint:
+    @command -v golangci-lint >/dev/null 2>&1 || go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.2
+    "$(command -v golangci-lint || echo "$(go env GOPATH)/bin/golangci-lint")" run
+
+# Run golangci-lint. Installs the pinned version into GOPATH/bin on first use,
+# so this works without a separate install step; keep the version in step with
+# the one the CI lint job pins.
+[windows]
+lint:
+    @if (-not (Get-Command golangci-lint -ErrorAction SilentlyContinue)) { go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.2 }
+    $exe = (Get-Command golangci-lint -ErrorAction SilentlyContinue).Source; if (-not $exe) { $exe = Join-Path (go env GOPATH) "bin\golangci-lint.exe" }; & $exe run
+
 # Run every check the way CI should.
-ci: fmt-check vet test
+ci: fmt-check vet lint test
 
 # ---------------------------------------------------------------------------
 # Release
