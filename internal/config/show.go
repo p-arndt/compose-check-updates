@@ -55,8 +55,12 @@ func Show(w io.Writer, loaded Loaded, effective Config) {
 // random, and a report whose lines move between two identical runs is one nobody
 // can diff.
 func showImages(w io.Writer, effective Config) {
-	images := make([]string, 0, len(effective.Images))
-	for image, p := range effective.Images {
+	// The resolved policies rather than the raw entries, so what is printed is
+	// what the scan uses: trimmed and deduplicated floating tags included.
+	policies := effective.Policies().Images
+
+	images := make([]string, 0, len(policies))
+	for image, p := range policies {
 		if !p.IsZero() {
 			images = append(images, image)
 		}
@@ -69,7 +73,7 @@ func showImages(w io.Writer, effective Config) {
 
 	fmt.Fprintln(w, "  images:")
 	for _, image := range images {
-		fmt.Fprintf(w, "    %s: %s\n", image, strings.Join(imageSettings(effective.Images[image]), ", "))
+		fmt.Fprintf(w, "    %s: %s\n", image, strings.Join(imageSettings(policies[image]), ", "))
 	}
 }
 

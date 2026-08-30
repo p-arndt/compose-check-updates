@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -226,6 +227,12 @@ func newUpdater() (*selfupdate.Updater, error) {
 		Repo:    "compose-check-updates",
 		AppName: "ccu",
 		Layout:  &layout.RawBinary{},
+		// Spelled out because the default would name `ccu update`, which is not a
+		// command ccu has.
+		UpdateCmd: "ccu self-update",
+		// The library's own client stops at 30s, which is the tighter of the two
+		// limits and would abort a slow download the 60s deadline still allows.
+		HTTP: &http.Client{Timeout: selfupdate.DefaultUpdateTimeout},
 	})
 }
 
