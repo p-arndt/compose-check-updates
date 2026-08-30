@@ -77,6 +77,12 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	return m.handleListKey(msg)
+}
+
+// handleListKey reads the keys of the list itself: every pane that could have
+// claimed the key has already declined it by the time handleKey gets here.
+func (m Model) handleListKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case key.Matches(msg, m.keys.Up):
 		// At the top of the list the only thing further up is the bar, and this is
