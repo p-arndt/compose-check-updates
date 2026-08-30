@@ -1,5 +1,7 @@
 package policy
 
+import "slices"
+
 // Versioning names the scheme an image's tags are read as versions under.
 type Versioning string
 
@@ -28,5 +30,7 @@ func (v Versioning) Valid() bool {
 
 func (v Versioning) String() string { return string(v) }
 
-// Versionings lists every scheme a config may name.
-func Versionings() []Versioning { return versionings }
+// Versionings lists every scheme a config may name. The result is a copy:
+// handing out the backing slice would let a caller that sorts or writes into it
+// change what Valid accepts.
+func Versionings() []Versioning { return slices.Clone(versionings) }

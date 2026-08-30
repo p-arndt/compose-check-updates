@@ -63,3 +63,13 @@ func TestVersioningsAgreesWithValid(t *testing.T) {
 		assert.True(t, v.Valid(), v.String())
 	}
 }
+
+// Versionings backs Valid, so handing out the package slice would let one caller
+// that sorts or overwrites the result change which schemes every other caller is
+// allowed to name.
+func TestVersioningsReturnsACopy(t *testing.T) {
+	Versionings()[0] = "clobbered"
+
+	assert.Equal(t, VersioningSemver, Versionings()[0])
+	assert.True(t, VersioningSemver.Valid())
+}
