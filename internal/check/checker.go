@@ -3,6 +3,7 @@ package check
 import (
 	"fmt"
 	"log/slog"
+	"slices"
 
 	"github.com/p-arndt/compose-check-updates/internal/compose"
 	"github.com/p-arndt/compose-check-updates/internal/policy"
@@ -145,7 +146,7 @@ func (c *Checker) resolve(u *Update, major, minor, patch bool) {
 		// Ordinarily the image is simply on its newest release — unless nothing
 		// here could ever be compared with the current tag, in which case no run
 		// will offer this image anything and the user deserves to hear so.
-		if !versioning.HasComparableTag(scheme, u.CurrentTag, tags) {
+		if !versioning.HasComparableTag(scheme, u.CurrentTag, tags) && !soleRelease(p, u.CurrentTag, tags) {
 			u.MarkUnreadable(ReasonNoComparableTag, hint(p,
 				fmt.Sprintf("%q reads as a version under %s, but no other tag of this image can be compared with it", u.CurrentTag, u.Versioning)))
 		}
@@ -187,6 +188,31 @@ func (c *Checker) clampToCap(u *Update) {
 			u.LatestTag = ""
 		}
 	}
+}
+
+// soleRelease reports whether currentTag is the only release the repository
+// publishes, its floating and reference tags aside. There is nothing to compare
+// it with then — not because the tags cannot be read, but because nothing else
+// has been released yet, which is the normal state of a private registry or a
+// GHCR package holding one home-built image. That image is up to date, so it
+// must not be reported as unreadable.
+//
+// The current tag has to be among the listed ones: a repository not even
+// admitting to the tag the file names is a lookup gone wrong, and staying quiet
+// about that would hide it.
+func soleRelease(p policy.Image, currentTag string, tags []string) bool {
+	if !slices.Contains(tags, currentTag) {
+		return false
+	}
+
+	for _, tag := range tags {
+		if tag == currentTag || tag == p.ReferenceTag || p.Floats(tag) {
+			continue
+		}
+		return false
+	}
+
+	return true
 }
 
 // hint appends the way out of an unreadable image, worth naming only when the

@@ -216,3 +216,85 @@ func TestCheckImageReportsAnImageThatIsGone(t *testing.T) {
 	assert.NoError(t, err)
 	assert.False(t, found)
 }
+
+// A repository holding a single release — a private registry or a GHCR package
+// with one home-built image beside its "latest" — has nothing to compare with
+// because nothing else was ever published. That image is up to date, and
+// reporting it as unreadable made every self-hosted image look broken.
+func TestImageOnTheOnlyReleaseOfItsRepositoryIsNotUnreadable(t *testing.T) {
+	t.Parallel()
+
+	server := registrytest.Server(t, "p-arndt/cooking-diary",
+		[]string{"0.12.2", "latest"},
+		map[string]string{"0.12.2": registrytest.DigestOld, "latest": registrytest.DigestOld})
+
+	serverURL, _ := url.Parse(server.URL)
+	image := serverURL.Host + "/p-arndt/cooking-diary"
+	file := writeComposeFile(t, "image: "+image+":0.12.2")
+
+	infos, err := New(file, registry.New(serverURL.Host), policy.Set{}).Check(true, true, true)
+	assert.NoError(t, err)
+	assert.Len(t, infos, 1)
+
+	assert.False(t, infos[0].IsUnreadable())
+	assert.False(t, infos[0].HasNewVersion())
+	assert.Empty(t, infos[0].Level())
+}
+
+// The same for a repository publishing nothing but the one tag, which is what a
+// private registry looks like before its second release.
+func TestImageOnTheSoleTagOfItsRepositoryIsNotUnreadable(t *testing.T) {
+	t.Parallel()
+
+	server := registrytest.Server(t, "coinpress",
+		[]string{"0.1.0"},
+		map[string]string{"0.1.0": registrytest.DigestOld})
+
+	serverURL, _ := url.Parse(server.URL)
+	file := writeComposeFile(t, "image: "+serverURL.Host+"/coinpress:0.1.0")
+
+	infos, err := New(file, registry.New(serverURL.Host), policy.Set{}).Check(true, true, true)
+	assert.NoError(t, err)
+	assert.Len(t, infos, 1)
+
+	assert.False(t, infos[0].IsUnreadable())
+}
+
+// A repository that does publish other releases, none of them comparable, is
+// still the finding it was: the sole-release case must not swallow it.
+func TestSiblingReleasesStillMakeAnIncomparableTagUnreadable(t *testing.T) {
+	t.Parallel()
+
+	tags := []string{"2024-01-01", "2024-02-01"}
+	server := registrytest.Server(t, "library/myimage", tags,
+		map[string]string{"2024-01-01": registrytest.DigestOld, "2024-02-01": registrytest.DigestNew})
+
+	serverURL, _ := url.Parse(server.URL)
+	file := writeComposeFile(t, "image: "+serverURL.Host+"/library/myimage:2024-01-01")
+
+	infos, err := New(file, registry.New(serverURL.Host), policy.Set{Versioning: policy.VersioningLoose}).
+		Check(true, true, true)
+	assert.NoError(t, err)
+	assert.Len(t, infos, 1)
+
+	assert.Equal(t, ReasonNoComparableTag, infos[0].UnreadableReason)
+}
+
+// A tag list that does not even contain the tag the file names is a lookup gone
+// wrong, not a sole release, so it keeps being reported.
+func TestTagMissingFromTheRepositoryIsStillUnreadable(t *testing.T) {
+	t.Parallel()
+
+	server := registrytest.Server(t, "library/myimage",
+		[]string{"latest"},
+		map[string]string{"latest": registrytest.DigestNew})
+
+	serverURL, _ := url.Parse(server.URL)
+	file := writeComposeFile(t, "image: "+serverURL.Host+"/library/myimage:1.2.3")
+
+	infos, err := New(file, registry.New(serverURL.Host), policy.Set{}).Check(true, true, true)
+	assert.NoError(t, err)
+	assert.Len(t, infos, 1)
+
+	assert.Equal(t, ReasonNoComparableTag, infos[0].UnreadableReason)
+}
