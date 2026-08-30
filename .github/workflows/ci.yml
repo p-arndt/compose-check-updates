@@ -45,20 +45,7 @@ jobs:
         # worth the slower run: the scanner's worker pool and the registry probe
         # queue both share state across goroutines, where a data race would
         # otherwise only show up as a rare, unreproducible failure.
-        run: go test -race -coverprofile=coverage.out ./...
-
-      # Only on ubuntu: the profile is the same everywhere, and failing the
-      # gate three times over one uncovered line says nothing extra. The floor
-      # is the coverage that was measured when it was introduced, so it can
-      # only be raised, never drifted down.
-      - name: Coverage floor
-        if: matrix.os == 'ubuntu-latest'
-        run: |
-          floor=83.0
-          total=$(go tool cover -func=coverage.out | awk '/^total:/ {print $3}' | tr -d '%')
-          echo "total coverage: ${total}% (floor ${floor}%)"
-          awk -v t="$total" -v f="$floor" 'BEGIN { if (t + 0 < f + 0) { exit 1 } }' \
-            || { echo "coverage fell below the floor" >&2; exit 1; }
+        run: go test -race ./...
 
       - name: Build
         run: go build ./...

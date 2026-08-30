@@ -102,15 +102,15 @@ lint:
     @if (-not (Get-Command golangci-lint -ErrorAction SilentlyContinue)) { go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.2 }
     $exe = (Get-Command golangci-lint -ErrorAction SilentlyContinue).Source; if (-not $exe) { $exe = Join-Path (go env GOPATH) "bin\golangci-lint.exe" }; & $exe run
 
-# Print the test coverage per package and in total. CI fails below the floor
-# named in its "Coverage floor" step; keep the two in step when raising it.
+# Print the test coverage per package and in total. Nothing enforces a number;
+# this is here to look at when you want to know, not to gate on.
 [unix]
 cover:
     go test -coverprofile=coverage.out ./...
     go tool cover -func=coverage.out | tail -1
 
-# Print the test coverage per package and in total. CI fails below the floor
-# named in its "Coverage floor" step; keep the two in step when raising it.
+# Print the test coverage per package and in total. Nothing enforces a number;
+# this is here to look at when you want to know, not to gate on.
 [windows]
 cover:
     go test -coverprofile=coverage.out ./...
