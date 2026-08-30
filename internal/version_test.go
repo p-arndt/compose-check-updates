@@ -362,7 +362,7 @@ func TestFindLatestVersion(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			scheme, ok := VersioningByName(tt.testData.Versioning)
+			scheme, ok := VersioningByName(tt.testData.Versioning, "")
 			assert.True(t, ok, "unknown versioning scheme")
 
 			result := FindLatestVersion(scheme, tt.testData.Current, tt.testData.Tags, tt.testData.Major, tt.testData.Minor, tt.testData.Patch)
@@ -513,7 +513,7 @@ func TestSameTagFamily(t *testing.T) {
 }
 
 func TestFindLatestPerLevelLoose(t *testing.T) {
-	loose, ok := VersioningByName(VersioningLoose)
+	loose, ok := VersioningByName(VersioningLoose, "")
 	assert.True(t, ok)
 
 	patch, minor, major := FindLatestPerLevel(loose, "v2026.7.7.2", hermesTags)

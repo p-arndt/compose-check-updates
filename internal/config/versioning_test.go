@@ -40,12 +40,12 @@ func TestParseVersioning(t *testing.T) {
 			// work, so the load fails and names what was allowed instead.
 			name:    "unknown global scheme",
 			yaml:    "versioning: lose\n",
-			wantErr: `"lose" is not one of semver, loose`,
+			wantErr: `"lose" is not one of semver, loose, regex`,
 		},
 		{
 			name:    "unknown per-image scheme",
 			yaml:    "images:\n  redis:\n    versioning: calendar\n",
-			wantErr: `image "redis": versioning: "calendar" is not one of semver, loose`,
+			wantErr: `image "redis": versioning: "calendar" is not one of semver, loose, regex`,
 		},
 	}
 
@@ -166,7 +166,14 @@ func TestVersioningPrecedence(t *testing.T) {
 // taken and then ignored, so every name this package allows has to resolve.
 func TestVersioningNamesResolve(t *testing.T) {
 	for _, name := range versionings {
-		scheme, ok := internal.VersioningByName(string(name))
+		// `regex` reads nothing without one, and a config naming that scheme is
+		// required to carry one, so the seam is only honest with a pattern here.
+		pattern := ""
+		if name == VersioningRegex {
+			pattern = calendarPattern
+		}
+
+		scheme, ok := internal.VersioningByName(string(name), pattern)
 		if !ok {
 			t.Errorf("%q passes validation here but internal cannot resolve it", name)
 			continue
@@ -255,5 +262,126 @@ func TestVersioningsAndDefault(t *testing.T) {
 	}
 	if got := (Config{}).Versionings(); got != nil {
 		t.Errorf("want no per-image schemes, got %v", got)
+	}
+}
+
+// calendarPattern is the shape the regex scheme was added for: a dashed date,
+// which every other scheme reads as release 2024 with the day and the month
+// mistaken for a prerelease.
+const calendarPattern = `^(?P<major>\d{4})-(?P<minor>\d{2})-(?P<patch>\d{2})$`
+
+// TestParseVersioningPattern covers every way a scheme and a pattern can fail to
+// agree. All of them are load-time errors on purpose: a pattern first noticed
+// while tags are being read would leave the image quietly compared by digest, in
+// the middle of a report about something else, while the line to fix is right
+// here and can be named.
+func TestParseVersioningPattern(t *testing.T) {
+	tests := []struct {
+		name    string
+		yaml    string
+		want    string
+		wantErr string
+	}{
+		{
+			name: "regex with a pattern",
+			yaml: "images:\n  acme/dated:\n    versioning: regex\n    versioning_pattern: '" + calendarPattern + "'\n",
+			want: calendarPattern,
+		},
+		{
+			name:    "regex without a pattern",
+			yaml:    "images:\n  acme/dated:\n    versioning: regex\n",
+			wantErr: `image "acme/dated": versioning: "regex" needs a versioning_pattern`,
+		},
+		{
+			name:    "pattern under another scheme",
+			yaml:    "images:\n  acme/dated:\n    versioning: loose\n    versioning_pattern: '" + calendarPattern + "'\n",
+			wantErr: `image "acme/dated": versioning_pattern: only "regex" reads a pattern, and this image is on loose`,
+		},
+		{
+			name:    "pattern under no scheme at all",
+			yaml:    "images:\n  acme/dated:\n    versioning_pattern: '" + calendarPattern + "'\n",
+			wantErr: `image "acme/dated": versioning_pattern: only "regex" reads a pattern, and this image is on semver, the default`,
+		},
+		{
+			name:    "pattern that does not compile",
+			yaml:    "images:\n  acme/dated:\n    versioning: regex\n    versioning_pattern: '^(?P<major>\\d+$'\n",
+			wantErr: `image "acme/dated": versioning_pattern: "^(?P<major>\\d+$" is not a valid regular expression`,
+		},
+		{
+			name:    "pattern naming no group",
+			yaml:    "images:\n  acme/dated:\n    versioning: regex\n    versioning_pattern: '^\\d{4}-\\d{2}-\\d{2}$'\n",
+			wantErr: `names no group, so there is nothing to read a version out of`,
+		},
+		{
+			// A default reaches every image at once and there is no one image to
+			// take a pattern from, so accepting it would mean a scheme that reads
+			// no tag at all: every image silently dropped to comparing digests.
+			name:    "regex as the global default",
+			yaml:    "versioning: regex\n",
+			wantErr: `versioning: "regex" is a per-image scheme`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg, err := Parse(strings.NewReader(tt.yaml))
+
+			if tt.wantErr != "" {
+				if err == nil {
+					t.Fatalf("want error containing %q, got none", tt.wantErr)
+				}
+				if !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("want error containing %q, got %q", tt.wantErr, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			if got := cfg.VersioningPatterns()["acme/dated"]; got != tt.want {
+				t.Errorf("want pattern %q, got %q", tt.want, got)
+			}
+		})
+	}
+}
+
+// TestVersioningPatternsResolve guards the same seam TestVersioningNamesResolve
+// does, one level down: this package decides which patterns a config may carry,
+// internal is what actually reads tags with them. A pattern accepted here but
+// unusable there would be a setting taken and then ignored.
+func TestVersioningPatternsResolve(t *testing.T) {
+	patterns := []string{
+		calendarPattern,
+		`(?P<major>\d+)`,
+		`^r(?P<major>\d+)_(?P<minor>\d+)(?P<suffix>-.*)?$`,
+	}
+
+	for _, pattern := range patterns {
+		if err := validateVersioningPattern(VersioningRegex, pattern); err != nil {
+			t.Errorf("%q: rejected here: %v", pattern, err)
+			continue
+		}
+		if _, ok := internal.VersioningByName(string(VersioningRegex), pattern); !ok {
+			t.Errorf("%q passes validation here but internal cannot read tags with it", pattern)
+		}
+	}
+}
+
+func TestVersioningPatternsMap(t *testing.T) {
+	cfg := Config{Images: map[string]ImagePolicy{
+		"acme/dated": {Versioning: VersioningRegex, VersioningPattern: calendarPattern},
+		"redis":      {Max: LevelMinor},
+	}}
+
+	patterns := cfg.VersioningPatterns()
+	if len(patterns) != 1 || patterns["acme/dated"] != calendarPattern {
+		t.Errorf("want only the image that named a pattern, got %v", patterns)
+	}
+
+	// A lookup miss and "this image needs no pattern" are the same thing, so an
+	// image without one contributes no entry at all.
+	if got := (Config{}).VersioningPatterns(); got != nil {
+		t.Errorf("want no patterns, got %v", got)
 	}
 }
