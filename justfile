@@ -4,16 +4,15 @@
 # List recipes:    just            (or  just --list)
 #
 # Layout:
-#   .                  — the `ccu` CLI entry point lives at the repo root  (-> ccu.exe)
+#   .                  — the `ccu` CLI entry point lives at the repo root  (-> ccu / ccu.exe)
 #   internal/…         — scanner, modes, tui, registry lookups, buildinfo
 #   tests/             — fixture-driven tests (covered by `go test ./...`)
 #   VERSION            — single source of truth for the version (stamped into the binary)
 
 # Run recipes through PowerShell on Windows so multi-line bodies and env work.
+# Everything else runs under the default `sh`, so the recipes that need shell
+# syntax exist twice: once `[unix]`, once `[windows]`.
 set windows-shell := ["pwsh.exe", "-NoLogo", "-NoProfile", "-Command"]
-
-# ldflags shared by the release builds: stamp version metadata + strip symbols.
-_LDFLAGS := "-s -w -X github.com/p-arndt/compose-check-updates/internal/buildinfo.Version=$(Get-Content VERSION -Raw).Trim() -X github.com/p-arndt/compose-check-updates/internal/buildinfo.Commit=$(git rev-parse --short HEAD) -X github.com/p-arndt/compose-check-updates/internal/buildinfo.Date=$(Get-Date -AsUTC -Format o)"
 
 # Default: show the recipe list.
 default:
@@ -27,14 +26,29 @@ default:
 run *ARGS:
     go run . {{ARGS}}
 
+# Build a plain dev binary -> ccu (version reports as "dev").
+[unix]
+build:
+    go build -o ccu .
+
 # Build a plain dev binary -> ccu.exe (version reports as "dev").
+[windows]
 build:
     go build -o ccu.exe .
 
+# ldflags used by the release builds: stamp version metadata + strip symbols.
+
+# Build a stripped, statically-linked release binary for the host platform,
+# stamped with the current VERSION -> ccu.
+[unix]
+build-release:
+    CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X github.com/p-arndt/compose-check-updates/internal/buildinfo.Version=$(tr -d '[:space:]' < VERSION) -X github.com/p-arndt/compose-check-updates/internal/buildinfo.Commit=$(git rev-parse --short HEAD) -X github.com/p-arndt/compose-check-updates/internal/buildinfo.Date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" -o ccu .
+
 # Build a stripped, statically-linked release binary for the host platform,
 # stamped with the current VERSION -> ccu.exe.
+[windows]
 build-release:
-    $env:CGO_ENABLED = "0"; go build -trimpath -ldflags "{{_LDFLAGS}}" -o ccu.exe .
+    $env:CGO_ENABLED = "0"; go build -trimpath -ldflags "-s -w -X github.com/p-arndt/compose-check-updates/internal/buildinfo.Version=$((Get-Content VERSION -Raw).Trim()) -X github.com/p-arndt/compose-check-updates/internal/buildinfo.Commit=$(git rev-parse --short HEAD) -X github.com/p-arndt/compose-check-updates/internal/buildinfo.Date=$(Get-Date -AsUTC -Format o)" -o ccu.exe .
 
 # ---------------------------------------------------------------------------
 # Quality
@@ -53,6 +67,12 @@ fmt:
     gofmt -w .
 
 # Verify formatting without writing changes (fails if anything is unformatted).
+[unix]
+fmt-check:
+    @unformatted=$(gofmt -l .); if [ -n "$unformatted" ]; then echo "$unformatted"; echo "unformatted files (run: just fmt)" >&2; exit 1; fi
+
+# Verify formatting without writing changes (fails if anything is unformatted).
+[windows]
 fmt-check:
     @if (gofmt -l .) { Write-Error "unformatted files (run: just fmt)"; exit 1 }
 
@@ -64,6 +84,12 @@ ci: fmt-check vet test
 # ---------------------------------------------------------------------------
 
 # Print the current version (read from the VERSION file).
+[unix]
+version:
+    @printf '%s\n' "$(tr -d '[:space:]' < VERSION)"
+
+# Print the current version (read from the VERSION file).
+[windows]
 version:
     @(Get-Content VERSION -Raw).Trim()
 
@@ -85,6 +111,13 @@ release BUMP="patch":
 # ---------------------------------------------------------------------------
 
 # Remove build artifacts.
+[unix]
+clean:
+    rm -f ccu
+    rm -rf dist build stage
+
+# Remove build artifacts.
+[windows]
 clean:
     -Remove-Item -Force ccu.exe -ErrorAction SilentlyContinue
     -Remove-Item -Recurse -Force dist, build, stage -ErrorAction SilentlyContinue
