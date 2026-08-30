@@ -29,13 +29,9 @@ no daemon, no runtime.
   <img src="./assets/demo.gif" alt="ccu scanning four Compose stacks, retargeting traefik from a major bump to the latest 2.11.x, and writing the new tags" width="900">
 </p>
 
-Four stacks at once, `traefik` pointed at the newest `2.11.x` instead of the `v3`
-it was offered — and a `.ccu` backup next to every file that was touched.
+**[Install](#install) · [Commands](#commands) · [`ccu check` flags](#ccu-check-flags) · [Config reference](#config-reference) · [Recipes](#recipes) · [TUI keys](#tui-keys) · [JSON output](#json-output) · [Troubleshooting](#troubleshooting)**
 
 ## Install
-
-Grab the binary for your platform from
-[Releases](https://github.com/p-arndt/compose-check-updates/releases):
 
 ```bash
 curl -fsSLO https://github.com/p-arndt/compose-check-updates/releases/latest/download/ccu-linux-amd64
@@ -43,26 +39,335 @@ mv ccu-linux-amd64 ccu && chmod +x ccu && sudo mv ccu /usr/local/bin/
 ccu version
 ```
 
-Builds for linux/macOS/windows on `amd64`, `arm64`, `arm` and `386`; Windows just
-needs the `.exe` on your `PATH`. Every release ships a `checksums.txt`.
-Later, `ccu self-update` replaces the binary in place.
+linux/macOS/windows on `amd64`, `arm64`, `arm`, `386` — see
+[Releases](https://github.com/p-arndt/compose-check-updates/releases), every one
+ships a `checksums.txt`. On Windows just put the `.exe` on your `PATH`.
+Afterwards `ccu self-update` replaces the binary in place.
 
-## Usage
+## Commands
 
 `cd` into the directory holding your stacks and run `ccu`. Everything below it is
-scanned recursively.
+scanned recursively. Nothing is written unless you ask — `A` in the TUI, `-u` for
+`check` — and every modified file gets a `.ccu` backup beside it.
 
-| | |
-| ---------------- | ---------------------------------------------------------- |
-| **`ccu`**        | The TUI. Browse what's outdated, pick rows, apply. Default. |
-| **`ccu check`**  | One-shot report for scripts, cron and CI. No UI.            |
+| Command | What it does |
+| ------- | ------------ |
+| `ccu` | The TUI: browse what's outdated, pick rows, apply. Default. |
+| `ccu check` | One-shot report for scripts, cron and CI. No UI. |
+| `ccu config` | Show the resolved configuration and where it came from |
+| `ccu config -image <name>` | Explain how one image's settings were resolved |
+| `ccu self-update` | Download, verify and replace the running binary |
+| `ccu check-update` | Only report whether a newer ccu exists |
+| `ccu help` / `ccu version` | — |
 
-Nothing is written unless you ask — `A` in the TUI, `-u` for `check` — and every
-modified file gets a `.ccu` backup beside it.
+> [!TIP]
+> Piped or redirected, `ccu` runs the `check` report (as JSON) instead of the
+> TUI and says so on stderr — old cron and CI entries keep working.
 
-### The TUI
+## `ccu check` flags
 
-Updates grouped per Compose file, colour-coded, streaming in as registries answer.
+```bash
+ccu check              # report only (patch updates by default)
+ccu check -f           # consider every newer version, not just patches
+ccu check -u -r        # write the new tags, then restart the services
+ccu check -d ./stacks  # scan a different directory
+```
+
+| Flag | Description | Default |
+| ---- | ----------- | ------- |
+| `-d` | Directory to scan | `.` |
+| `-exclude` | Directories to exclude, comma-separated | none |
+| `-config` | Read this config file instead of searching for one | none |
+| `-u` | Update the Compose files with the new image tags | `false` |
+| `-r` | Restart the services after updating | `false` |
+| `-f` | Full mode — consider every newer version, not just patches | `false` |
+| `-major` / `-minor` / `-patch` | Only suggest that level | `-patch` |
+| `-versioning` | Default tag-reading scheme: `semver` or `loose` | `semver` |
+| `-format` | Output format: `auto`, `pretty` or `json` | `auto` |
+| `-pin-floating` | Pin floating tags (`latest`, `main`, …) to the digest they resolve to | `false` |
+| `-dockerfiles` | Also check the base images of Dockerfiles built by a compose service | `true` |
+
+Only `-d`, `-exclude`, `-config`, `-pin-floating` and `-dockerfiles` also apply
+to the TUI — it picks levels in the UI instead and always resolves every level.
+
+**Exit codes:** `0` nothing to do · `1` updates available, not applied ·
+`2` something failed. So a CI gate needs no parsing:
+
+```bash
+ccu check -f || echo "images are behind"
+```
+
+## Config reference
+
+Two files, neither required — `~/.config/ccu/config.yaml` for preferences across
+every project, `.ccu.yaml` in the scan root or any parent for settings that
+travel with the stacks. Project layers over global, flags over both.
+`ccu config` prints what was read.
+
+```yaml
+# .ccu.yaml — every key is optional
+exclude: [node_modules, services/legacy]
+pin_floating: true
+dockerfiles: false
+versioning: semver
+floating_tags: [release, canary]
+
+images:
+  library/traefik:
+    max: minor
+  nousresearch/hermes-agent:
+    versioning: loose
+  acme/dated:
+    versioning: regex
+    versioning_pattern: '^(?P<major>\d{4})-(?P<minor>\d{2})-(?P<patch>\d{2})$'
+  internal/thing:
+    reference_tag: stable
+    floating_tags: [release]
+```
+
+### Top-level keys
+
+| Key | Values | Default | Meaning |
+| --- | ------ | ------- | ------- |
+| `exclude` | list of paths | none | Directories never scanned. Unioned with `-exclude`, not replaced. |
+| `pin_floating` | bool | `false` | Offer floating tags the digest they resolve to |
+| `dockerfiles` | bool | `true` | Also check `FROM` lines of Dockerfiles built by a service |
+| `versioning` | `semver`, `loose` | `semver` | How tags are read as versions, run-wide |
+| `floating_tags` | list of tags | see below | Extra tags treated as moving. **Added** to the built-in set. |
+| `images` | map | — | Per-image settings, keyed by image name **without tag or digest** |
+
+`exclude` matches `backup` at any depth, `services/legacy` only that path,
+`/mnt/backups` that absolute location — all three with `*` wildcards.
+
+### Per-image keys (under `images:`)
+
+| Key | Values | Meaning |
+| --- | ------ | ------- |
+| `max` | `major`, `minor`, `patch` | Cap: never offer a bump above this level |
+| `versioning` | `semver`, `loose`, `regex` | Tag-reading scheme for this image. Outranks the flag. |
+| `versioning_pattern` | Go regex | Required by, and only valid with, `versioning: regex` |
+| `reference_tag` | tag name | The moving tag digest mode compares against, instead of `latest` |
+| `floating_tags` | list of tags | Extra moving tags for this repository only |
+
+> [!TIP]
+> A setting not arriving is almost always the key: lookup is **exact**, on the
+> name as ccu reports it — `library/traefik`, never `traefik`. Ask about the one
+> image with `ccu config -image library/traefik`; it names the layer and the file
+> that decided each value, and offers a near-miss as a hint.
+
+## Recipes
+
+<details>
+<summary><strong>Private registries and rate limits</strong></summary>
+
+Any OCI registry works — Docker Hub, GHCR, Quay, Harbor, ECR, a self-hosted
+`registry:2`. Private repos need no setup: `ccu` reads the credentials
+`docker login` already stored. Logging in also lifts Docker Hub's anonymous rate
+limit, which starts to matter past a few dozen images.
+
+</details>
+
+<details>
+<summary><strong>"no tag matches the newest digest" — tags that aren't semver</strong></summary>
+
+Plenty of images publish something that is a version but not a *semantic* one:
+`nousresearch/hermes-agent` tags by date and sometimes rebuilds the same day —
+`v2026.7.7` and `v2026.7.7.2` side by side. A fourth segment is not semver, so by
+default those tags are not read as versions at all. Loosen the rule for that
+image:
+
+```yaml
+images:
+  nousresearch/hermes-agent:
+    versioning: loose
+```
+
+| Scheme | Reads |
+| ------ | ----- |
+| `semver` | up to three segments, no leading zeros — the default |
+| `loose` | up to six numeric segments, leading zeros, any suffix |
+| `regex` | whatever your pattern names — per image only |
+
+The first three segments stay major, minor and patch; anything past the third
+orders the version but is reported as a **patch**. The suffix rule holds either
+way: `3.19-alpine` only ever moves to another `-alpine` tag.
+
+Three places can set the scheme, most specific first: a per-image entry, then
+`--versioning=loose` for one run, then a run-wide `versioning:` in either config
+file. A per-image entry outranks both defaults **including the flag** — a flag
+meant as a quick try should not silently undo a preference written down on
+purpose.
+
+</details>
+
+<details>
+<summary><strong>Tags no fixed rule can read — <code>versioning: regex</code></strong></summary>
+
+A dashed date — `2024-01-01` — reads under both schemes above as release `2024`
+with `-01-01` mistaken for a prerelease, which orders `2024-12-31` before
+`2024-02-01`: the alphabet, not the calendar. For those, say what a tag looks
+like:
+
+```yaml
+images:
+  acme/dated:
+    versioning: regex
+    versioning_pattern: '^(?P<major>\d{4})-(?P<minor>\d{2})-(?P<patch>\d{2})$'
+```
+
+A Go regular expression with **named groups**. Four carry numbers — `major`,
+`minor`, `patch`, `build` — plus `suffix` for whatever trails them, separator
+included. A group you leave out is `0`, so naming only `major` is enough; a group
+named anything else is ignored, which lets you match parts you don't need. The
+four order exactly as under `loose`.
+
+The pattern must describe the **whole** tag — it is anchored, so a date buried in
+`build-2024-01-01-x` is not one — and a tag it does not match is simply not a
+version. There is no run-wide `versioning: regex` and no `--versioning=regex`: a
+pattern fitting one repository's tags is meaningless for the next one's.
+
+Patterns are checked when the config is read, so a typo fails the run and names
+the image rather than quietly reading no tags:
+
+```console
+$ ccu config
+ERROR  Error reading config  error=/repo/.ccu.yaml: image "acme/dated": versioning_pattern: "^(?P<major>\\d+$" is not a valid regular expression
+```
+
+</details>
+
+<details>
+<summary><strong>Digest-pinned and commit-tagged images</strong></summary>
+
+Some images are pinned by digest, others tag every build with its commit
+(`sha-e1c83ba`). For those `ccu` compares the manifest digest instead of the
+version number and reports level `digest`:
+
+| In your Compose file | What `ccu` does |
+| -------------------- | --------------- |
+| `image: vert:sha-438f91a` | Moves the tag to the one currently matching `latest`, e.g. `sha-e1c83ba` |
+| `image: vert@sha256:abc…` | Rewrites the digest to the one `latest` now resolves to |
+| `image: vert:1.2.3@sha256:abc…` | Bumps tag **and** digest together, so they stay consistent |
+| `image: vert:latest` | Pinned to today's digest, with `-pin-floating` |
+
+All of it hangs on one tag: `latest`, whose digest is what "newest" means for an
+image with no readable version. A repository publishing no `latest` is skipped
+with `no latest tag to compare against`. Name the moving tag it *does* publish
+and it is back in the game:
+
+```yaml
+images:
+  internal/thing:
+    reference_tag: stable
+```
+
+The reference tag itself is never offered as the new tag — trading a fixed
+reference for a moving one is not an update.
+
+> [!NOTE]
+> This queries tags individually, so the first check of such an image is
+> noticeably slower. At most 250 tags of the same naming scheme are inspected.
+
+</details>
+
+<details>
+<summary><strong>Pinning floating tags (<code>latest</code>, <code>main</code>, …)</strong></summary>
+
+Floating tags always resolve to whatever is newest, so there is never a newer tag
+to offer — and nothing in the Compose file to tell you the image behind the tag
+changed. `-pin-floating` writes that down:
+
+```yaml
+-  image: nginx:latest
++  image: nginx:latest@sha256:b34848eff6db…
+```
+
+The tag still reads `latest`, but the digest now decides: `docker compose pull`
+gets **that exact build** and stops following the tag. In exchange `ccu` can
+*see* the drift — every later run compares the pinned digest against what
+`latest` resolves to and reports a `digest` update. You trade automatic pulls for
+a reviewable bump.
+
+```bash
+ccu check -pin-floating        # report them (level: pin)
+ccu check -pin-floating -u     # and write them
+```
+
+```yaml
+pin_floating: true
+```
+
+Built-in floating tags: `latest`, `main`, `master`, `edge`, `stable`, `nightly`,
+`dev`, `develop`. If your registry moves a differently spelled one, add it —
+globally is usually right, since a registry spells its moving tag the same way
+across repositories:
+
+```yaml
+floating_tags: [release, canary]      # every image
+images:
+  internal/thing:
+    floating_tags: [release, canary]  # this one only
+```
+
+Everything **adds up** rather than replacing, and nothing ever takes a name away:
+the built-in names are a fact about how registries work, not a preference. A repo
+publishing `release` almost certainly publishes `latest` beside it, and if naming
+one made `ccu` forget the others, that `latest` would turn back into an ordinary,
+pinnable tag.
+
+In the TUI they sit behind the bar's `floating` stop (`p`); `pin_floating`
+decides which way it starts. If the run wasn't asked to pin, the first press
+fetches the digests then and there. Caps do not apply — pinning moves no version.
+
+> [!NOTE]
+> Once a digest is in the file, the image is that exact build until `ccu` moves
+> it — this suits stacks you update deliberately, not ones relying on a nightly
+> `pull`. It also costs one registry request per floating image, the other reason
+> it's off by default. `-pin-floating=false` overrides `pin_floating: true` for a
+> single run.
+
+</details>
+
+<details>
+<summary><strong>Images you build yourself (<code>build:</code> + Dockerfile)</strong></summary>
+
+A service with a `build:` has no image tag to check — the tag deciding what it
+runs sits on the `FROM` line of its Dockerfile. Those are scanned too:
+
+```dockerfile
+-FROM quay.io/keycloak/keycloak:26.0.7 AS builder
++FROM quay.io/keycloak/keycloak:26.7.2 AS builder
+```
+
+The Dockerfile appears in the list under its own path, next to the compose file
+that builds it, and behaves like any other row: levels, caps, targets, a `.ccu`
+backup. Two specifics:
+
+- **Every stage moves together.** A multi-stage build names its base as builder
+  and as runtime; both are rewritten as one update — a runtime left a release
+  behind its builder is a broken image, not a partial one.
+- **A restart rebuilds.** `docker compose up -d --build`, since a new base image
+  reaches the container only through a build.
+
+Skipped, because no registry can answer for them: `FROM scratch`, a stage
+referring to an earlier one (`FROM builder`), a reference assembled from build
+args (`FROM ${BASE}`), `dockerfile_inline:`, and non-local contexts.
+`-dockerfiles=false` or `dockerfiles: false` turns it off.
+
+</details>
+
+<details>
+<summary><strong>The update notice</strong></summary>
+
+A `ccu check` run also checks **at most once every 24 hours** whether a newer
+release exists and prints one line to stderr. It never installs anything by
+itself; `CCU_NO_UPDATE_CHECK=1` turns the check off.
+
+</details>
+
+## TUI keys
+
+Updates grouped per Compose file, streaming in as registries answer.
 **Arrows move; `space`/`enter` act on whatever has the focus.** `tab` reaches the
 detail column on an image and the settings bar anywhere else. `A` applies, `?`
 shows every key.
@@ -77,456 +382,95 @@ Afterwards `ccu` offers to `docker compose up -d` the affected files.
 <details>
 <summary><strong>All keys</strong></summary>
 
-| Key                | Action                                            |
-| ------------------ | ------------------------------------------------- |
+| Key | Action |
+| --- | ------ |
 | `↑`/`↓` or `k`/`j` | Move the cursor. At the top of the list, `↑` carries on into the bar; on the bar, `↓` comes back |
-| `pgup`/`pgdn`      | Page up / down (`home`/`end` for first / last)    |
-| `←`/`h`, `→`/`l`   | On a header: collapse / expand. On an image: open the details. In the details column: previous / next option. On the bar: previous / next stop |
-| `space` / `enter`  | Act on what has the focus: select the row, step a setting, press a button |
-| `-`                | Step the focused setting backwards                |
-| `z`                | Fold/unfold the node under the cursor             |
-| `C` / `E`          | Collapse all / expand all                         |
-| `a` / `n`          | Select / deselect everything under the cursor     |
-| `ctrl+a` / `ctrl+n`| Select / deselect the whole list                  |
-| `f`                | Cycle the display filter (which rows are shown)   |
-| `t`                | Cycle the target level for **all** rows           |
-| `p`                | List or hide the floating tags                    |
-| `tab`              | On an image: the details column (`tab` or `esc` returns). Otherwise: the top bar |
-| `shift+tab`        | Step back along the bar                           |
-| `m`                | The top bar, from anywhere; again for the next stop |
-| `i`                | Show the issues logged during the scan            |
-| `A`                | Apply the **selected** updates                    |
-| `u`                | Apply **only the highlighted row**                |
-| `y` / `n`          | Answer the restart prompt                         |
-| `esc`              | Back out of whatever has the keyboard (never quits) |
-| `?` / `q`          | Help / quit                                       |
+| `pgup`/`pgdn` | Page up / down (`home`/`end` for first / last) |
+| `←`/`h`, `→`/`l` | On a header: collapse / expand. On an image: open the details. In the details column: previous / next option. On the bar: previous / next stop |
+| `space` / `enter` | Act on what has the focus: select the row, step a setting, press a button |
+| `-` | Step the focused setting backwards |
+| `z` | Fold/unfold the node under the cursor |
+| `C` / `E` | Collapse all / expand all |
+| `a` / `n` | Select / deselect everything under the cursor |
+| `ctrl+a` / `ctrl+n` | Select / deselect the whole list |
+| `f` | Cycle the display filter (which rows are shown) |
+| `t` | Cycle the target level for **all** rows |
+| `p` | List or hide the floating tags |
+| `tab` | On an image: the details column (`tab` or `esc` returns). Otherwise: the top bar |
+| `shift+tab` | Step back along the bar |
+| `m` | The top bar, from anywhere; again for the next stop |
+| `i` | Show the issues logged during the scan |
+| `A` | Apply the **selected** updates |
+| `u` | Apply **only the highlighted row** |
+| `y` / `n` | Answer the restart prompt |
+| `esc` | Back out of whatever has the keyboard (never quits) |
+| `?` / `q` | Help / quit |
 
-On a terminal too narrow for two columns the detail column moves *below* the list
-rather than disappearing — the per-image target and cap have no keys of their own.
+On a terminal too narrow for two columns the detail column moves *below* the
+list rather than disappearing — the per-image target and cap have no keys of
+their own.
 
 </details>
 
 <details>
 <summary><strong>Filter vs. target</strong> — which version actually gets written</summary>
 
-`show` only decides which rows are _visible_; `target` decides which version
-actually gets _written_. Both sit on the top bar and both have a key (`f` and
-`t`); the row's own target lives in the detail column. The target defaults to
-`major`, so out of the box you are offered the highest available version. At
-target `minor`, an image on `traefik:v2.9.3` that has `3.7.8` available re-points
-to the latest `2.11.x` instead; at `patch`, to `2.9.4`.
+`show` decides which rows are _visible_; `target` decides which version gets
+_written_. Both sit on the top bar, both have a key (`f` and `t`); the row's own
+target lives in the detail column. The target defaults to `major`, so out of the
+box you are offered the highest available version. At `minor`, an image on
+`traefik:v2.9.3` with `3.7.8` available re-points to the latest `2.11.x`; at
+`patch`, to `2.9.4`.
 
-The sidebar only offers the levels an image actually has — the `(+2)` after a
-version means two other levels exist. A row with nothing at the current target
-shows as `[-] … no patch update` and cannot be applied.
+The sidebar only offers levels an image actually has — `(+2)` after a version
+means two other levels exist. A row with nothing at the current target shows as
+`[-] … no patch update` and cannot be applied.
 
 An image whose tags ccu could read nothing from shows as `[!] … unreadable · …`
-and is listed but never applied — it has no version to write. On that row the
-sidebar grows a **versioning** field: stepping it to `loose` saves the scheme to
-your config and re-checks that one image straight away, so a repository ccu could
-not read is fixed where the problem is shown rather than by hand.
+and is never applied. On that row the sidebar grows a **versioning** field:
+stepping it to `loose` saves the scheme to your config and re-checks that image
+straight away — a repository ccu could not read is fixed where the problem is
+shown.
 
-The TUI always resolves **all** update levels, regardless of `-patch`, `-minor`,
+The TUI always resolves **all** levels, regardless of `-patch`, `-minor`,
 `-major` or `-f`. Those flags govern `ccu check` only.
 
 </details>
 
-> [!TIP]
-> The TUI needs a real terminal. Piped or redirected, `ccu` runs the `check`
-> report instead (as JSON) and says so on stderr — so old cron and CI entries
-> keep working.
-
-### `ccu check` — the non-interactive report
-
-```bash
-ccu check              # report only (patch updates by default)
-ccu check -u -r        # write the new tags, then restart the services
-ccu check -f           # consider every newer version, not just patches
-ccu check -d ./stacks  # scan a different directory
-```
-
-| Flag       | Description                                              | Default |
-| ---------- | -------------------------------------------------------- | ------- |
-| `-d`       | Directory to scan                                        | `.`     |
-| `-exclude` | Directories to exclude, comma-separated                  | none    |
-| `-config`  | Read this config file instead of searching for one       | none    |
-| `-u`       | Update the Compose files with the new image tags         | `false` |
-| `-r`       | Restart the services after updating                      | `false` |
-| `-f`       | Full mode — consider every newer version, not just patches | `false` |
-| `-major` / `-minor` / `-patch` | Only suggest that level                | `-patch`|
-| `-format`  | Output format: `auto`, `pretty` or `json`                | `auto`  |
-| `-pin-floating` | Pin floating tags (`latest`, `main`, …) to the digest they resolve to | `false` |
-| `-dockerfiles` | Also check the base images of Dockerfiles built by a compose service | `true` |
-
-Only `-d`, `-exclude`, `-config`, `-pin-floating` and `-dockerfiles` also apply to the TUI, which
-picks levels in the UI instead.
-
-**Exit codes:** `0` nothing left to do · `1` updates available, not applied ·
-`2` something failed. An image ccu could read no version from is reported but
-never counts as an update — nobody can say whether it has one. So CI gates
-without parsing anything:
-
-```bash
-ccu check -f || echo "images are behind"
-```
-
-<details>
-<summary><strong>Output format</strong> — JSON Lines when piped</summary>
+## JSON output
 
 On a terminal the report is the aligned, colour-coded listing; in a pipe it is
 **JSON Lines** — one object per line, written as the scan resolves, so `jq` reads
-it streaming. `--format=pretty` / `--format=json` force either one.
+it streaming. `--format=pretty` / `--format=json` force either one. Only the
+report goes to stdout; warnings and notices go to **stderr**, so a pipe stays
+parseable.
 
 ```json
 {"kind":"update","image":"library/traefik","reference":"traefik:v2.9.3","services":["proxy"],"file":"proxy/compose.yaml","current":"v2.9.3","latest":"v3.2.0","level":"major","targets":{"minor":"v2.11.4","major":"v3.2.0"}}
-{"kind":"unreadable","image":"ghcr.io/vert-sh/vert","reference":"ghcr.io/vert-sh/vert:sha-e1c83ba","file":"vert/compose.yaml","current":"sha-e1c83ba","level":"unreadable","reason":"no-tag-for-digest","message":"none of this image's tags matches its newest digest, and none of them reads as a version; if this image's tags are versions, try `versioning: loose` for it"}
+{"kind":"unreadable","image":"ghcr.io/vert-sh/vert","reference":"ghcr.io/vert-sh/vert:sha-e1c83ba","file":"vert/compose.yaml","current":"sha-e1c83ba","level":"unreadable","reason":"no-tag-for-digest","message":"none of this image's tags matches its newest digest…"}
 {"kind":"error","file":"data/docker-compose.yml","error":"fetching tags: 429"}
 ```
+
+<details>
+<summary><strong>Every key</strong></summary>
 
 | Key | On | Meaning |
 | --- | -- | ------- |
 | `kind` | every line | `update`, `unreadable` or `error` — dispatch on this |
 | `image` / `reference` | update | the image name, and the reference as the Compose file writes it |
 | `services` | update | the Compose services that declare it; a list, because identical references are reported once |
-| `file` | both | the file involved — the Compose file, or the Dockerfile when the update sits on a `FROM` line |
+| `file` | both | the Compose file, or the Dockerfile when the update sits on a `FROM` line |
 | `compose_file` | Dockerfile updates | the Compose file that builds it, i.e. the one to hand `docker compose -f` |
 | `current` / `latest` | update | the tag now, and the one this run picked |
 | `level` | update | `major`, `minor`, `patch`, `digest` or `pin` |
 | `current_digest` / `latest_digest` | digest-pinned images | only present when the digest actually moved |
 | `targets` | update | the tag available at each level, so you can pick a different one |
 | `cap` | capped images | the ceiling recorded in your config |
-| `applied` / `restarted` | with `-u` / `-r` | whether the write or restart succeeded — `false` says it was asked for and failed |
-| `reason` / `message` | unreadable | why ccu could resolve nothing for the image: a stable name to dispatch on, and the same thing in a sentence |
+| `applied` / `restarted` | with `-u` / `-r` | whether the write or restart succeeded — `false` means it was asked for and failed |
+| `reason` / `message` | unreadable | why nothing could be resolved: a stable name to dispatch on, and the same thing in a sentence |
 | `error` | error | the failure, as text |
 
-Only the report goes to stdout — warnings, lookup failures and the "a newer ccu
-exists" notice go to **stderr**, so a pipe stays parseable.
-
 </details>
-
-### All commands
-
-```bash
-ccu                # the TUI
-ccu check          # the non-interactive report
-ccu self-update    # download, verify and replace the running binary
-ccu check-update   # only report whether a newer ccu exists
-ccu config         # show the resolved configuration and where it came from
-ccu help / version
-```
-
-A `ccu check` run also checks **at most once every 24 hours** whether a newer
-release exists and prints one line to stderr. It never installs anything by
-itself; `CCU_NO_UPDATE_CHECK=1` turns the check off.
-
-## Configuration
-
-Directories you never want scanned, written down once:
-
-```yaml
-# .ccu.yaml
-exclude:
-  - node_modules
-  - services/legacy
-
-# Offer floating tags (latest, main, …) the digest they resolve to.
-pin_floating: true
-
-# Check the base images of Dockerfiles built by a compose service. On by default.
-dockerfiles: false
-
-# How tags are read as versions, for images whose tags are not semver.
-versioning: semver
-images:
-  nousresearch/hermes-agent:
-    versioning: loose
-  acme/dated:
-    versioning: regex
-    versioning_pattern: '^(?P<major>\d{4})-(?P<minor>\d{2})-(?P<patch>\d{2})$'
-```
-
-`~/.config/ccu/config.yaml` for preferences across every project, `.ccu.yaml` in
-the scan root or any parent for settings that travel with the stacks. Neither is
-required; project layers over global, `-exclude` over both, and the lists are
-**unioned** rather than replaced. `backup` matches that directory name at any
-depth, `services/legacy` only that path, `/mnt/backups` that absolute location —
-all three with `*` wildcards. `ccu config` shows what was read.
-
-When a setting does not seem to arrive, ask about the one image:
-
-```bash
-ccu config -image library/traefik
-```
-
-It prints the versioning scheme and the cap in effect **and the layer that
-produced each** — the per-image entry, `-versioning`, a global `versioning:`, or
-the built-in default — naming the file it was read from. And if nothing matched,
-it says so: the key is the image name **without tag or digest**, the way `ccu`
-reports it, so an entry spelled `traefik` never reaches `library/traefik`. An
-entry that nearly matches what you typed is offered as a hint:
-
-```
-No config entry names "traefik:1.2".
-  Lookup is exact and on the image name without tag or digest, as ccu
-  reports it — e.g. "library/traefik", not "traefik:1.2".
-  Did you mean "library/traefik"? (images.library/traefik in /srv/stacks/.ccu.yaml)
-```
-
-## Registries
-
-Any OCI registry works — Docker Hub, GHCR, Quay, Harbor, ECR, a self-hosted
-`registry:2`. Private repos need no setup: `ccu` reads the credentials
-`docker login` already stored. Logging in also lifts Docker Hub's anonymous rate
-limit, which starts to matter past a few dozen images.
-
-## Images you build yourself
-
-A service with a `build:` has no image tag for `ccu` to check — the tag that
-decides what it runs sits on the `FROM` line of its Dockerfile. So those are
-scanned too:
-
-```yaml
-services:
-  keycloak:
-    build:
-      context: "./"
-      dockerfile: Dockerfile
-```
-
-```dockerfile
--FROM quay.io/keycloak/keycloak:26.0.7 AS builder
-+FROM quay.io/keycloak/keycloak:26.7.2 AS builder
-...
--FROM quay.io/keycloak/keycloak:26.0.7
-+FROM quay.io/keycloak/keycloak:26.7.2
-```
-
-The Dockerfile shows up in the list under its own path, next to the compose file
-that builds it, and behaves like any other row: levels, caps, targets, a `.ccu`
-backup beside the file it rewrites. Two details are specific to it:
-
-- **Every stage moves together.** A multi-stage build usually names its base once
-  as the builder and once as the runtime, and both are rewritten as one update —
-  a runtime left a release behind its builder is a broken image, not a partial one.
-- **A restart rebuilds.** `docker compose up -d --build` for these, since a new
-  base image reaches the container only through a build.
-
-Skipped, because no registry can answer for them: `FROM scratch`, a stage
-referring to an earlier one (`FROM builder`), a reference assembled from build
-args (`FROM ${BASE}`), `dockerfile_inline:`, and contexts that are not a local
-path. `-dockerfiles=false` (or `dockerfiles: false` in the config) turns the
-whole thing off.
-
-## Versioning schemes
-
-Docker tags are a wild west: plenty of images publish something that is a version
-but not a *semantic* one. `nousresearch/hermes-agent`, for instance, tags by date
-and sometimes rebuilds the same day — `v2026.7.7` and `v2026.7.7.2` side by side.
-A fourth segment is not semver, so by default `ccu` does not read those tags as
-versions at all and falls back to comparing digests.
-
-Rather than loosen the rule for every image, the rule is a setting:
-
-| Scheme          | Reads                                                                  |
-| --------------- | ---------------------------------------------------------------------- |
-| `semver`        | up to three segments, no leading zeros — the default, unchanged        |
-| `loose`         | up to six numeric segments, leading zeros, any suffix                  |
-| `regex`         | whatever a pattern you write next to it names — per image only         |
-
-Turn it on for the image that needs it:
-
-```yaml
-# .ccu.yaml
-images:
-  nousresearch/hermes-agent:
-    versioning: loose
-```
-
-Now `v2026.7.7` orders before `v2026.7.7.2` before `v2026.7.30`, and `ccu` offers
-the update instead of giving up. The first three segments stay **major, minor and
-patch**; anything past the third orders the version but names no level of its own,
-so a fourth segment advancing is reported as a **patch**. The level filters, the
-caps and the TUI are unaffected.
-
-The suffix rule holds either way: `3.19-alpine` only ever moves to another
-`-alpine` tag, and `2026.7.7-cuda` only to another `-cuda` one.
-
-Three places can set it, most specific first:
-
-```yaml
-images:
-  nousresearch/hermes-agent:
-    versioning: loose   # 1. this image, wherever it is scanned
-```
-
-```bash
-ccu check --versioning=loose   # 2. every image, this run only
-```
-
-```yaml
-versioning: loose   # 3. every image, in .ccu.yaml or ~/.config/ccu/config.yaml
-```
-
-An entry naming an image outranks both defaults, **including the flag** — a flag
-meant as a quick try should not silently undo a preference written down on
-purpose. `ccu config` shows what was resolved, and `ccu config -image <name>`
-which of the three decided it.
-
-> [!TIP]
-> If `ccu` says `no tag matches the newest digest` for an image whose tags look
-> like versions to you, `versioning: loose` is what it is asking for.
-
-### Tags no fixed rule can read: `regex`
-
-Some repositories tag by dashed date — `2024-01-01`. Both schemes above read that
-as release **2024** with `-01-01` mistaken for a prerelease, which orders
-`2024-12-31` before `2024-02-01`: the alphabet, not the calendar. For those, say
-what a tag looks like:
-
-```yaml
-# .ccu.yaml
-images:
-  acme/dated:
-    versioning: regex
-    versioning_pattern: '^(?P<major>\d{4})-(?P<minor>\d{2})-(?P<patch>\d{2})$'
-```
-
-The pattern is a Go regular expression with **named groups**, `(?P<name>…)`. Four
-of them carry numbers — `major`, `minor`, `patch` and `build` — plus `suffix` for
-whatever trails them, separator included. A group you leave out is `0`, so a
-pattern naming only `major` is enough; a group named anything else is ignored,
-which lets you name the parts you only need to match. The four order exactly as
-under `loose`: the first three are the levels, and `build` moving on its own is
-reported as a **patch**.
-
-The pattern has to describe the **whole** tag — it is anchored, so a date buried
-in `build-2024-01-01-x` is not one — and a tag it does not match is simply not a
-version, exactly as under the other schemes: `ccu` falls back to comparing
-digests for it.
-
-`regex` is a per-image scheme. There is no global `versioning: regex` and no
-`--versioning=regex`, because a pattern that fits one repository's tags is
-meaningless for the next one's. The pattern is checked when the config is read,
-so a typo fails the run and names the image rather than quietly reading no tags:
-
-```console
-$ ccu config
-ERROR  Error reading config  error=/repo/.ccu.yaml: image "acme/dated": versioning_pattern: "^(?P<major>\\d+$" is not a valid regular expression: error parsing regexp: missing closing ): `^(?P<major>\d+$`
-```
-
-A pattern set on an image that is not on `regex`, and `versioning: regex` with no
-pattern at all, fail the same way. `ccu config` lists the pattern beside the
-scheme for every image that has one.
-
-## Images without semver tags
-
-Some images are pinned by digest, others tag every build with its commit
-(`sha-e1c83ba`). For those `ccu` compares the manifest digest instead of the
-version number, and reports the update as level `digest`:
-
-| In your Compose file            | What `ccu` does                                                          |
-| ------------------------------- | ------------------------------------------------------------------------ |
-| `image: vert:sha-438f91a`       | Moves the tag to the one currently matching `latest`, e.g. `sha-e1c83ba` |
-| `image: vert@sha256:abc…`       | Rewrites the digest to the one `latest` now resolves to                  |
-| `image: vert:1.2.3@sha256:abc…` | Bumps the tag **and** the digest together, so they stay consistent       |
-| `image: vert:latest`            | Pinned to the digest it resolves to today, with `-pin-floating` (see below) |
-
-### The reference tag
-
-All of that hangs on one tag: `latest`, whose digest is what "newest" means for
-an image with no readable version. A repository that publishes no `latest` has
-nothing to be compared against, so `ccu` skips it entirely — it says
-`no latest tag to compare against` and moves on. Name the moving tag it *does*
-publish and it is back in the game:
-
-```yaml
-# .ccu.yaml or ~/.config/ccu/config.yaml
-images:
-  internal/thing:
-    reference_tag: stable
-```
-
-Now `internal/thing:sha-e1c83ba` is compared against the digest of
-`internal/thing:stable`, and the commit tag carrying that digest is the update.
-The reference tag itself is never offered as the new tag — trading a fixed
-reference for a moving one is not an update — and it applies to that image only:
-everything else keeps comparing against `latest`.
-
-### Floating tags
-
-`latest`, `main`, `edge`, `nightly` and friends always resolve to whatever is
-newest, so there is never a newer tag to offer — and nothing in the Compose file
-to tell you the image behind the tag has changed. `-pin-floating` writes that
-down:
-
-```yaml
--  image: nginx:latest
-+  image: nginx:latest@sha256:b34848eff6db…
-```
-
-The tag is still spelled `latest`, but the digest now decides: `docker compose
-pull` gets **that exact build** and stops following the tag. In exchange `ccu` can
-*see* the drift — every later run compares the pinned digest against what
-`latest` resolves to and reports a `digest` update when they differ, exactly like
-a digest-pinned image. You trade automatic pulls for a reviewable bump.
-
-These rows are reported as level `pin`, and only when asked for:
-
-```bash
-ccu check -pin-floating        # report them
-ccu check -pin-floating -u     # and write them
-```
-
-```yaml
-# .ccu.yaml or ~/.config/ccu/config.yaml
-pin_floating: true
-```
-
-`latest`, `main`, `master`, `edge`, `stable`, `nightly`, `dev` and `develop` are
-the tags `ccu` treats as floating. If your registry moves a differently spelled
-one — `release`, `prod`, `canary` — say so and it is pinned like the rest:
-
-```yaml
-# .ccu.yaml or ~/.config/ccu/config.yaml — for every image
-floating_tags: [release, canary]
-
-# ...or for one image only
-images:
-  internal/thing:
-    floating_tags: [release, canary]
-```
-
-A registry usually spells its moving tag the same way across all of its
-repositories, so the global list is the one to reach for; the per-image list is
-there for the odd repository that differs.
-
-Everything **adds up** rather than replacing: the built-in names, the global
-list, the two config files, and the per-image list. Nothing ever takes a name
-away. The reason is that the built-in names are a fact about how registries
-work rather than a preference of yours — a repository that publishes `release`
-almost certainly publishes `latest` beside it, and if naming one made `ccu`
-forget the others, that `latest` would turn back into an ordinary tag, pinnable
-and offered as an update target, which is precisely what the built-in list
-prevents. For the same reason the two config files union here the way `exclude`
-does, instead of the project file replacing the global one the way a per-image
-cap does.
-
-In the TUI they sit behind the bar's `floating` stop (`p`), which lists and hides
-them; `pin_floating` decides which way it starts. If the run was not asked to pin,
-the first press fetches the digests then and there — nothing is spent on a
-registry until you ask. Caps do not apply: pinning moves no version, so an image
-capped at `patch` can still be pinned.
-
-> [!NOTE]
-> Once a digest is in the file, the image is that exact build until `ccu` moves
-> it — so this suits stacks you update deliberately, not ones relying on a
-> nightly `pull`. A pin also costs one registry request per floating image,
-> which is the other reason it is off by default. `-pin-floating=false` overrides
-> `pin_floating: true` for a single run.
-
-> [!NOTE]
-> This requires querying tags individually, so the first check of such an image
-> is noticeably slower. At most 250 tags of the same naming scheme are inspected.
 
 ## Troubleshooting
 
@@ -561,8 +505,7 @@ hint. The old `-self-update` / `-check-update` flags work too.
 ## Contributing
 
 Issues and PRs welcome — registry quirks and real-world Compose files that trip
-the parser especially. Plain Go, no codegen: `go test ./...` and `go vet ./...`
-is what CI runs.
+the parser especially. Plain Go, no codegen; see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 
