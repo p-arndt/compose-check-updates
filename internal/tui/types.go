@@ -107,7 +107,7 @@ const (
 // flattened across compose files; FilePath groups them under file headers.
 type Row struct {
 	Update   internal.UpdateInfo
-	Level    string // "major" | "minor" | "patch" | "digest" | "pin" — of the SELECTED tag
+	Level    string // "major" | "minor" | "patch" | "digest" | "pin" | "unreadable" — of the SELECTED tag
 	Selected bool
 	State    RowState
 	Err      error // set when State is RowFailed
@@ -127,8 +127,12 @@ type Row struct {
 // FilePath is the compose file this row's image lives in.
 func (r Row) FilePath() string { return r.Update.FilePath }
 
-// Actionable reports whether the row may be selected and applied.
-func (r Row) Actionable() bool { return !r.NoTarget && r.State == RowPending }
+// Actionable reports whether the row may be selected and applied. An image ccu
+// could not read has no tag to write, so it is listed but never ticked: `A` must
+// not be able to sweep it up along with the rows that do have a target.
+func (r Row) Actionable() bool {
+	return !r.NoTarget && r.State == RowPending && !r.Update.IsUnreadable()
+}
 
 // otherTargets counts the alternative levels this image could be pointed at, so
 // the list can hint that `T` would do something here.
@@ -195,16 +199,19 @@ const (
 
 // Theme collects every colour the UI uses, so the palette lives in one place.
 type Theme struct {
-	Major     lipgloss.Color
-	Minor     lipgloss.Color
-	Patch     lipgloss.Color
-	Digest    lipgloss.Color
-	Pin       lipgloss.Color
-	Text      lipgloss.Color
-	Dim       lipgloss.Color
-	Accent    lipgloss.Color
-	Success   lipgloss.Color
-	Warn      lipgloss.Color
-	Error     lipgloss.Color
-	Highlight lipgloss.Color // background of the cursor row
+	Major  lipgloss.Color
+	Minor  lipgloss.Color
+	Patch  lipgloss.Color
+	Digest lipgloss.Color
+	Pin    lipgloss.Color
+	// Unreadable is the colour of a row nothing could be resolved for. It is a
+	// warning, not a level: the row is on screen to be fixed, not to be applied.
+	Unreadable lipgloss.Color
+	Text       lipgloss.Color
+	Dim        lipgloss.Color
+	Accent     lipgloss.Color
+	Success    lipgloss.Color
+	Warn       lipgloss.Color
+	Error      lipgloss.Color
+	Highlight  lipgloss.Color // background of the cursor row
 }

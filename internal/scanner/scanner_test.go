@@ -2,11 +2,19 @@ package scanner
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/p-arndt/compose-check-updates/internal"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -178,4 +186,76 @@ func TestDockerfileCheckers(t *testing.T) {
 
 	assert.Len(t, dockerfileCheckers(Options{Dockerfiles: true}, nil, compose), 1)
 	assert.Empty(t, dockerfileCheckers(Options{}, nil, compose))
+}
+
+// newRegistryTestServer serves the two endpoints a check needs: the tag list and
+// a manifest per tag. Pointed at through CCU_REGISTRY_HOST below, so the images
+// in the compose file read as ordinary Docker Hub references.
+func newRegistryTestServer(t *testing.T, repo string, tags []string, tagDigests map[string]string) *httptest.Server {
+	t.Helper()
+
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/tags/list") {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]any{"name": repo, "tags": tags})
+			return
+		}
+
+		if i := strings.Index(r.URL.Path, "/manifests/"); i != -1 {
+			digest, ok := tagDigests[r.URL.Path[i+len("/manifests/"):]]
+			if !ok {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
+			body := []byte(`{"schemaVersion":2,"mediaType":"application/vnd.oci.image.manifest.v1+json"}`)
+			w.Header().Set("Content-Type", "application/vnd.oci.image.manifest.v1+json")
+			w.Header().Set("Docker-Content-Digest", digest)
+			w.Header().Set("Content-Length", fmt.Sprint(len(body)))
+			w.WriteHeader(http.StatusOK)
+			if r.Method != http.MethodHead {
+				w.Write(body)
+			}
+			return
+		}
+
+		w.WriteHeader(http.StatusNotFound)
+	}))
+}
+
+// An image ccu can resolve nothing for reaches the consumer as an update event
+// of its own level. It used to be dropped here, which left the only trace of it
+// in a log line nobody can act on.
+func TestScanEmitsUnreadableImages(t *testing.T) {
+	const (
+		digestOld = "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+		digestNew = "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+	)
+
+	server := newRegistryTestServer(t, "library/myimage",
+		[]string{"latest", "sha-e1c83ba"},
+		map[string]string{"latest": digestNew, "sha-e1c83ba": digestOld})
+	defer server.Close()
+
+	serverURL, err := url.Parse(server.URL)
+	require.NoError(t, err)
+	t.Setenv("CCU_REGISTRY_HOST", serverURL.Host)
+
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(root, "compose.yaml"),
+		[]byte("services:\n  app:\n    image: library/myimage:sha-e1c83ba\n"), 0644))
+
+	events, err := Scan(context.Background(), Options{Root: root, Major: true, Minor: true, Patch: true})
+	require.NoError(t, err)
+
+	var updates []Event
+	for _, ev := range collect(t, events) {
+		if ev.Kind == EventUpdate {
+			updates = append(updates, ev)
+		}
+	}
+
+	require.Len(t, updates, 1)
+	assert.Equal(t, internal.LevelUnreadable, updates[0].Level)
+	assert.True(t, updates[0].Update.IsUnreadable())
+	assert.Equal(t, internal.ReasonNoTagForDigest, updates[0].Update.UnreadableReason)
 }

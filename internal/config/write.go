@@ -27,6 +27,44 @@ func SetImageMax(path, image string, max Level) error {
 		return fmt.Errorf("config: max: %q is not one of %s, %s, %s", max, LevelPatch, LevelMinor, LevelMajor)
 	}
 
+	return setImageKey(path, image, "max", string(max))
+}
+
+// SetImageVersioning records the scheme image's tags are read under in the
+// config file at path, the same way SetImageMax records a cap. It exists so the
+// answer to "ccu cannot read this image" can be given where the question is
+// asked, instead of being a hand edit the user has to find their own way to.
+func SetImageVersioning(path, image string, versioning Versioning) error {
+	if err := ValidateVersioning(versioning); err != nil {
+		return fmt.Errorf("config: %w", err)
+	}
+	// An empty scheme is the absence of one, and absence is what clearing means:
+	// writing it out would leave the file saying nothing in a way that still has
+	// to be read.
+	if versioning == "" {
+		return ClearImageVersioning(path, image)
+	}
+
+	return setImageKey(path, image, "versioning", string(versioning))
+}
+
+// ClearImageMax removes the cap for image from the config file at path. Removing
+// a cap that is not there is not an error. When the image's entry is left empty
+// by the removal, the entry goes too, and so does an `images:` map left with no
+// entries at all.
+func ClearImageMax(path, image string) error { return clearImageKey(path, image, "max") }
+
+// ClearImageVersioning removes the scheme recorded for image, leaving it to be
+// read under whatever the run resolved as its default.
+func ClearImageVersioning(path, image string) error {
+	return clearImageKey(path, image, "versioning")
+}
+
+// setImageKey writes one key of one image's policy, creating the file (and its
+// directory) when it does not exist yet. An existing file is edited in place,
+// keeping its comments, key order and formatting: it is a file the user writes
+// by hand, and a save that reformatted it would be a save they regret.
+func setImageKey(path, image, key, value string) error {
 	doc, mode, err := readDocument(path)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
@@ -51,23 +89,22 @@ func SetImageMax(path, image string, max Level) error {
 		setMappingValue(images, image, entry)
 	}
 
-	if value := mappingValue(entry, "max"); value != nil && value.Kind == yaml.ScalarNode {
+	if node := mappingValue(entry, key); node != nil && node.Kind == yaml.ScalarNode {
 		// Patching the existing scalar keeps whatever style and comments the user
 		// gave it; only the word changes.
-		value.Value = string(max)
-		value.Tag = "!!str"
+		node.Value = value
+		node.Tag = "!!str"
 	} else {
-		setMappingValue(entry, "max", &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: string(max)})
+		setMappingValue(entry, key, &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: value})
 	}
 
 	return writeDocument(path, doc, mode)
 }
 
-// ClearImageMax removes the cap for image from the config file at path. Removing
-// a cap that is not there is not an error. When the image's entry is left empty
-// by the removal, the entry goes too, and so does an `images:` map left with no
-// entries at all.
-func ClearImageMax(path, image string) error {
+// clearImageKey removes one key of one image's policy. Removing what is not
+// there is not an error. When the image's entry is left empty by the removal,
+// the entry goes too, and so does an `images:` map left with no entries at all.
+func clearImageKey(path, image, key string) error {
 	doc, mode, err := readDocument(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil
@@ -91,7 +128,7 @@ func ClearImageMax(path, image string) error {
 		return nil
 	}
 
-	if !deleteMappingKey(entry, "max") {
+	if !deleteMappingKey(entry, key) {
 		// Nothing to clear, so nothing to rewrite: an untouched file cannot lose
 		// formatting to a save that had no work to do.
 		return nil

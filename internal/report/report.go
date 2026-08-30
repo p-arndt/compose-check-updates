@@ -116,12 +116,37 @@ type record struct {
 	Applied   *bool `json:"applied,omitempty"`
 	Restarted *bool `json:"restarted,omitempty"`
 
+	// Reason and Message describe an image ccu could not resolve; both are empty
+	// on every other kind. The reason is the stable name to dispatch on, the
+	// message the sentence to show a person.
+	Reason  string `json:"reason,omitempty"`
+	Message string `json:"message,omitempty"`
+
 	Error string `json:"error,omitempty"`
 }
 
 type jsonlWriter struct{ enc *json.Encoder }
 
 func (w *jsonlWriter) Update(u internal.UpdateInfo, level string, res Result) {
+	// A kind of its own rather than an update with an odd level: a consumer
+	// counting "update" lines is being told what to change, and an image nobody
+	// could read gives it nothing to change.
+	if u.IsUnreadable() {
+		w.enc.Encode(record{
+			Kind:        "unreadable",
+			Image:       u.ImageName,
+			Reference:   u.FullImageName,
+			Services:    u.Services,
+			File:        u.FilePath,
+			ComposeFile: u.ComposePath,
+			Current:     u.CurrentTag,
+			Level:       level,
+			Reason:      u.UnreadableReason,
+			Message:     u.UnreadableMessage,
+		})
+		return
+	}
+
 	rec := record{
 		Kind:          "update",
 		Image:         u.ImageName,
@@ -172,6 +197,16 @@ func (w *jsonlWriter) Close() error { return nil }
 type prettyWriter struct{}
 
 func (prettyWriter) Update(u internal.UpdateInfo, level string, res Result) {
+	// A warning rather than an info line, and one that carries its own way out:
+	// this is the only place the user hears that an image is being looked at and
+	// understood by nothing.
+	if u.IsUnreadable() {
+		slog.Warn("Cannot read this image",
+			"image", u.ImageName, "current", u.CurrentTag, "file", u.FilePath,
+			"reason", u.UnreadableReason, "detail", u.UnreadableMessage)
+		return
+	}
+
 	if !res.ApplyRequested && !res.RestartRequested {
 		attrs := []any{"image", u.ImageName, "current", u.CurrentTag, "latest", u.LatestTag, "file", u.FilePath, "update_level", level}
 		if u.IsDigestUpdate() {

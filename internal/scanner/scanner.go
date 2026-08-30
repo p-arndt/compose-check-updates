@@ -5,6 +5,7 @@ package scanner
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"sync"
 
@@ -78,7 +79,7 @@ type EventKind int
 const (
 	EventDiscovered EventKind = iota // emitted once, first, carrying Total
 	EventFileStart                   // a compose file's check began
-	EventUpdate                      // an image with an available update
+	EventUpdate                      // an image with an available update, or one ccu could not read
 	EventFileDone                    // a compose file's check finished
 	EventError                       // a non-fatal error; scan continues
 )
@@ -88,8 +89,11 @@ type Event struct {
 	Path   string              // compose file involved (empty for EventDiscovered)
 	Total  int                 // number of compose files found; only set on EventDiscovered
 	Update internal.UpdateInfo // only set on EventUpdate
-	Level  string              // update level of Update ("major"/"minor"/"patch"/"digest"/"pin"); only on EventUpdate
-	Err    error               // only set on EventError
+	// Level is the update level of Update ("major"/"minor"/"patch"/"digest"/"pin",
+	// or "unreadable" for an image that resolved to nothing at all); only on
+	// EventUpdate.
+	Level string
+	Err   error // only set on EventError
 }
 
 // Scan walks opts.Root and checks every compose file it finds, emitting events
@@ -112,6 +116,59 @@ func Scan(ctx context.Context, opts Options) (<-chan Event, error) {
 // twice.
 func ScanPins(ctx context.Context, opts Options) (<-chan Event, error) {
 	return walk(ctx, opts, false, checkFilePins)
+}
+
+// CheckImage re-checks a single image and returns the event a scan would have
+// emitted for it. It is what a caller reaches for after changing one image's
+// settings: re-scanning would re-fetch every tag list for versions already on
+// screen, while this touches the one repository whose answer can have changed.
+//
+// The image is named by the update the earlier scan reported, because that is
+// what identifies the line — the file it sits in, and the reference as the file
+// spells it.
+func CheckImage(opts Options, target internal.UpdateInfo) (Event, error) {
+	registry := internal.NewRegistry("")
+
+	checker := internal.NewUpdateChecker(target.FilePath, registry)
+	if target.ComposePath != "" {
+		// A Dockerfile is only ever reached through the service that builds it, and
+		// a checker that does not know about the two of them would report the update
+		// as belonging to the Dockerfile alone — leaving a restart with no compose
+		// file to act on.
+		checker = internal.NewDockerfileChecker(target.FilePath, target.ComposePath, firstService(target.Services), registry)
+	}
+	// Every setting a full scan applies, or a re-check would answer differently
+	// from the scan that produced the row it is replacing.
+	checker = checker.
+		WithPinFloating(opts.PinFloating).
+		WithVersioning(opts.Versionings, opts.DefaultVersioning, opts.VersioningPatterns).
+		WithReferenceTags(opts.ReferenceTags).
+		WithFloatingTags(opts.FloatingTags, opts.GlobalFloatingTags)
+
+	info, found, err := checker.CheckImage(target.FullImageName, opts.Major, opts.Minor, opts.Patch)
+	if err != nil {
+		return Event{}, err
+	}
+	if !found {
+		return Event{}, fmt.Errorf("%s no longer names %s", target.FilePath, target.FullImageName)
+	}
+
+	applyCap(&info, opts.Caps[info.ImageName], registry)
+
+	// Path is the compose file, as it is on every event a scan emits: a consumer
+	// groups rows by it, and a Dockerfile's row belongs under the stack that
+	// builds it.
+	return Event{Kind: EventUpdate, Path: info.RestartPath(), Update: info, Level: info.UpdateLevel()}, nil
+}
+
+// firstService is the service to hand a Dockerfile checker. One name, because
+// that is all a checker records; the update the re-check produces carries it
+// alone rather than the full list the first scan collapsed into the row.
+func firstService(services []string) string {
+	if len(services) == 0 {
+		return ""
+	}
+	return services[0]
 }
 
 // walk is the shared body of the two scans: discover the compose files, then run
@@ -204,7 +261,11 @@ func checkFile(ctx context.Context, events chan<- Event, opts Options, path stri
 		// an image capped at minor still has its minor update offered.
 		applyCap(&info, opts.Caps[info.ImageName], registry)
 
-		if !info.HasNewVersion(opts.Major, opts.Minor, opts.Patch) {
+		// An image ccu could not read is reported rather than dropped. Dropping it
+		// left a warning on stderr as its only trace, which no row, no report line
+		// and no key in the TUI could be hung off — so the one thing the user could
+		// do about it was the one thing nothing told them how to do.
+		if !info.HasNewVersion(opts.Major, opts.Minor, opts.Patch) && !info.IsUnreadable() {
 			continue
 		}
 		if !send(ctx, events, Event{Kind: EventUpdate, Path: path, Update: info, Level: info.UpdateLevel()}) {

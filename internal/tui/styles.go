@@ -18,18 +18,21 @@ const minWidth = 20
 // picked to stay legible on both light and dark backgrounds.
 func DefaultTheme() Theme {
 	return Theme{
-		Major:     lipgloss.Color("203"), // soft red — louder shades vibrate on light terminals
-		Minor:     lipgloss.Color("179"), // amber, readable on white unlike bright yellow
-		Patch:     lipgloss.Color("71"),  // muted green
-		Digest:    lipgloss.Color("141"), // violet — deliberately off the blue axis so the badge cannot be read as chrome
-		Pin:       lipgloss.Color("109"), // desaturated teal — a pin changes no version, so it must not read as loud as one that does
-		Text:      lipgloss.Color("252"),
-		Dim:       lipgloss.Color("244"), // mid grey: the one value that survives both polarities
-		Accent:    lipgloss.Color("75"),  // light blue: carries the dark title text with plenty of contrast
-		Success:   lipgloss.Color("71"),
-		Warn:      lipgloss.Color("179"),
-		Error:     lipgloss.Color("203"),
-		Highlight: lipgloss.Color("24"), // dark desaturated blue: reads as the cursor row, never as the title bar
+		Major:  lipgloss.Color("203"), // soft red — louder shades vibrate on light terminals
+		Minor:  lipgloss.Color("179"), // amber, readable on white unlike bright yellow
+		Patch:  lipgloss.Color("71"),  // muted green
+		Digest: lipgloss.Color("141"), // violet — deliberately off the blue axis so the badge cannot be read as chrome
+		Pin:    lipgloss.Color("109"), // desaturated teal — a pin changes no version, so it must not read as loud as one that does
+		// Orange: close enough to the warning amber to read as one, far enough from
+		// the minor badge that the two are not mistaken for the same thing.
+		Unreadable: lipgloss.Color("173"),
+		Text:       lipgloss.Color("252"),
+		Dim:        lipgloss.Color("244"), // mid grey: the one value that survives both polarities
+		Accent:     lipgloss.Color("75"),  // light blue: carries the dark title text with plenty of contrast
+		Success:    lipgloss.Color("71"),
+		Warn:       lipgloss.Color("179"),
+		Error:      lipgloss.Color("203"),
+		Highlight:  lipgloss.Color("24"), // dark desaturated blue: reads as the cursor row, never as the title bar
 	}
 }
 
@@ -47,6 +50,8 @@ func (t Theme) LevelColor(level string) lipgloss.Color {
 		return t.Digest
 	case internal.LevelPin:
 		return t.Pin
+	case internal.LevelUnreadable:
+		return t.Unreadable
 	default:
 		return t.Dim
 	}
@@ -56,9 +61,22 @@ func (t Theme) LevelColor(level string) lipgloss.Color {
 // which level a row carries.
 const badgeWidth = 8
 
+// badgeLabels holds the word a level wears on its chip where its own name does
+// not fit: truncating "unreadable" to the chip leaves "UNREAD…", which reads as
+// a level of its own rather than as the one it is short for.
+var badgeLabels = map[string]string{internal.LevelUnreadable: "UNREAD"}
+
+// badgeLabel is the chip text for a level, in the case the chip is drawn in.
+func badgeLabel(level string) string {
+	if l, ok := badgeLabels[strings.ToLower(strings.TrimSpace(level))]; ok {
+		return l
+	}
+	return strings.ToUpper(strings.TrimSpace(level))
+}
+
 // Badge renders the level tag as a fixed-width chip.
 func (t Theme) Badge(level string) string {
-	label := strings.ToUpper(strings.TrimSpace(level))
+	label := badgeLabel(level)
 	if label == "" {
 		label = "-"
 	}
@@ -75,7 +93,7 @@ func (t Theme) Badge(level string) string {
 // BadgeTight is the same chip without the fixed width. Nothing lines up after a
 // badge in the sidebar, where the padding would only open a gap.
 func (t Theme) BadgeTight(level string) string {
-	label := strings.ToUpper(strings.TrimSpace(level))
+	label := badgeLabel(level)
 	if label == "" {
 		label = "-"
 	}

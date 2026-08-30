@@ -87,6 +87,11 @@ type Model struct {
 	// observe writes. An empty level means "remove the cap for this image".
 	setCap func(scope pinScope, image string, max config.Level) error
 
+	// setVersioning writes the scheme an image's tags are read under, for the same
+	// reason and in the same shape as setCap. An empty scheme means "let this
+	// image take the run's default again".
+	setVersioning func(scope pinScope, image string, versioning config.Versioning) error
+
 	// focus is which half of the frame the keyboard is talking to. The list holds
 	// it by default, so every reflex key keeps its old meaning.
 	focus focusArea
@@ -146,16 +151,17 @@ func NewModel(opts scanner.Options) Model {
 	sp.Spinner = spinner.Dot
 
 	return Model{
-		opts:    opts,
-		setCap:  writeCap(opts.Root),
-		pins:    make(map[pinScope]config.Config),
-		theme:   theme,
-		keys:    DefaultKeyMap(),
-		phase:   phaseScanning,
-		spinner: sp,
-		ctx:     ctx,
-		cancel:  cancel,
-		filter:  FilterAll,
+		opts:          opts,
+		setCap:        writeCap(opts.Root),
+		setVersioning: writeVersioning(opts.Root),
+		pins:          make(map[pinScope]config.Config),
+		theme:         theme,
+		keys:          DefaultKeyMap(),
+		phase:         phaseScanning,
+		spinner:       sp,
+		ctx:           ctx,
+		cancel:        cancel,
+		filter:        FilterAll,
 		// The scan resolved them only if it was asked to, which is the same
 		// condition under which they are listed to begin with.
 		showFloating:     opts.PinFloating,
@@ -169,19 +175,10 @@ func NewModel(opts scanner.Options) Model {
 }
 
 // writeCap is the real writer behind Model.setCap: it resolves the file the
-// chosen scope writes to and then sets or clears the entry. The project path is
-// derived from the scanned root, because that is the tree the user is looking at.
+// chosen scope writes to and then sets or clears the entry.
 func writeCap(root string) func(pinScope, string, config.Level) error {
 	return func(scope pinScope, image string, max config.Level) error {
-		var (
-			path string
-			err  error
-		)
-		if scope == pinGlobal {
-			path, err = config.GlobalWritePath()
-		} else {
-			path, err = config.ProjectWritePath(root)
-		}
+		path, err := scopePath(scope, root)
 		if err != nil {
 			return err
 		}
@@ -190,6 +187,93 @@ func writeCap(root string) func(pinScope, string, config.Level) error {
 		}
 		return config.SetImageMax(path, image, max)
 	}
+}
+
+// writeVersioning is the real writer behind Model.setVersioning, resolving the
+// file the chosen scope writes to exactly as writeCap does.
+func writeVersioning(root string) func(pinScope, string, config.Versioning) error {
+	return func(scope pinScope, image string, versioning config.Versioning) error {
+		path, err := scopePath(scope, root)
+		if err != nil {
+			return err
+		}
+		if versioning == "" {
+			return config.ClearImageVersioning(path, image)
+		}
+		return config.SetImageVersioning(path, image, versioning)
+	}
+}
+
+// scopePath is the file a scope writes to. The project path is derived from the
+// scanned root, because that is the tree the user is looking at.
+func scopePath(scope pinScope, root string) (string, error) {
+	if scope == pinGlobal {
+		return config.GlobalWritePath()
+	}
+	return config.ProjectWritePath(root)
+}
+
+// versioningInScope is the scheme one scope records for an image, or "" when it
+// says nothing about it.
+func (m Model) versioningInScope(scope pinScope, image string) config.Versioning {
+	return m.pins[scope].Images[image].Versioning
+}
+
+// versioningFor is the scheme recorded for an image, project first — the same
+// precedence a cap has, and the same the two config layers have when merged.
+// Empty means the image was never given one and takes the run's default.
+func (m Model) versioningFor(image string) config.Versioning {
+	if v := m.versioningInScope(pinProject, image); v != "" {
+		return v
+	}
+	return m.versioningInScope(pinGlobal, image)
+}
+
+// defaultVersioning is the scheme an image with none of its own is read under,
+// named so the sidebar can say what "default" currently means.
+func (m Model) defaultVersioning() config.Versioning {
+	if m.opts.DefaultVersioning == "" {
+		return config.VersioningSemver
+	}
+	return config.Versioning(m.opts.DefaultVersioning)
+}
+
+// recordVersioning folds a written scheme back into the in-memory layers and
+// into the scan options, so the re-check that follows reads the image the way
+// the file now says to. Nothing else re-reads the config during a session.
+func (m *Model) recordVersioning(scope pinScope, image string, versioning config.Versioning) {
+	for s := range m.pins {
+		cfg := m.pins[s]
+		if policy, ok := cfg.Images[image]; ok {
+			policy.Versioning = ""
+			cfg.Images[image] = policy
+		}
+		m.pins[s] = cfg
+	}
+
+	if versioning != "" {
+		cfg := m.pins[scope]
+		if cfg.Images == nil {
+			cfg.Images = map[string]config.ImagePolicy{}
+		}
+		policy := cfg.Images[image]
+		policy.Versioning = versioning
+		cfg.Images[image] = policy
+		m.pins[scope] = cfg
+	}
+
+	// Copied rather than written through: the map came from the loaded config and
+	// is shared with whoever else was handed it.
+	schemes := make(map[string]string, len(m.opts.Versionings)+1)
+	for k, v := range m.opts.Versionings {
+		schemes[k] = v
+	}
+	if versioning == "" {
+		delete(schemes, image)
+	} else {
+		schemes[image] = string(versioning)
+	}
+	m.opts.Versionings = schemes
 }
 
 // WithPins attaches the caps already on disk, so the list can mark a pinned
@@ -357,6 +441,12 @@ func (m Model) rowVisible(r Row) bool {
 		return false
 	}
 	if r.Level == internal.LevelPin {
+		return true
+	}
+	// An unreadable image has no level for the filter to speak about, and hiding
+	// it under every filter but "all" would put it out of reach of the very field
+	// that fixes it.
+	if r.Level == internal.LevelUnreadable {
 		return true
 	}
 	return m.filter.Matches(r.Level)

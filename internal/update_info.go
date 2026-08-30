@@ -14,6 +14,37 @@ import (
 // run can tell that it has moved on.
 const LevelPin = "pin"
 
+// LevelUnreadable is the level of an image ccu could read no version from and
+// find no digest to compare against. It describes no change either: there is
+// nothing to offer and nothing to rule out, only the image itself to report. It
+// exists because the alternative — dropping the image from the run — leaves the
+// user with a log line, no row and no way to act on either.
+const LevelUnreadable = "unreadable"
+
+// The reasons an image ends up unreadable, as UpdateInfo.UnreadableReason
+// records them. They are short and stable because a consumer of the JSON report
+// dispatches on them; the sentence beside them is what a person reads.
+const (
+	// ReasonNoTagForDigest: the repository's newest manifest matches none of the
+	// tags ccu probed, so there is no tag to move to. This is where an image with
+	// version-shaped tags the scheme cannot read comes out.
+	ReasonNoTagForDigest = "no-tag-for-digest"
+	// ReasonNoComparableTag: the current tag reads as a version, but no other tag
+	// of the repository can be compared with it, so no run will ever offer one.
+	ReasonNoComparableTag = "no-comparable-tag"
+	// ReasonNoReferenceTag: the repository has no floating reference tag, which is
+	// the only thing an unreadable tag can be compared against.
+	ReasonNoReferenceTag = "no-reference-tag"
+	// ReasonNoCurrentDigest: the tag in the file resolves to no manifest at all.
+	ReasonNoCurrentDigest = "current-digest-unresolved"
+	// ReasonNoTagOrDigest: the reference names neither a tag nor a digest, so
+	// there is nothing to look up in the first place.
+	ReasonNoTagOrDigest = "no-tag-or-digest"
+	// ReasonNoFloatingDigest: the floating tag ccu was asked to pin resolves to no
+	// manifest, so there is nothing to write down for it.
+	ReasonNoFloatingDigest = "floating-digest-unresolved"
+)
+
 type UpdateInfo struct {
 	FilePath string
 	RawLine  string
@@ -68,10 +99,34 @@ type UpdateInfo struct {
 	// no cap has anything to say about it — see LevelPin.
 	PinsFloating bool
 
+	// UnreadableReason names why this image could not be resolved, empty when it
+	// could — see the Reason constants above. It is carried on the update rather
+	// than logged and forgotten, because a warning on stderr is not something a
+	// user can act on: the row, the report line and the offer of another
+	// versioning scheme all hang off this field.
+	UnreadableReason string
+	// UnreadableMessage says the same thing in a sentence, including the way out
+	// where there is one. Kept beside the reason rather than derived from it, so
+	// the message can name the tag and the scheme that were actually in play.
+	UnreadableMessage string
+
 	// Tag LatestDigest was resolved for. A digest only ever describes one
 	// release, so switching target has to invalidate it.
 	digestFor string
 }
+
+// MarkUnreadable records that this image could not be resolved and why. The
+// half-resolved target fields go with it: a digest fetched for a tag that was
+// then never found would otherwise sit there looking like an update to apply.
+func (u *UpdateInfo) MarkUnreadable(reason, message string) {
+	u.UnreadableReason, u.UnreadableMessage = reason, message
+	u.LatestTag, u.LatestDigest, u.digestFor = "", "", ""
+	u.PatchTag, u.MinorTag, u.MajorTag = "", "", ""
+}
+
+// IsUnreadable reports whether ccu failed to resolve this image, for the
+// consumers that have to keep it out of everything counted as an update.
+func (u *UpdateInfo) IsUnreadable() bool { return u.UnreadableReason != "" }
 
 // levelRank orders the levels a cap can be expressed in. A level missing from
 // this map is one no cap can speak about — "digest", for one, which carries no
@@ -209,6 +264,12 @@ func (u *UpdateInfo) IsDigestUpdate() bool {
 }
 
 func (u *UpdateInfo) HasNewVersion(major, minor, patch bool) bool {
+	// An image nothing could be read from has no version to have moved to, and
+	// saying otherwise would let `-u` try to write a tag that was never resolved.
+	if u.IsUnreadable() {
+		return false
+	}
+
 	// Pinning a floating tag is something to do regardless of the level filters:
 	// they speak about versions, and this one writes a digest.
 	if u.PinsFloating {
@@ -249,8 +310,16 @@ func (u *UpdateInfo) HasNewVersion(major, minor, patch bool) bool {
 // UpdateLevel returns the semantic version increment level between CurrentTag and LatestTag.
 // Possible values are "major", "minor", "patch", "digest" for changes that carry
 // no version, LevelPin for a floating tag being given the digest it resolves to,
-// or empty string when undetermined.
+// LevelUnreadable for an image nothing could be resolved for, or empty string
+// when undetermined.
 func (u *UpdateInfo) UpdateLevel() string {
+	// First, because every case below reads fields MarkUnreadable cleared and
+	// would answer "" for them — which is the level of an image nobody has
+	// finished checking yet, not of one that cannot be checked at all.
+	if u.IsUnreadable() {
+		return LevelUnreadable
+	}
+
 	// Checked before the digest cases below, which would otherwise report a pin
 	// as a digest update — the digest is new to the file, but the image behind it
 	// is the one the tag already pointed at.
@@ -392,6 +461,14 @@ func (u *UpdateInfo) RestartPath() string {
 }
 
 func (u *UpdateInfo) Update() error {
+	// Nothing was resolved for this image, so there is nothing to write. Refusing
+	// rather than doing nothing quietly: a caller that got this far believes it
+	// has an update in hand, and rewriting the file with no replacements would
+	// leave a .ccu backup behind to prove it.
+	if u.IsUnreadable() {
+		return fmt.Errorf("refusing to update %s: %s", u.FullImageName, u.UnreadableMessage)
+	}
+
 	// A reference that pins a digest gets both tag and digest rewritten. Writing
 	// a tag next to the digest of some other release would silently pin the wrong
 	// image, which is worse than refusing the update.
