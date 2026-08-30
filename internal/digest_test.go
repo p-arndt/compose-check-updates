@@ -85,7 +85,7 @@ func TestDigestCandidates(t *testing.T) {
 	t.Run("keeps only tags of the same family", func(t *testing.T) {
 		tags := []string{"latest", "main", "sha-e1c83ba", "sha-49821e5", "sha-438f91a", "v2-beta"}
 
-		candidates, dropped := digestCandidates(tags, "sha-e1c83ba", defaultReferenceTag)
+		candidates, dropped := digestCandidates(tags, "sha-e1c83ba", defaultReferenceTag, nil)
 
 		assert.Equal(t, []string{"sha-49821e5", "sha-438f91a"}, candidates)
 		assert.Zero(t, dropped)
@@ -97,7 +97,7 @@ func TestDigestCandidates(t *testing.T) {
 			tags = append(tags, fmt.Sprintf("sha-%04d", i))
 		}
 
-		candidates, dropped := digestCandidates(tags, "sha-9999", defaultReferenceTag)
+		candidates, dropped := digestCandidates(tags, "sha-9999", defaultReferenceTag, nil)
 
 		assert.Len(t, candidates, maxDigestCandidates)
 		assert.Equal(t, 10, dropped)

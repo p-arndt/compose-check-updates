@@ -107,6 +107,7 @@ func main() {
 		Versionings:       effective.Versionings(),
 		DefaultVersioning: effective.DefaultVersioning(),
 		ReferenceTags:     effective.ReferenceTags(),
+		FloatingTags:      effective.FloatingTags(),
 
 		PinFloating: effective.PinFloatingEnabled(),
 		Dockerfiles: effective.DockerfilesEnabled(),

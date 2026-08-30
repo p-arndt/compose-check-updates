@@ -33,6 +33,13 @@ type UpdateChecker struct {
 	// configurable.
 	referenceTags map[string]string
 
+	// floatingTags names the extra tags an image treats as moving, keyed the same
+	// way and added to the built-in set rather than replacing it. Without it, a
+	// repository whose moving tag is "release" or "canary" gets no -pin-floating
+	// support at all: nothing recognises the tag as one there can be no newer
+	// version of. See isFloatingTag.
+	floatingTags map[string][]string
+
 	// composePath is the compose file that builds path, set only when path is a
 	// Dockerfile reached through a service's `build:`. It is what tells the two
 	// kinds of file apart here — and what a restart has to act on later, since
@@ -91,6 +98,19 @@ func (u *UpdateChecker) referenceTagFor(image string) string {
 		return tag
 	}
 	return defaultReferenceTag
+}
+
+// WithFloatingTags sets the per-image tags treated as floating on top of the
+// built-in ones. See UpdateChecker.floatingTags.
+func (u *UpdateChecker) WithFloatingTags(perImage map[string][]string) *UpdateChecker {
+	u.floatingTags = perImage
+	return u
+}
+
+// floatingTagsFor returns the extra floating tags recorded for an image, nil for
+// one nobody named — which leaves it with exactly the built-in set.
+func (u *UpdateChecker) floatingTagsFor(image string) []string {
+	return u.floatingTags[image]
 }
 
 func (u *UpdateChecker) versioningFor(image string) string {
@@ -173,7 +193,8 @@ func (u *UpdateChecker) checkDigest(info *UpdateInfo) {
 	// A bare floating tag records no digest in the compose file, so there is
 	// nothing to compare it against — it already resolves to whatever is newest.
 	// All that can be done for it is to write down what it resolves to today.
-	if _, floating := mutableTags[info.CurrentTag]; floating && !pinnedByDigest {
+	floating := u.floatingTagsFor(info.ImageName)
+	if isFloatingTag(info.CurrentTag, floating) && !pinnedByDigest {
 		if !u.pinFloating {
 			slog.Debug("Skipping (floating tag without digest)", "image", info.ImageName, "tag", info.CurrentTag, "path", info.FilePath)
 			return
@@ -224,7 +245,7 @@ func (u *UpdateChecker) checkDigest(info *UpdateInfo) {
 		return
 	}
 
-	candidates, dropped := digestCandidates(tags, info.CurrentTag, reference)
+	candidates, dropped := digestCandidates(tags, info.CurrentTag, reference, floating)
 	if dropped > 0 {
 		slog.Warn("Only probing a subset of tags", "image", info.ImageName, "probed", len(candidates), "skipped", dropped)
 	}
@@ -267,7 +288,7 @@ func (u *UpdateChecker) CheckPins() ([]UpdateInfo, error) {
 		if info.CurrentDigest != "" {
 			continue
 		}
-		if _, floating := mutableTags[info.CurrentTag]; !floating {
+		if !isFloatingTag(info.CurrentTag, u.floatingTagsFor(info.ImageName)) {
 			continue
 		}
 

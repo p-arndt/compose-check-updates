@@ -405,6 +405,22 @@ ccu check -pin-floating -u     # and write them
 pin_floating: true
 ```
 
+`latest`, `main`, `master`, `edge`, `stable`, `nightly`, `dev` and `develop` are
+the tags `ccu` treats as floating. If your registry moves a differently spelled
+one — `release`, `prod`, `canary` — say so and it is pinned like the rest:
+
+```yaml
+images:
+  internal/thing:
+    floating_tags: [release, canary]
+```
+
+The list **adds** to the built-in names rather than replacing them: a repository
+that publishes `release` almost certainly publishes `latest` beside it, and if
+naming one made `ccu` forget the others, that `latest` would turn back into an
+ordinary tag — pinnable, and offered as an update target — which is precisely
+what the built-in list prevents.
+
 In the TUI they sit behind the bar's `floating` stop (`p`), which lists and hides
 them; `pin_floating` decides which way it starts. If the run was not asked to pin,
 the first press fetches the digests then and there — nothing is spent on a

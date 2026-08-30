@@ -97,7 +97,7 @@ func TestReferenceTagLookupIsExact(t *testing.T) {
 func TestDigestCandidatesDropsTheReferenceTag(t *testing.T) {
 	tags := []string{"stable", "stable-49821e5", "stable-e1c83ba"}
 
-	candidates, dropped := digestCandidates(tags, "stable-e1c83ba", "stable")
+	candidates, dropped := digestCandidates(tags, "stable-e1c83ba", "stable", nil)
 
 	assert.Equal(t, []string{"stable-49821e5"}, candidates)
 	assert.Zero(t, dropped)

@@ -34,9 +34,10 @@ const (
 // digestPattern matches a fully qualified digest such as "sha256:ab12...".
 var digestPattern = regexp.MustCompile(`^[a-z0-9]+(?:[.+_-][a-z0-9]+)*:[0-9a-fA-F]{32,}$`)
 
-// mutableTags are tags that float to whatever is newest. They are never
+// mutableTags are the tags ccu knows float to whatever is newest. They are never
 // proposed as an update target: moving from one floating tag to another says
-// nothing about the image having changed.
+// nothing about the image having changed. An image whose moving tag is spelled
+// differently adds it to this set; see isFloatingTag.
 var mutableTags = map[string]struct{}{
 	"latest":  {},
 	"main":    {},
@@ -46,6 +47,26 @@ var mutableTags = map[string]struct{}{
 	"nightly": {},
 	"dev":     {},
 	"develop": {},
+}
+
+// isFloatingTag reports whether tag floats. extra names the tags one image
+// declared floating, and they are *added* to mutableTags rather than replacing
+// it: the built-in set is not a preference of the user's to be overridden but a
+// fact about how registries name moving tags, and a repository whose releases
+// are tagged "release" almost certainly still publishes a "latest" beside it.
+// Replacing would make that "latest" look like an ordinary version tag again —
+// pinnable, and offered as an update target — which is the one thing mutableTags
+// exists to prevent.
+func isFloatingTag(tag string, extra []string) bool {
+	if _, floating := mutableTags[tag]; floating {
+		return true
+	}
+	for _, e := range extra {
+		if e == tag {
+			return true
+		}
+	}
+	return false
 }
 
 // IsDigest reports whether s is a digest reference rather than a tag.
@@ -74,15 +95,16 @@ func tagFamily(tag string) string {
 // being looked for and the reference is never the answer: rewriting a commit tag
 // to "stable" would trade a fixed reference for a moving one. The built-in
 // floating tags cover the default reference already, so this only matters for an
-// image that named a reference tag of its own.
-func digestCandidates(tags []string, currentTag, reference string) (candidates []string, dropped int) {
+// image that named a reference tag of its own. floating is that image's extra
+// floating tags, dropped for the same reason the built-in ones are.
+func digestCandidates(tags []string, currentTag, reference string, floating []string) (candidates []string, dropped int) {
 	family := tagFamily(currentTag)
 
 	for _, tag := range tags {
 		if tag == currentTag || tag == reference {
 			continue
 		}
-		if _, floating := mutableTags[tag]; floating {
+		if isFloatingTag(tag, floating) {
 			continue
 		}
 		if tagFamily(tag) != family {
