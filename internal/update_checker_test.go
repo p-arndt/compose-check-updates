@@ -191,3 +191,39 @@ image: %s/library/myimage:1.19.0
 		})
 	}
 }
+
+// TestVersioningFor covers the lookup the checker does per image: an entry
+// naming the image wins, and everything else takes the run's default. The
+// precedence between the flag and the config files is settled before this,
+// in config.Config; here there is only one default left to fall back to.
+func TestVersioningFor(t *testing.T) {
+	checker := NewUpdateChecker("compose.yaml", nil).
+		WithVersioning(map[string]string{
+			"nousresearch/hermes-agent": VersioningLoose,
+			"redis":                     "",
+		}, VersioningSemver)
+
+	tests := []struct {
+		image string
+		want  string
+	}{
+		{"nousresearch/hermes-agent", VersioningLoose},
+		// An entry that records only a cap leaves the scheme to the default.
+		{"redis", VersioningSemver},
+		{"library/traefik", VersioningSemver},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.image, func(t *testing.T) {
+			assert.Equal(t, tt.want, checker.versioningFor(tt.image))
+		})
+	}
+
+	// A checker nobody configured reports the empty name, which VersioningByName
+	// reads as the default rather than as an error.
+	bare := NewUpdateChecker("compose.yaml", nil)
+	assert.Equal(t, "", bare.versioningFor("redis"))
+	scheme, ok := VersioningByName(bare.versioningFor("redis"))
+	assert.True(t, ok)
+	assert.Equal(t, VersioningSemver, scheme.Name())
+}

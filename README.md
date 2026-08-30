@@ -224,6 +224,12 @@ pin_floating: true
 
 # Check the base images of Dockerfiles built by a compose service. On by default.
 dockerfiles: false
+
+# How tags are read as versions, for images whose tags are not semver.
+versioning: semver
+images:
+  nousresearch/hermes-agent:
+    versioning: loose
 ```
 
 `~/.config/ccu/config.yaml` for preferences across every project, `.ccu.yaml` in
@@ -277,6 +283,63 @@ referring to an earlier one (`FROM builder`), a reference assembled from build
 args (`FROM ${BASE}`), `dockerfile_inline:`, and contexts that are not a local
 path. `-dockerfiles=false` (or `dockerfiles: false` in the config) turns the
 whole thing off.
+
+## Versioning schemes
+
+Docker tags are a wild west: plenty of images publish something that is a version
+but not a *semantic* one. `nousresearch/hermes-agent`, for instance, tags by date
+and sometimes rebuilds the same day — `v2026.7.7` and `v2026.7.7.2` side by side.
+A fourth segment is not semver, so by default `ccu` does not read those tags as
+versions at all and falls back to comparing digests.
+
+Rather than loosen the rule for every image, the rule is a setting:
+
+| Scheme          | Reads                                                                  |
+| --------------- | ---------------------------------------------------------------------- |
+| `semver`        | up to three segments, no leading zeros — the default, unchanged        |
+| `loose`         | up to six numeric segments, leading zeros, any suffix                  |
+
+Turn it on for the image that needs it:
+
+```yaml
+# .ccu.yaml
+images:
+  nousresearch/hermes-agent:
+    versioning: loose
+```
+
+Now `v2026.7.7` orders before `v2026.7.7.2` before `v2026.7.30`, and `ccu` offers
+the update instead of giving up. The first three segments stay **major, minor and
+patch**; anything past the third orders the version but names no level of its own,
+so a fourth segment advancing is reported as a **patch**. The level filters, the
+caps and the TUI are unaffected.
+
+The suffix rule holds either way: `3.19-alpine` only ever moves to another
+`-alpine` tag, and `2026.7.7-cuda` only to another `-cuda` one.
+
+Three places can set it, most specific first:
+
+```yaml
+images:
+  nousresearch/hermes-agent:
+    versioning: loose   # 1. this image, wherever it is scanned
+```
+
+```bash
+ccu check --versioning=loose   # 2. every image, this run only
+```
+
+```yaml
+versioning: loose   # 3. every image, in .ccu.yaml or ~/.config/ccu/config.yaml
+```
+
+An entry naming an image outranks both defaults, **including the flag** — a flag
+meant as a quick try should not silently undo a preference written down on
+purpose. `ccu config` shows what was resolved.
+
+> [!TIP]
+> If `ccu` says `no tag matches the newest digest` for an image whose tags look
+> like versions to you, `versioning: loose` is what it is asking for.
 
 ## Images without semver tags
 

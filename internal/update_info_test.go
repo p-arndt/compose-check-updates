@@ -13,16 +13,24 @@ func TestHasNewVersion(t *testing.T) {
 		name       string
 		currentTag string
 		latestTag  string
+		versioning string
 		expected   bool
 	}{
-		{"No new version", "1.0.0", "1.0.0", false},
-		{"New patch version", "1.0.0", "1.0.1", true},
-		{"New minor version", "1.0.0", "1.1.0", true},
-		{"New major version", "1.0.0", "2.0.0", true},
-		{"With suffix", "1.0.0-rc1", "1.0.0-rc2", true},
-		{"With suffix, no new version", "1.0.0-rc1", "1.0.0-rc1", false},
-		{"Invalid current tag", "", "1.0.0", false},
-		{"Invalid latest tag", "1.0.0", "", false},
+		{"No new version", "1.0.0", "1.0.0", "", false},
+		{"New patch version", "1.0.0", "1.0.1", "", true},
+		{"New minor version", "1.0.0", "1.1.0", "", true},
+		{"New major version", "1.0.0", "2.0.0", "", true},
+		{"With suffix", "1.0.0-rc1", "1.0.0-rc2", "", true},
+		{"With suffix, no new version", "1.0.0-rc1", "1.0.0-rc1", "", false},
+		{"Invalid current tag", "", "1.0.0", "", false},
+		{"Invalid latest tag", "1.0.0", "", "", false},
+		// The default scheme cannot read a fourth segment at all, so the update
+		// it would describe is not one it can confirm.
+		{"Calendar tag under semver", "v2026.7.7", "v2026.7.7.2", "", false},
+		{"Calendar tag under loose", "v2026.7.7", "v2026.7.7.2", VersioningLoose, true},
+		{"Calendar tag under loose, across months", "v2026.7.7.2", "v2026.8.27", VersioningLoose, true},
+		{"Calendar tag under loose, no new version", "v2026.8.27", "v2026.8.27", VersioningLoose, false},
+		{"Calendar tag under loose, backwards", "v2026.7.7.2", "v2026.7.7", VersioningLoose, false},
 	}
 
 	for _, tt := range tests {
@@ -30,6 +38,7 @@ func TestHasNewVersion(t *testing.T) {
 			u := &UpdateInfo{
 				CurrentTag: tt.currentTag,
 				LatestTag:  tt.latestTag,
+				Versioning: tt.versioning,
 			}
 			if got := u.HasNewVersion(true, true, true); got != tt.expected {
 				t.Errorf("HasNewVersion() = %v, want %v", got, tt.expected)
@@ -352,4 +361,42 @@ func TestCap(t *testing.T) {
 		v := UpdateInfo{Cap: "nonsense", CurrentTag: "1.0.0", LatestTag: "2.0.0"}
 		assert.True(t, v.HasNewVersion(true, true, true))
 	})
+}
+
+// TestUpdateLevelVersioning pins down the level a fourth segment is reported
+// at. It is a patch: "2026.7.7.2" rebuilds the release "2026.7.7" names rather
+// than being a release of its own, so it stays inside the three levels the caps
+// and the filters already speak.
+func TestUpdateLevelVersioning(t *testing.T) {
+	tests := []struct {
+		name       string
+		currentTag string
+		latestTag  string
+		versioning string
+		want       string
+	}{
+		{"fourth segment appears", "v2026.7.7", "v2026.7.7.2", VersioningLoose, "patch"},
+		{"fourth segment advances", "v2026.7.7.1", "v2026.7.7.2", VersioningLoose, "patch"},
+		{"fourth segment disappears", "v2026.7.7.2", "v2026.7.30", VersioningLoose, "patch"},
+		{"month moves", "v2026.7.7.2", "v2026.8.16.2", VersioningLoose, "minor"},
+		{"year moves", "v2026.8.27", "v2027.1.5", VersioningLoose, "major"},
+		// Unreadable under the default scheme, and with no digest to fall back
+		// on there is no level to report.
+		{"fourth segment under semver", "v2026.7.7", "v2026.7.7.2", "", ""},
+		{"ordinary semver is unaffected", "1.2.3", "1.3.0", "", "minor"},
+		// The config layer rejects these on load; one that got this far must not
+		// hide every update, so it falls back rather than failing.
+		{"unknown scheme falls back to the default", "1.2.3", "1.2.4", "calendar", "patch"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			u := &UpdateInfo{
+				CurrentTag: tt.currentTag,
+				LatestTag:  tt.latestTag,
+				Versioning: tt.versioning,
+			}
+			assert.Equal(t, tt.want, u.UpdateLevel())
+		})
+	}
 }
