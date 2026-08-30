@@ -13,6 +13,9 @@ import (
 	"github.com/p-arndt/compose-check-updates/internal/policy"
 )
 
+// Flags is what the command line said, before any config file is merged into
+// it. It stays a plain record of the invocation: the fields that end in Set
+// exist so a later layer can tell "the user asked" from "this is the default".
 type Flags struct {
 	Help        bool   // Show help message
 	Update      bool   // Update the Docker Compose files with the new image tags
@@ -74,6 +77,9 @@ func splitSubcommand(argv []string) (sub string, rest []string) {
 	return "", argv
 }
 
+// Parse reads the invocation and returns it as Flags. It exits the process for
+// the requests that are answered here and nowhere else — -v, -h and an unknown
+// command — so callers only ever see an invocation that means to do work.
 func Parse(version string) Flags {
 	args := Flags{}
 	versioningName := ""

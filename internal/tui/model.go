@@ -30,6 +30,9 @@ const (
 // goroutines waiting for the lock.
 const applyConcurrency = 4
 
+// Model is the whole state of the TUI: the scan it is running, the rows that
+// came back, and what the user has done to them. Bubble Tea copies it on every
+// message, so it holds no state a copy would share by accident.
 type Model struct {
 	opts  scanner.Options
 	theme Theme
@@ -142,6 +145,9 @@ type Model struct {
 	err error
 }
 
+// NewModel builds the model a run starts from: the scan is already described by
+// opts, but not yet started — Init sends it off, so a caller can construct a
+// model in a test without reaching the network.
 func NewModel(opts scanner.Options) Model {
 	ctx, cancel := context.WithCancel(context.Background())
 

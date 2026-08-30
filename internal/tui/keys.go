@@ -63,6 +63,8 @@ type KeyMap struct {
 	No       key.Binding
 }
 
+// DefaultKeyMap is the one place every binding is spelled out, so the help
+// dialog and the handlers can never drift apart: both read this map.
 func DefaultKeyMap() KeyMap {
 	return KeyMap{
 		Up:       key.NewBinding(key.WithKeys("up", "k"), key.WithHelp("↑/k", "up")),
