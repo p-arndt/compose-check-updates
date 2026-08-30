@@ -235,3 +235,114 @@ func assertUpdateWrites(t *testing.T, info Update, path, expected string) {
 	assert.NoError(t, err)
 	assert.Equal(t, expected, string(written))
 }
+
+// A version tag re-pushed under the same name is invisible to the version
+// comparison — "0.1.0" stays "0.1.0" — so a reference pinning its digest used to
+// report nothing at all while the image behind it had been rebuilt.
+func TestPinnedVersionTagReportsDigestDrift(t *testing.T) {
+	t.Parallel()
+
+	server := registrytest.Server(t, "library/myimage",
+		[]string{"0.1.0"},
+		map[string]string{"0.1.0": registrytest.DigestNew})
+
+	serverURL, _ := url.Parse(server.URL)
+	image := serverURL.Host + "/library/myimage"
+	file := writeComposeFile(t, "image: "+image+":0.1.0@"+registrytest.DigestOld)
+
+	infos, err := New(file, registry.New(serverURL.Host), policy.Set{}).Check(true, true, true)
+	assert.NoError(t, err)
+	assert.Len(t, infos, 1)
+
+	info := infos[0]
+	assert.True(t, info.IsDigestUpdate())
+	assert.True(t, info.HasNewVersion())
+	assert.Equal(t, policy.LevelDigest, info.Level())
+	assert.Equal(t, registrytest.DigestNew, info.LatestDigest)
+	// The tag was never the problem, so nothing about it may be rewritten.
+	assert.Empty(t, info.LatestTag)
+	assert.False(t, info.IsUnreadable())
+}
+
+// Applying that drift moves the digest in place and leaves the tag alone.
+func TestPinnedVersionTagDriftRewritesOnlyTheDigest(t *testing.T) {
+	t.Parallel()
+
+	server := registrytest.Server(t, "library/myimage",
+		[]string{"0.1.0"},
+		map[string]string{"0.1.0": registrytest.DigestNew})
+
+	serverURL, _ := url.Parse(server.URL)
+	image := serverURL.Host + "/library/myimage"
+	file := writeComposeFile(t, "image: "+image+":0.1.0@"+registrytest.DigestOld)
+
+	infos, err := New(file, registry.New(serverURL.Host), policy.Set{}).Check(true, true, true)
+	assert.NoError(t, err)
+	assert.NoError(t, infos[0].Apply())
+
+	content, err := os.ReadFile(file)
+	assert.NoError(t, err)
+	assert.Contains(t, string(content), "image: "+image+":0.1.0@"+registrytest.DigestNew)
+}
+
+// The tag standing on the digest the file pins is up to date, not a finding.
+func TestPinnedVersionTagWithoutDriftIsQuiet(t *testing.T) {
+	t.Parallel()
+
+	server := registrytest.Server(t, "library/myimage",
+		[]string{"0.1.0"},
+		map[string]string{"0.1.0": registrytest.DigestOld})
+
+	serverURL, _ := url.Parse(server.URL)
+	image := serverURL.Host + "/library/myimage"
+	file := writeComposeFile(t, "image: "+image+":0.1.0@"+registrytest.DigestOld)
+
+	infos, err := New(file, registry.New(serverURL.Host), policy.Set{}).Check(true, true, true)
+	assert.NoError(t, err)
+	assert.Len(t, infos, 1)
+
+	assert.False(t, infos[0].HasNewVersion())
+	assert.False(t, infos[0].IsUnreadable())
+	assert.Empty(t, infos[0].LatestDigest)
+}
+
+// A newer release outranks the drift: the tag update is the stronger news, and
+// probing the old tag's digest on top of it would be a request for nothing.
+func TestNewerReleaseOutranksPinnedTagDrift(t *testing.T) {
+	t.Parallel()
+
+	server := registrytest.Server(t, "library/myimage",
+		[]string{"0.1.0", "0.2.0"},
+		map[string]string{"0.1.0": registrytest.DigestNew, "0.2.0": registrytest.DigestNew})
+
+	serverURL, _ := url.Parse(server.URL)
+	image := serverURL.Host + "/library/myimage"
+	file := writeComposeFile(t, "image: "+image+":0.1.0@"+registrytest.DigestOld)
+
+	infos, err := New(file, registry.New(serverURL.Host), policy.Set{}).Check(true, true, true)
+	assert.NoError(t, err)
+	assert.Len(t, infos, 1)
+
+	assert.Equal(t, "0.2.0", infos[0].LatestTag)
+	assert.Equal(t, policy.LevelMinor, infos[0].Level())
+}
+
+// A bare version tag records no digest, so there is nothing to compare against
+// and no request worth making.
+func TestUnpinnedVersionTagIsNotProbedForDrift(t *testing.T) {
+	t.Parallel()
+
+	server := registrytest.Server(t, "library/myimage",
+		[]string{"0.1.0"},
+		map[string]string{"0.1.0": registrytest.DigestNew})
+
+	serverURL, _ := url.Parse(server.URL)
+	file := writeComposeFile(t, "image: "+serverURL.Host+"/library/myimage:0.1.0")
+
+	infos, err := New(file, registry.New(serverURL.Host), policy.Set{}).Check(true, true, true)
+	assert.NoError(t, err)
+	assert.Len(t, infos, 1)
+
+	assert.False(t, infos[0].HasNewVersion())
+	assert.Empty(t, infos[0].LatestDigest)
+}

@@ -143,6 +143,15 @@ func (c *Checker) resolve(u *Update, major, minor, patch bool) {
 
 	latest := versioning.Latest(scheme, u.CurrentTag, tags, major, minor, patch)
 	if latest == "" {
+		// No tag to move to at any level, so a pinned reference that drifted where
+		// it stands is the only thing left worth saying about this image. Gated on
+		// there being no candidate at all rather than on the requested levels: with
+		// one available, that update is the stronger news and an interactive caller
+		// can still switch target to it.
+		if u.PatchTag == "" && u.MinorTag == "" && u.MajorTag == "" && c.checkPinDrift(u) {
+			return
+		}
+
 		// Ordinarily the image is simply on its newest release — unless nothing
 		// here could ever be compared with the current tag, in which case no run
 		// will offer this image anything and the user deserves to hear so.
@@ -188,6 +197,37 @@ func (c *Checker) clampToCap(u *Update) {
 			u.LatestTag = ""
 		}
 	}
+}
+
+// checkPinDrift compares what the pinned tag resolves to now against the digest
+// the file records for it, and reports whether the two have parted. A tag
+// re-pushed under the same name is invisible to the version comparison — "0.1.0"
+// stays "0.1.0" — so for a version tag this is the only place its drift can
+// surface. Home-built images are the case: their version is bumped far less
+// often than the image behind it is rebuilt.
+//
+// Only a reference pinning a digest can be checked. Without one the file records
+// nothing to compare against, and ccu keeps no state between runs; pinning the
+// digest is what buys the image this check.
+func (c *Checker) checkPinDrift(u *Update) bool {
+	if u.CurrentDigest == "" {
+		return false
+	}
+
+	digest, err := c.registry.Digest(u.ImageName + ":" + u.CurrentTag)
+	if err != nil {
+		slog.Warn("Skipping (failed resolving digest for pinned tag)", "image", u.ImageName, "tag", u.CurrentTag, "path", u.FilePath)
+		return false
+	}
+	if digest == u.CurrentDigest {
+		return false
+	}
+
+	// The tag stays exactly as it is, only the digest under it moved, so there is
+	// no LatestTag to set — and digestFor tracks that empty tag so the digest is
+	// dropped should a caller later select a real target.
+	u.LatestDigest, u.digestFor = digest, u.LatestTag
+	return true
 }
 
 // soleRelease reports whether currentTag is the only release the repository
