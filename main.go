@@ -16,8 +16,9 @@ import (
 	"github.com/p-arndt/compose-check-updates/internal/report"
 	"github.com/p-arndt/compose-check-updates/internal/scanner"
 	"github.com/p-arndt/compose-check-updates/internal/tui"
-	"github.com/p-arndt/compose-check-updates/internal/update"
 	"github.com/p-arndt/compose-check-updates/internal/versioning"
+	"github.com/p-arndt/selfupdate"
+	"github.com/p-arndt/selfupdate/layout"
 )
 
 // Exit codes, so a CI step can gate on the result without reading the report
@@ -33,7 +34,7 @@ func main() {
 	// An update renames the running binary aside to "<exe>.old" — on Windows a
 	// running executable cannot be replaced, only moved — so the leftover is
 	// deleted by a later process, i.e. this one, before anything else.
-	update.CleanupLeftovers()
+	selfupdate.CleanupLeftovers()
 
 	// Until the output format is settled, every line the logger carries is a
 	// diagnostic about ccu itself, and `ccu check | jq` must not be fed one. Only
@@ -42,7 +43,13 @@ func main() {
 
 	flags := cli.Parse(buildinfo.String())
 
-	code, err := run(flags)
+	updater, err := newUpdater()
+	if err != nil {
+		slog.Error(err.Error())
+		os.Exit(exitError)
+	}
+
+	code, err := run(flags, updater)
 	if err != nil {
 		slog.Error(err.Error())
 		os.Exit(exitError)
@@ -50,11 +57,11 @@ func main() {
 	os.Exit(code)
 }
 
-func run(flags cli.Flags) (int, error) {
+func run(flags cli.Flags, updater *selfupdate.Updater) (int, error) {
 	// A terminal action in its own right: the user asked about ccu itself, not
 	// about their compose files, so no scan may start behind it.
 	if flags.SelfUpdate || flags.CheckUpdate {
-		if err := update.Run(os.Stdout, buildinfo.Version, flags.CheckUpdate); err != nil {
+		if err := updater.Run(context.Background(), os.Stdout, buildinfo.Version, flags.CheckUpdate); err != nil {
 			return 0, fmt.Errorf("updating ccu: %w", err)
 		}
 		return exitUpToDate, nil
@@ -110,10 +117,10 @@ func run(flags cli.Flags) (int, error) {
 		return exitUpToDate, nil
 	}
 
-	return runReport(flags, opts, format.Resolve(onTerminal))
+	return runReport(flags, updater, opts, format.Resolve(onTerminal))
 }
 
-func runReport(flags cli.Flags, opts scanner.Options, format report.Format) (int, error) {
+func runReport(flags cli.Flags, updater *selfupdate.Updater, opts scanner.Options, format report.Format) (int, error) {
 	// Said once, before the report itself, so an existing script keeps working
 	// and still gets told which spelling replaced it.
 	if flags.LegacyPlain {
@@ -140,7 +147,7 @@ func runReport(flags cli.Flags, opts scanner.Options, format report.Format) (int
 	// Only the non-interactive path gets the notice: the TUI owns the alt screen,
 	// and -self-update returned long before here. Stderr rather than stdout, so
 	// piping ccu's report somewhere keeps it machine-readable.
-	update.NotifyIfAvailable(os.Stderr, buildinfo.Version)
+	updater.NotifyIfAvailable(os.Stderr, buildinfo.Version)
 
 	return exitCode(outcome), nil
 }
@@ -208,6 +215,18 @@ func scanOptions(flags cli.Flags, effective config.Config) scanner.Options {
 	}
 
 	return opts
+}
+
+// newUpdater describes ccu's releases to the self-updater: raw binaries named
+// after the tool rather than the repository, and the checksums file the release
+// workflow writes beside them.
+func newUpdater() (*selfupdate.Updater, error) {
+	return selfupdate.New(selfupdate.Config{
+		Owner:   "p-arndt",
+		Repo:    "compose-check-updates",
+		AppName: "ccu",
+		Layout:  &layout.RawBinary{},
+	})
 }
 
 // setLogOutput points the default logger at f, colourised.
