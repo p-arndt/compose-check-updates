@@ -1,0 +1,14 @@
+# Keeps the two things that can go stale without anyone noticing under review:
+# the Go module graph, and the SHA-pinned actions in the workflows — pinning
+# means a fixed SHA never picks up upstream fixes on its own.
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
