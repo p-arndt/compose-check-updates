@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -98,6 +99,11 @@ func TestScanPinsSkipsAFloatingTagTheRegistryDoesNotKnow(t *testing.T) {
 // A file that cannot be read fails that file and nothing else, as an event the
 // consumer can show next to the stack it belongs to.
 func TestScanPinsEmitsAnErrorForAFileItCannotRead(t *testing.T) {
+	// Windows maps Chmod onto the read-only bit alone, so the file stays
+	// readable and there would be no error to assert.
+	if runtime.GOOS == "windows" {
+		t.Skip("Skipping permission denied test on Windows")
+	}
 	if os.Getuid() == 0 {
 		t.Skip("root reads a file whatever its mode says")
 	}
