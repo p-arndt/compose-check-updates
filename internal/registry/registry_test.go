@@ -5,8 +5,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/p-arndt/compose-check-updates/internal/registrytest"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/p-arndt/compose-check-updates/internal/registrytest"
 )
 
 func TestIsDigest(t *testing.T) {

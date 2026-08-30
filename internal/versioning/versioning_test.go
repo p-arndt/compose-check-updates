@@ -1,11 +1,12 @@
 package versioning
 
 import (
-	"github.com/p-arndt/compose-check-updates/internal/policy"
 	"sort"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+
+	"github.com/p-arndt/compose-check-updates/internal/policy"
 )
 
 func looseScheme(t *testing.T) Scheme {

@@ -3,9 +3,6 @@ package modes
 import (
 	"bytes"
 	"context"
-	"github.com/p-arndt/compose-check-updates/internal/check"
-	"github.com/p-arndt/compose-check-updates/internal/cli"
-	"github.com/p-arndt/compose-check-updates/internal/registrytest"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -15,6 +12,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/p-arndt/compose-check-updates/internal/check"
+	"github.com/p-arndt/compose-check-updates/internal/cli"
+	"github.com/p-arndt/compose-check-updates/internal/registrytest"
 	"github.com/p-arndt/compose-check-updates/internal/report"
 	"github.com/p-arndt/compose-check-updates/internal/scanner"
 )

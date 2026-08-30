@@ -1,13 +1,14 @@
 package check
 
 import (
-	"github.com/p-arndt/compose-check-updates/internal/policy"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/p-arndt/compose-check-updates/internal/policy"
 )
 
 // infosFor writes a compose file and returns what the parser made of it, without

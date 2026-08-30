@@ -6,10 +6,11 @@ import (
 	"os"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+
 	"github.com/p-arndt/compose-check-updates/internal/policy"
 	"github.com/p-arndt/compose-check-updates/internal/registry"
 	"github.com/p-arndt/compose-check-updates/internal/registrytest"
-	"github.com/stretchr/testify/assert"
 )
 
 func TestTagFamily(t *testing.T) {

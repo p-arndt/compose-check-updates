@@ -2,9 +2,6 @@ package check
 
 import (
 	"fmt"
-	"github.com/p-arndt/compose-check-updates/internal/policy"
-	"github.com/p-arndt/compose-check-updates/internal/registry"
-	"github.com/p-arndt/compose-check-updates/internal/versioning"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -13,6 +10,10 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+
+	"github.com/p-arndt/compose-check-updates/internal/policy"
+	"github.com/p-arndt/compose-check-updates/internal/registry"
+	"github.com/p-arndt/compose-check-updates/internal/versioning"
 )
 
 func TestCreateUpdateInfos(t *testing.T) {

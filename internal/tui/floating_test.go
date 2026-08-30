@@ -4,12 +4,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/p-arndt/compose-check-updates/internal/check"
-	"github.com/p-arndt/compose-check-updates/internal/policy"
-
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/p-arndt/compose-check-updates/internal/check"
+	"github.com/p-arndt/compose-check-updates/internal/policy"
 	"github.com/p-arndt/compose-check-updates/internal/scanner"
 )
 

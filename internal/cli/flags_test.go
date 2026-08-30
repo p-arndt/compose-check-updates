@@ -5,8 +5,9 @@ import (
 	"os"
 	"testing"
 
-	"github.com/p-arndt/compose-check-updates/internal/policy"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/p-arndt/compose-check-updates/internal/policy"
 )
 
 func TestSplitSubcommand(t *testing.T) {

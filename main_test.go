@@ -3,8 +3,9 @@ package main
 import (
 	"testing"
 
-	"github.com/p-arndt/compose-check-updates/internal/modes"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/p-arndt/compose-check-updates/internal/modes"
 )
 
 func TestExitCode(t *testing.T) {

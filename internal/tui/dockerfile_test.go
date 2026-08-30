@@ -3,11 +3,10 @@ package tui
 import (
 	"testing"
 
-	"github.com/p-arndt/compose-check-updates/internal/check"
-
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/stretchr/testify/assert"
 
+	"github.com/p-arndt/compose-check-updates/internal/check"
 	"github.com/p-arndt/compose-check-updates/internal/scanner"
 )
 

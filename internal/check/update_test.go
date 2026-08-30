@@ -1,12 +1,13 @@
 package check
 
 import (
-	"github.com/p-arndt/compose-check-updates/internal/policy"
 	"os"
 	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+
+	"github.com/p-arndt/compose-check-updates/internal/policy"
 )
 
 func TestHasNewVersion(t *testing.T) {

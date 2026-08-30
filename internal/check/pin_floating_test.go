@@ -1,13 +1,14 @@
 package check
 
 import (
-	"github.com/p-arndt/compose-check-updates/internal/policy"
-	"github.com/p-arndt/compose-check-updates/internal/registry"
-	"github.com/p-arndt/compose-check-updates/internal/registrytest"
 	"net/url"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+
+	"github.com/p-arndt/compose-check-updates/internal/policy"
+	"github.com/p-arndt/compose-check-updates/internal/registry"
+	"github.com/p-arndt/compose-check-updates/internal/registrytest"
 )
 
 // A bare floating tag has nothing to compare against, so the only thing to do

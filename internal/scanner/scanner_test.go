@@ -2,7 +2,6 @@ package scanner
 
 import (
 	"context"
-	"github.com/p-arndt/compose-check-updates/internal/registrytest"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -11,12 +10,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/p-arndt/compose-check-updates/internal/check"
 	composepkg "github.com/p-arndt/compose-check-updates/internal/compose"
 	"github.com/p-arndt/compose-check-updates/internal/policy"
-
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
+	"github.com/p-arndt/compose-check-updates/internal/registrytest"
 )
 
 // mirrorTestFixtures recreates the layout of the repository's tests/ directory

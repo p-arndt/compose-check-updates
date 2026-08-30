@@ -2,10 +2,11 @@ package config
 
 import (
 	"bytes"
-	"github.com/p-arndt/compose-check-updates/internal/policy"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/p-arndt/compose-check-updates/internal/policy"
 )
 
 // explain runs the command the way main does: load the two layers, fold

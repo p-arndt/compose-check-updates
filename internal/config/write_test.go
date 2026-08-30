@@ -1,12 +1,13 @@
 package config
 
 import (
-	"github.com/p-arndt/compose-check-updates/internal/policy"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/p-arndt/compose-check-updates/internal/policy"
 )
 
 // writeConfig drops a config file into dir and returns its path.

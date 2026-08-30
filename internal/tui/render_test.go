@@ -6,13 +6,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/p-arndt/compose-check-updates/internal/check"
-	"github.com/p-arndt/compose-check-updates/internal/policy"
-
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/p-arndt/compose-check-updates/internal/check"
+	"github.com/p-arndt/compose-check-updates/internal/policy"
 )
 
 // ansiEscape strips styling so assertions can talk about what the user sees.

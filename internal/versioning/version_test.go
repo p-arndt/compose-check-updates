@@ -1,10 +1,11 @@
 package versioning
 
 import (
-	"github.com/p-arndt/compose-check-updates/internal/policy"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+
+	"github.com/p-arndt/compose-check-updates/internal/policy"
 )
 
 type TestFindLatestVersionStruct struct {
