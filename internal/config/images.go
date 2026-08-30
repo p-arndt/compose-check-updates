@@ -100,21 +100,6 @@ func (c Config) Caps() map[string]string {
 	return caps
 }
 
-// VersioningFor returns the scheme recorded for an image, falling back to the
-// run's default when the image names none. This is the whole precedence rule: a
-// line that names an image is a more specific statement than any default, so it
-// wins over both -versioning and a global `versioning:` — both of which have
-// already been resolved into c.Versioning by the time this is asked.
-func (c Config) VersioningFor(image string) Versioning {
-	if scheme := c.Images[image].Versioning; scheme != "" {
-		return scheme
-	}
-	if c.Versioning != "" {
-		return c.Versioning
-	}
-	return VersioningSemver
-}
-
 // Versionings flattens the per-image schemes into the map the scanner reads,
 // leaving out images that named none so a lookup miss and "use the default" are
 // the same thing.

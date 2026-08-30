@@ -185,3 +185,17 @@ func VersioningByName(name string) (Versioning, bool) {
 
 // DefaultVersioning is the scheme an image with no preference recorded gets.
 func DefaultVersioning() Versioning { return semverVersioning }
+
+// ResolveVersioning picks the scheme name for one image: an entry naming it
+// wins, and everything else takes the run's default. This is the whole
+// precedence rule, and the only copy of it — the ordering between the flag and
+// the two config files is settled before this, leaving a single default here.
+//
+// Lookup is exact on the image name without tag or digest, the same key a cap is
+// recorded under (e.g. "library/traefik").
+func ResolveVersioning(perImage map[string]string, def, image string) string {
+	if name, ok := perImage[image]; ok && name != "" {
+		return name
+	}
+	return def
+}

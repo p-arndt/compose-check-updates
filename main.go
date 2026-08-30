@@ -68,7 +68,7 @@ func main() {
 	// -versioning replaces the *default* scheme, not the per-image entries: a
 	// config line that names an image is the more specific statement, and a flag
 	// meant as a quick try should not silently undo it. Images keeps those
-	// entries, and VersioningFor consults them first.
+	// entries, and internal.ResolveVersioning consults them first.
 	if ccuFlags.Versioning != "" {
 		scheme := config.Versioning(ccuFlags.Versioning)
 		if err := config.ValidateVersioning(scheme); err != nil {

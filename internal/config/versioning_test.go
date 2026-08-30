@@ -4,6 +4,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/p-arndt/compose-check-updates/internal"
 )
 
 func TestParseVersioning(t *testing.T) {
@@ -79,28 +81,32 @@ func TestParseVersioning(t *testing.T) {
 }
 
 // TestVersioningPrecedence is the rule the feature is built on: an entry naming
-// an image outranks every default, and -versioning — which main resolves into
-// the global field before asking — outranks only a config file that set one.
+// an image outranks every default. It runs the config's own output through
+// internal.ResolveVersioning, the same function the checker uses, so the two can
+// never agree in the test and disagree in production.
+//
+// The ordering between -versioning and a global `versioning:` is settled in main
+// before any of this, which is why only one default reaches here.
 func TestVersioningPrecedence(t *testing.T) {
 	tests := []struct {
 		name   string
 		cfg    Config
 		image  string
-		want   Versioning
+		want   string
 		reason string
 	}{
 		{
 			name:   "nothing set anywhere",
 			cfg:    Config{},
 			image:  "redis",
-			want:   VersioningSemver,
+			want:   string(VersioningSemver),
 			reason: "an image nobody said anything about takes the default",
 		},
 		{
 			name:   "global only",
 			cfg:    Config{Versioning: VersioningLoose},
 			image:  "redis",
-			want:   VersioningLoose,
+			want:   string(VersioningLoose),
 			reason: "the global default reaches an image with no entry",
 		},
 		{
@@ -109,7 +115,7 @@ func TestVersioningPrecedence(t *testing.T) {
 				"nousresearch/hermes-agent": {Versioning: VersioningLoose},
 			}},
 			image:  "nousresearch/hermes-agent",
-			want:   VersioningLoose,
+			want:   string(VersioningLoose),
 			reason: "the entry applies without any global default",
 		},
 		{
@@ -119,7 +125,7 @@ func TestVersioningPrecedence(t *testing.T) {
 				Images:     map[string]ImagePolicy{"redis": {Versioning: VersioningSemver}},
 			},
 			image:  "redis",
-			want:   VersioningSemver,
+			want:   string(VersioningSemver),
 			reason: "an image may be pulled back to semver out of a loose default",
 		},
 		{
@@ -129,7 +135,7 @@ func TestVersioningPrecedence(t *testing.T) {
 				Images:     map[string]ImagePolicy{"redis": {Max: LevelMinor}},
 			},
 			image:  "redis",
-			want:   VersioningLoose,
+			want:   string(VersioningLoose),
 			reason: "capping an image says nothing about how its tags are read",
 		},
 		{
@@ -138,17 +144,36 @@ func TestVersioningPrecedence(t *testing.T) {
 				"nousresearch/hermes-agent": {Versioning: VersioningLoose},
 			}},
 			image:  "redis",
-			want:   VersioningSemver,
+			want:   string(VersioningSemver),
 			reason: "the lookup is exact",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := tt.cfg.VersioningFor(tt.image); got != tt.want {
+			got := internal.ResolveVersioning(
+				tt.cfg.Versionings(), tt.cfg.DefaultVersioning(), tt.image)
+			if got != tt.want {
 				t.Errorf("want %q, got %q — %s", tt.want, got, tt.reason)
 			}
 		})
+	}
+}
+
+// TestVersioningNamesResolve guards the seam between the two packages: this one
+// validates the scheme names a config may write, internal is what actually reads
+// tags under them. A name accepted here but unknown there would be a setting
+// taken and then ignored, so every name this package allows has to resolve.
+func TestVersioningNamesResolve(t *testing.T) {
+	for _, name := range versionings {
+		scheme, ok := internal.VersioningByName(string(name))
+		if !ok {
+			t.Errorf("%q passes validation here but internal cannot resolve it", name)
+			continue
+		}
+		if scheme.Name() != string(name) {
+			t.Errorf("%q resolves to a scheme calling itself %q", name, scheme.Name())
+		}
 	}
 }
 

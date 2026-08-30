@@ -69,13 +69,9 @@ func (u *UpdateChecker) WithVersioning(perImage map[string]string, def string) *
 }
 
 // versioningFor returns the scheme name recorded for an image, falling back to
-// the default. Lookup is exact on the image name without tag or digest, the same
-// key a cap is recorded under.
+// the run's default. See ResolveVersioning.
 func (u *UpdateChecker) versioningFor(image string) string {
-	if name, ok := u.versionings[image]; ok && name != "" {
-		return name
-	}
-	return u.defaultVersioning
+	return ResolveVersioning(u.versionings, u.defaultVersioning, image)
 }
 
 func (u *UpdateChecker) Check(major, minor, patch bool) ([]UpdateInfo, error) {
@@ -92,6 +88,11 @@ func (u *UpdateChecker) Check(major, minor, patch bool) ([]UpdateInfo, error) {
 		info.Versioning = u.versioningFor(info.ImageName)
 		scheme, ok := VersioningByName(info.Versioning)
 		if !ok {
+			// The config layer rejects these on load, so one reaching here means
+			// the two lists of scheme names have drifted apart. Falling back is
+			// still the safe move, but doing it quietly would accept the user's
+			// setting and then ignore it.
+			slog.Warn("Unknown versioning scheme, falling back to the default", "scheme", info.Versioning, "image", info.ImageName, "path", info.FilePath)
 			scheme = DefaultVersioning()
 		}
 
@@ -207,8 +208,14 @@ func (u *UpdateChecker) checkDigest(info *UpdateInfo) {
 	latestTag := findTagForDigest(u.registry, info.ImageName, candidates, latestDigest)
 	if latestTag == "" {
 		// This is where an image with version-shaped tags ccu cannot read ends up,
-		// so the way out is named rather than left to be discovered.
-		slog.Warn("Skipping (no tag matches the newest digest); if this image's tags are versions, try `versioning: loose` for it", "image", info.ImageName, "tag", info.CurrentTag, "path", info.FilePath)
+		// so the way out is named rather than left to be discovered — unless the
+		// image is already on that scheme, in which case loose could not read the
+		// tags either and suggesting it again would be no help at all.
+		message := "Skipping (no tag matches the newest digest)"
+		if u.versioningFor(info.ImageName) != VersioningLoose {
+			message += "; if this image's tags are versions, try `versioning: loose` for it"
+		}
+		slog.Warn(message, "image", info.ImageName, "tag", info.CurrentTag, "path", info.FilePath)
 		info.LatestDigest = ""
 		return
 	}
