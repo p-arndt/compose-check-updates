@@ -84,6 +84,14 @@ type Loaded struct {
 	// not be confused by what the other one says.
 	Global  Config
 	Project Config
+
+	// GlobalPath and ProjectPath are where those two layers were read from, empty
+	// when the layer is not backed by a file. Sources alone cannot answer that:
+	// it is one list, and a run that found only one file gives no way to tell
+	// which of the two scopes it was — which is exactly what an explanation of
+	// "why is this image not updating" has to name.
+	GlobalPath  string
+	ProjectPath string
 }
 
 // Load resolves the configuration for a scan rooted at root. explicit, when
@@ -99,7 +107,7 @@ func Load(root, explicit string) (Loaded, error) {
 		// A file named by hand belongs to no scope in particular. Treating it as
 		// the project layer is the safer of the two: a pin then lands in the file
 		// the user pointed at rather than somewhere they did not name.
-		return Loaded{Config: cfg, Sources: []string{explicit}, Project: cfg}, nil
+		return Loaded{Config: cfg, Sources: []string{explicit}, Project: cfg, ProjectPath: explicit}, nil
 	}
 
 	var loaded Loaded
@@ -110,6 +118,7 @@ func Load(root, explicit string) (Loaded, error) {
 			return Loaded{}, err
 		}
 		loaded.Global = cfg
+		loaded.GlobalPath = path
 		loaded.Config = merge(loaded.Config, cfg)
 		loaded.Sources = append(loaded.Sources, path)
 	}
@@ -120,6 +129,7 @@ func Load(root, explicit string) (Loaded, error) {
 			return Loaded{}, err
 		}
 		loaded.Project = cfg
+		loaded.ProjectPath = path
 		loaded.Config = merge(loaded.Config, cfg)
 		loaded.Sources = append(loaded.Sources, path)
 	}

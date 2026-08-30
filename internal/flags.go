@@ -40,6 +40,10 @@ type CCUFlags struct {
 	Config         string   // Explicit config file to read instead of searching for one
 	Format         string   // Output format of the report: auto, pretty or json
 	ShowConfig     bool     // Print the resolved configuration and where it came from
+	// Image narrows the `config` command to a single image: instead of the merged
+	// result it then explains how that image's settings were resolved and which
+	// layer produced each of them. Empty means the whole configuration.
+	Image string
 	// Versioning overrides the default scheme image tags are read under for this
 	// run. Empty means the command line said nothing, which leaves the config —
 	// and, failing that, `semver` — to decide. Per-image entries still win over
@@ -97,6 +101,7 @@ func Parse(version string) CCUFlags {
 	flag.StringVar(&args.ExcludeStr, "exclude", "", "Comma-separated list of directories to exclude from search")
 	flag.StringVar(&args.Config, "config", "", "Read this config file instead of searching for one")
 	flag.StringVar(&args.Format, "format", "auto", "Report output format: auto, pretty or json")
+	flag.StringVar(&args.Image, "image", "", "With the config command: explain how one image's settings were resolved")
 	flag.StringVar(&args.Versioning, "versioning", "", "Default scheme for reading image tags as versions: semver or loose (per-image config still wins)")
 
 	flag.Usage = func() { usage(flag.CommandLine.Output()) }
@@ -198,6 +203,7 @@ func usage(w io.Writer) {
 	fmt.Fprintln(tw, "  self-update\tDownload and install the latest version of ccu")
 	fmt.Fprintln(tw, "  check-update\tCheck whether a newer version of ccu is available, without installing it")
 	fmt.Fprintln(tw, "  config\tShow the resolved configuration and the files it was read from")
+	fmt.Fprintln(tw, "  config -image <name>\tExplain how one image's settings were resolved, and from which file")
 	fmt.Fprintln(tw, "  help\tShow this help message")
 	fmt.Fprintln(tw, "  version\tShow version information")
 	fmt.Fprintf(tw, "\nFlags (-d, -exclude, -config, -pin-floating and -versioning apply to both modes, the rest only to `%s check`):\n", name)

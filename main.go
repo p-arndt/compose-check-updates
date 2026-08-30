@@ -92,6 +92,14 @@ func main() {
 	// A report about ccu's own settings, like the version and update commands
 	// above: it answers a question about the tool, so no scan follows it.
 	if ccuFlags.ShowConfig {
+		// -image asks the narrower question. The flag's own scheme is handed over
+		// separately rather than read back off effective: it was folded in above,
+		// and from the merged value a scheme named on the command line and one
+		// written in a file are indistinguishable.
+		if ccuFlags.Image != "" {
+			config.Explain(os.Stdout, cfg, effective, ccuFlags.Image, ccuFlags.Versioning)
+			return
+		}
 		config.Show(os.Stdout, cfg, effective)
 		return
 	}
