@@ -5,6 +5,7 @@ package scanner
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"sync"
 
@@ -94,6 +95,53 @@ func Scan(ctx context.Context, opts Options) (<-chan Event, error) {
 // twice.
 func ScanPins(ctx context.Context, opts Options) (<-chan Event, error) {
 	return walk(ctx, opts, false, checkFilePins)
+}
+
+// CheckImage re-checks a single image and returns the event a scan would have
+// emitted for it. It is what a caller reaches for after changing one image's
+// settings: re-scanning would re-fetch every tag list for versions already on
+// screen, while this touches the one repository whose answer can have changed.
+//
+// The image is named by the update the earlier scan reported, because that is
+// what identifies the line — the file it sits in, and the reference as the file
+// spells it.
+func CheckImage(opts Options, target internal.UpdateInfo) (Event, error) {
+	registry := internal.NewRegistry("")
+
+	checker := internal.NewUpdateChecker(target.FilePath, registry)
+	if target.ComposePath != "" {
+		// A Dockerfile is only ever reached through the service that builds it, and
+		// a checker that does not know about the two of them would report the update
+		// as belonging to the Dockerfile alone — leaving a restart with no compose
+		// file to act on.
+		checker = internal.NewDockerfileChecker(target.FilePath, target.ComposePath, firstService(target.Services), registry)
+	}
+	checker = checker.WithPinFloating(opts.PinFloating).WithVersioning(opts.Versionings, opts.DefaultVersioning)
+
+	info, found, err := checker.CheckImage(target.FullImageName, opts.Major, opts.Minor, opts.Patch)
+	if err != nil {
+		return Event{}, err
+	}
+	if !found {
+		return Event{}, fmt.Errorf("%s no longer names %s", target.FilePath, target.FullImageName)
+	}
+
+	applyCap(&info, opts.Caps[info.ImageName], registry)
+
+	// Path is the compose file, as it is on every event a scan emits: a consumer
+	// groups rows by it, and a Dockerfile's row belongs under the stack that
+	// builds it.
+	return Event{Kind: EventUpdate, Path: info.RestartPath(), Update: info, Level: info.UpdateLevel()}, nil
+}
+
+// firstService is the service to hand a Dockerfile checker. One name, because
+// that is all a checker records; the update the re-check produces carries it
+// alone rather than the full list the first scan collapsed into the row.
+func firstService(services []string) string {
+	if len(services) == 0 {
+		return ""
+	}
+	return services[0]
 }
 
 // walk is the shared body of the two scans: discover the compose files, then run

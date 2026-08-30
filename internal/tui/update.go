@@ -20,6 +20,15 @@ type floatingStartedMsg struct{ events <-chan scanner.Event }
 type floatingEventMsg struct{ ev scanner.Event }
 type floatingDoneMsg struct{}
 type scanEventMsg struct{ ev scanner.Event }
+
+// recheckDoneMsg carries the answer to a single image being looked at again
+// after its settings changed. The row key travels with it because the list may
+// have been re-sorted, filtered or folded in the meantime.
+type recheckDoneMsg struct {
+	key string
+	ev  scanner.Event
+	err error
+}
 type scanDoneMsg struct{}
 type scanFailedMsg struct{ err error }
 
@@ -156,6 +165,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case recheckDoneMsg:
+		m.applyRecheck(msg)
+		return m, nil
+
 	case applyResultMsg:
 		cmd := m.handleApplyResult(msg)
 		return m, cmd
@@ -167,6 +180,77 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleKey(msg)
 	}
 	return m, nil
+}
+
+// recheckImage asks for one image to be resolved again, off the UI thread. It is
+// what a changed versioning scheme costs: the requests of a single repository,
+// rather than the whole scan the setting used to need.
+func recheckImage(opts scanner.Options, r Row) tea.Cmd {
+	key := rowKey(r)
+	target := r.Update
+	return func() tea.Msg {
+		ev, err := scanner.CheckImage(opts, target)
+		return recheckDoneMsg{key: key, ev: ev, err: err}
+	}
+}
+
+// applyRecheck folds the answer back into the row it was asked for. A row that
+// now resolves to nothing at all is dropped: it was only ever on screen because
+// ccu could not read it, and leaving it there would claim it still cannot.
+func (m *Model) applyRecheck(msg recheckDoneMsg) {
+	row := m.rowByKey(msg.key)
+	if row == nil {
+		return
+	}
+
+	if msg.err != nil {
+		m.setStatus(StatusError, fmt.Sprintf("could not re-check %s: %v", row.Update.ImageName, msg.err))
+		return
+	}
+
+	info := msg.ev.Update
+	image := info.ImageName
+
+	// Selection and applied state belong to the row, not to what the registry just
+	// said, so only the resolved half is replaced.
+	row.Update = info
+	row.Level = msg.ev.Level
+	m.retarget(row, m.target)
+	m.refreshPins()
+
+	switch {
+	case info.IsUnreadable():
+		m.setStatus(StatusWarn, info.UnreadableMessage)
+	case row.Update.HasNewVersion(m.opts.Major, m.opts.Minor, m.opts.Patch):
+		m.setStatus(StatusSuccess, fmt.Sprintf("%s → %s", image, row.Update.LatestTag))
+	default:
+		m.dropRow(msg.key)
+		m.setStatus(StatusSuccess, fmt.Sprintf("%s reads fine now and is up to date", image))
+		return
+	}
+
+	m.rebuild(m.cursorKey())
+	m.syncScroll()
+}
+
+// dropRow removes a row and rebuilds around it, keeping the cursor on whatever
+// survives nearest to where it was.
+func (m *Model) dropRow(key string) {
+	for i := range m.rows {
+		if rowKey(m.rows[i]) != key {
+			continue
+		}
+		keep := m.cursorKey()
+		if keep == key {
+			// The line under the cursor is the one going away, so the cursor is
+			// handed to its file header rather than to whatever slides up into it.
+			keep = headerKeyPrefix + m.rows[i].FilePath()
+		}
+		m.rows = append(m.rows[:i], m.rows[i+1:]...)
+		m.rebuild(keep)
+		m.syncScroll()
+		return
+	}
 }
 
 // drainLogs folds newly captured warnings and errors into the same list the
@@ -502,11 +586,9 @@ func (m Model) handleSideKey(msg tea.KeyMsg) (bool, tea.Model, tea.Cmd) {
 	// ←/→ step the field's options rather than closing the column; tab/esc is the
 	// way out of every pane anyway.
 	case key.Matches(msg, m.keys.SidePrev):
-		m.cycleSideValue(-1)
-		return true, m, nil
+		return true, m, m.cycleSideValue(-1)
 	case key.Matches(msg, m.keys.SideNext):
-		m.cycleSideValue(1)
-		return true, m, nil
+		return true, m, m.cycleSideValue(1)
 	case key.Matches(msg, m.keys.Up):
 		m.sideField = m.stepField(-1)
 		return true, m, nil
@@ -514,11 +596,9 @@ func (m Model) handleSideKey(msg tea.KeyMsg) (bool, tea.Model, tea.Cmd) {
 		m.sideField = m.stepField(1)
 		return true, m, nil
 	case key.Matches(msg, m.keys.ValueNext):
-		m.cycleSideValue(1)
-		return true, m, nil
+		return true, m, m.cycleSideValue(1)
 	case key.Matches(msg, m.keys.ValuePrev):
-		m.cycleSideValue(-1)
-		return true, m, nil
+		return true, m, m.cycleSideValue(-1)
 	}
 	return false, m, nil
 }
@@ -538,11 +618,19 @@ func (m Model) stepField(delta int) sideField {
 
 // fieldVisible reports whether the sidebar currently draws this field.
 func (m Model) fieldVisible(f sideField) bool {
-	if f != fieldScope {
-		return true
+	switch f {
+	case fieldScope:
+		// The scope has nothing to answer until a cap exists.
+		r := m.currentRow()
+		return r != nil && r.Pin != ""
+	case fieldVersioning:
+		// Only where reading the tags is the thing that failed. Every other row is
+		// proof that the scheme it is being read under works, and a field offering
+		// to change it would be an invitation to break a row that is fine.
+		r := m.currentRow()
+		return r != nil && r.Update.IsUnreadable()
 	}
-	r := m.currentRow()
-	return r != nil && r.Pin != ""
+	return true
 }
 
 // toggleCurrent is space/enter: on a header it folds that node, on a row it flips

@@ -120,6 +120,12 @@ The sidebar only offers the levels an image actually has — the `(+2)` after a
 version means two other levels exist. A row with nothing at the current target
 shows as `[-] … no patch update` and cannot be applied.
 
+An image whose tags ccu could read nothing from shows as `[!] … unreadable · …`
+and is listed but never applied — it has no version to write. On that row the
+sidebar grows a **versioning** field: stepping it to `loose` saves the scheme to
+your config and re-checks that one image straight away, so a repository ccu could
+not read is fixed where the problem is shown rather than by hand.
+
 The TUI always resolves **all** update levels, regardless of `-patch`, `-minor`,
 `-major` or `-f`. Those flags govern `ccu check` only.
 

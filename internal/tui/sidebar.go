@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/p-arndt/compose-check-updates/internal/config"
@@ -62,16 +63,22 @@ func (m Model) stackedSidebarHeight() int {
 }
 
 // stackedSidebarFields is the number of lines inside that panel: the image, its
-// target and its cap, plus the scope once there is a cap to put somewhere.
+// target and its cap, plus the scope once there is a cap to put somewhere and the
+// versioning scheme on a row that could not be read.
 func (m Model) stackedSidebarFields() int {
 	r := m.currentRow()
 	if r == nil {
 		return 1
 	}
-	if r.Pin != "" {
-		return 4
+
+	n := 3
+	if m.fieldVisible(fieldVersioning) {
+		n++
 	}
-	return 3
+	if r.Pin != "" {
+		n++
+	}
+	return n
 }
 
 // stackedSidebar renders the panel that goes below the list.
@@ -103,9 +110,10 @@ func sidebarWidth(total int) int {
 type sideField int
 
 const (
-	fieldTarget sideField = iota // the release this run would apply
-	fieldCap                     // the ceiling to remember, as a level of its own
-	fieldScope                   // which config file remembers it
+	fieldTarget     sideField = iota // the release this run would apply
+	fieldVersioning                  // how this image's tags are read, on the rows where reading them failed
+	fieldCap                         // the ceiling to remember, as a level of its own
+	fieldScope                       // which config file remembers it
 	sideFieldCount
 )
 
@@ -138,6 +146,11 @@ func (m Model) capChoicesFor(image string) []config.Level {
 // steps through them.
 var scopeChoices = []pinScope{pinProject, pinGlobal}
 
+// versioningChoices are the values the versioning field steps through. The empty
+// one comes first because it is where every image starts: it is not a third
+// scheme but the absence of a preference, i.e. the run's default.
+var versioningChoices = []config.Versioning{"", config.VersioningSemver, config.VersioningLoose}
+
 // sidebarLines renders the right column for the row under the cursor, within the
 // height it is given. Lines are added in priority order rather than top to
 // bottom: dropping a field would make a setting unreachable, whereas dropping the
@@ -154,8 +167,13 @@ func (m Model) sidebarLines(width, height int) []string {
 	fields := []string{
 		m.theme.sideTitle(u.ImageName, width),
 		m.theme.sideValue("target", m.targetValue(r), m.focused(fieldTarget), width),
-		m.theme.sideValue("cap", m.capValue(r), m.focused(fieldCap), width),
 	}
+	if m.fieldVisible(fieldVersioning) {
+		// Above the cap, because on this row it is the only field that can change
+		// anything: an image ccu could not read has no target and no cap to reach.
+		fields = append(fields, m.theme.sideValue("versioning", m.versioningValue(r), m.focused(fieldVersioning), width))
+	}
+	fields = append(fields, m.theme.sideValue("cap", m.capValue(r), m.focused(fieldCap), width))
 	if r.Pin != "" {
 		// The scope only exists once there is a cap to put somewhere.
 		fields = append(fields, m.theme.sideValue("save to", m.scopeValue(r, width), m.focused(fieldScope), width))
@@ -190,6 +208,19 @@ func (m Model) sidebarLines(width, height int) []string {
 // focused reports whether f is the field the arrow keys would change.
 func (m Model) focused(f sideField) bool {
 	return m.focus == focusSide && m.sideField == f
+}
+
+// versioningValue is how this image's tags are read. An image that was never
+// given a scheme shows the run's default beside the word, since "default" on its
+// own says nothing about what would change if it were stepped.
+func (m Model) versioningValue(r *Row) string {
+	focused := m.focused(fieldVersioning)
+
+	name := m.versioningFor(r.Update.ImageName)
+	if name == "" {
+		return m.theme.sideText("default", focused) + m.theme.dim().Render("  "+string(m.defaultVersioning()))
+	}
+	return m.theme.sideText(string(name), focused)
 }
 
 // targetValue is the release this row would move to, named by its level as well
@@ -252,21 +283,90 @@ func (m Model) pinScopeOf(image string) pinScope {
 }
 
 // cycleSideValue changes the focused field by delta. It is the only way the
-// sidebar writes anything.
-func (m *Model) cycleSideValue(delta int) {
+// sidebar writes anything. The command it returns is the work a changed value
+// costs — re-checking one image — and is nil for the fields that cost nothing.
+func (m *Model) cycleSideValue(delta int) tea.Cmd {
 	r := m.currentRow()
 	if r == nil {
-		return
+		return nil
+	}
+	// The sidebar cursor stays where it was as the list moves under it, so it can
+	// be sitting on a field this row does not have. A field nobody can see is not
+	// one a keypress may write.
+	if !m.fieldVisible(m.sideField) {
+		return nil
 	}
 
 	switch m.sideField {
 	case fieldTarget:
 		m.cycleRowTarget(delta)
+	case fieldVersioning:
+		return m.cycleVersioning(r, delta)
 	case fieldCap:
 		m.cycleCap(r, delta)
 	case fieldScope:
 		m.cycleScope(r, delta)
 	}
+	return nil
+}
+
+// cycleVersioning steps the scheme this image's tags are read under, writes it
+// immediately the way the cap is written, and asks for the one image to be
+// checked again. Re-checking is the whole point: a scheme that changes nothing
+// on screen looks exactly like a setting that does not work.
+func (m *Model) cycleVersioning(r *Row, delta int) tea.Cmd {
+	image := r.Update.ImageName
+
+	cur := 0
+	for i, c := range versioningChoices {
+		if c == m.versioningFor(image) {
+			cur = i
+			break
+		}
+	}
+	next := versioningChoices[((cur+delta)%len(versioningChoices)+len(versioningChoices))%len(versioningChoices)]
+
+	// A scheme already recorded lives in one scope; a new one goes to the project
+	// file, which is the narrower of the two and the easier to undo.
+	scope := pinProject
+	if m.versioningFor(image) != "" {
+		scope = m.versioningScopeOf(image)
+	}
+
+	// Cleared from both files before being written, so a scheme can never end up
+	// in two of them and the field cannot say which one it shows.
+	for _, s := range scopeChoices {
+		if err := m.setVersioning(s, image, ""); err != nil {
+			m.setStatus(StatusError, fmt.Sprintf("could not update %s: %v", image, err))
+			return nil
+		}
+	}
+	if next != "" {
+		if err := m.setVersioning(scope, image, next); err != nil {
+			m.setStatus(StatusError, fmt.Sprintf("could not save %s: %v", image, err))
+			return nil
+		}
+	}
+
+	m.recordVersioning(scope, image, next)
+
+	label := string(next)
+	if next == "" {
+		label = "the default (" + string(m.defaultVersioning()) + ")"
+	}
+	m.setStatus(StatusInfo, fmt.Sprintf("reading %s as %s…", image, label))
+
+	return recheckImage(m.opts, *r)
+}
+
+// versioningScopeOf reports which scope holds the scheme for an image, so the
+// next write goes back to the file the value came from. Project wins, the same
+// way it wins when the two layers are merged.
+func (m Model) versioningScopeOf(image string) pinScope {
+	if m.versioningInScope(pinProject, image) != "" {
+		return pinProject
+	}
+	return pinGlobal
 }
 
 // cycleCap steps the ceiling and writes it immediately, so what the field shows

@@ -220,3 +220,44 @@ func TestMarkUnreadableClearsTheHalfResolvedTarget(t *testing.T) {
 	assert.False(t, info.IsDigestUpdate())
 	assert.False(t, info.HasNewVersion(true, true, true))
 }
+
+// Changing one image's scheme has to be answerable without re-scanning the tree,
+// and the answer has to be the one a full scan would have given.
+func TestCheckImageResolvesOneImageUnderANewScheme(t *testing.T) {
+	tags := []string{"2026.7.7", "2026.7.7.2"}
+	server := newRegistryTestServer(t, "library/myimage", tags,
+		map[string]string{"2026.7.7": digestOld, "2026.7.7.2": digestNew})
+	defer server.Close()
+
+	serverURL, _ := url.Parse(server.URL)
+	image := serverURL.Host + "/library/myimage"
+	reference := image + ":2026.7.7"
+	file := writeComposeFile(t, "image: "+reference+"\nimage: "+image+":other\n")
+
+	// Under semver the fourth segment is unreadable, so nothing can be compared
+	// with the tag in the file.
+	infos, err := NewUpdateChecker(file, NewRegistry(serverURL.Host)).Check(true, true, true)
+	assert.NoError(t, err)
+	assert.Equal(t, ReasonNoComparableTag, infos[0].UnreadableReason)
+
+	// The same image alone, read as the user has just asked for it to be read.
+	info, found, err := NewUpdateChecker(file, NewRegistry(serverURL.Host)).
+		WithVersioning(map[string]string{image: VersioningLoose}, "").
+		CheckImage(reference, true, true, true)
+	assert.NoError(t, err)
+	assert.True(t, found)
+
+	assert.False(t, info.IsUnreadable())
+	assert.Equal(t, "2026.7.7.2", info.LatestTag)
+	assert.Equal(t, "patch", info.UpdateLevel())
+}
+
+// A reference the file no longer names is not an error: the user may have edited
+// the file while the session was open.
+func TestCheckImageReportsAnImageThatIsGone(t *testing.T) {
+	file := writeComposeFile(t, "image: library/myimage:1.0.0")
+
+	_, found, err := NewUpdateChecker(file, nil).CheckImage("library/other:1.0.0", true, true, true)
+	assert.NoError(t, err)
+	assert.False(t, found)
+}

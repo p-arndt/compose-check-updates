@@ -137,71 +137,102 @@ func (u *UpdateChecker) Check(major, minor, patch bool) ([]UpdateInfo, error) {
 	}
 
 	for i := range updateInfos {
-		info := &updateInfos[i]
-
-		// Recorded on the update itself, because the level and the cap are worked
-		// out again from the tags after this checker is gone.
-		info.Versioning = u.versioningFor(info.ImageName)
-		scheme, ok := VersioningByName(info.Versioning)
-		if !ok {
-			// The config layer rejects these on load, so one reaching here means
-			// the two lists of scheme names have drifted apart. Falling back is
-			// still the safe move, but doing it quietly would accept the user's
-			// setting and then ignore it.
-			slog.Warn("Unknown versioning scheme, falling back to the default", "scheme", info.Versioning, "image", info.ImageName, "path", info.FilePath)
-			scheme = DefaultVersioning()
-		}
-
-		if _, readable := scheme.Parse(info.CurrentTag); !readable {
-			// No version this scheme can read. Comparing manifest digests is then
-			// the only way to tell whether the image moved on, which covers both
-			// digest-pinned images and repositories that publish commit tags
-			// instead of versions (e.g. ghcr.io/vert-sh/vert).
-			u.checkDigest(info)
-			continue
-		}
-
-		tags, err := u.registry.FetchImageTags(info.ImageName)
-		if err != nil {
-			slog.Error("Skipping (failed fetching tags)", "image", info.ImageName, "path", info.FilePath)
-			continue
-		}
-
-		// Every level is resolved so an interactive caller can offer a choice of
-		// target; LatestTag stays the highest tag the requested flags allow.
-		info.PatchTag, info.MinorTag, info.MajorTag = FindLatestPerLevel(scheme, info.CurrentTag, tags)
-
-		latestVersion := FindLatestVersion(scheme, info.CurrentTag, tags, major, minor, patch)
-		if latestVersion == "" {
-			// Nothing to move to, which is the ordinary case of an image already on
-			// its newest release — unless there is nothing here that could ever be
-			// compared with the current tag, in which case no run will offer this
-			// image anything and the user deserves to hear so rather than to keep
-			// waiting for an update that cannot arrive.
-			if !hasComparableTag(scheme, info.CurrentTag, tags) {
-				info.MarkUnreadable(ReasonNoComparableTag, u.unreadableHint(info,
-					fmt.Sprintf("%q reads as a version under %s, but no other tag of this image can be compared with it", info.CurrentTag, info.Versioning)))
-			}
-			continue
-		}
-		info.LatestTag = latestVersion
-
-		// A reference that pins both a version and a digest (nginx:1.2.3@sha256:...)
-		// must have its digest moved along with the tag, otherwise the rewritten
-		// line would point the new tag at the old image.
-		if info.CurrentDigest != "" {
-			latestDigest, err := u.registry.FetchImageDigest(info.ImageName + ":" + latestVersion)
-			if err != nil {
-				slog.Error("Skipping (failed resolving digest for new tag)", "image", info.ImageName, "tag", latestVersion, "path", info.FilePath)
-				info.LatestTag = ""
-				continue
-			}
-			info.LatestDigest = latestDigest
-			info.digestFor = latestVersion
-		}
+		u.checkOne(&updateInfos[i], major, minor, patch)
 	}
 
 	return updateInfos, nil
+}
+
+// CheckImage re-checks a single image of the file and returns what it resolved
+// to, reporting false when the file no longer names that reference. It is for
+// the caller that changed one image's settings and wants that one image looked
+// at again: a second full Check would re-fetch every tag list for versions
+// already on screen, while this costs the requests of one image — the same
+// bargain CheckPins strikes for the pins.
+//
+// reference is the image as the file spells it, tag and digest included, which
+// is what identifies the line rather than the repository behind it.
+func (u *UpdateChecker) CheckImage(reference string, major, minor, patch bool) (UpdateInfo, bool, error) {
+	infos, err := u.createUpdateInfos()
+	if err != nil {
+		return UpdateInfo{}, false, err
+	}
+
+	for i := range infos {
+		if infos[i].FullImageName != reference {
+			continue
+		}
+		u.checkOne(&infos[i], major, minor, patch)
+		return infos[i], true, nil
+	}
+
+	return UpdateInfo{}, false, nil
+}
+
+// checkOne resolves one image: the body of the loop above, kept apart so a
+// re-check of a single image goes through exactly the same steps a scan does
+// rather than a second, drifting copy of them.
+func (u *UpdateChecker) checkOne(info *UpdateInfo, major, minor, patch bool) {
+	// Recorded on the update itself, because the level and the cap are worked
+	// out again from the tags after this checker is gone.
+	info.Versioning = u.versioningFor(info.ImageName)
+	scheme, ok := VersioningByName(info.Versioning)
+	if !ok {
+		// The config layer rejects these on load, so one reaching here means
+		// the two lists of scheme names have drifted apart. Falling back is
+		// still the safe move, but doing it quietly would accept the user's
+		// setting and then ignore it.
+		slog.Warn("Unknown versioning scheme, falling back to the default", "scheme", info.Versioning, "image", info.ImageName, "path", info.FilePath)
+		scheme = DefaultVersioning()
+	}
+
+	if _, readable := scheme.Parse(info.CurrentTag); !readable {
+		// No version this scheme can read. Comparing manifest digests is then
+		// the only way to tell whether the image moved on, which covers both
+		// digest-pinned images and repositories that publish commit tags
+		// instead of versions (e.g. ghcr.io/vert-sh/vert).
+		u.checkDigest(info)
+		return
+	}
+
+	tags, err := u.registry.FetchImageTags(info.ImageName)
+	if err != nil {
+		slog.Error("Skipping (failed fetching tags)", "image", info.ImageName, "path", info.FilePath)
+		return
+	}
+
+	// Every level is resolved so an interactive caller can offer a choice of
+	// target; LatestTag stays the highest tag the requested flags allow.
+	info.PatchTag, info.MinorTag, info.MajorTag = FindLatestPerLevel(scheme, info.CurrentTag, tags)
+
+	latestVersion := FindLatestVersion(scheme, info.CurrentTag, tags, major, minor, patch)
+	if latestVersion == "" {
+		// Nothing to move to, which is the ordinary case of an image already on
+		// its newest release — unless there is nothing here that could ever be
+		// compared with the current tag, in which case no run will offer this
+		// image anything and the user deserves to hear so rather than to keep
+		// waiting for an update that cannot arrive.
+		if !hasComparableTag(scheme, info.CurrentTag, tags) {
+			info.MarkUnreadable(ReasonNoComparableTag, u.unreadableHint(info,
+				fmt.Sprintf("%q reads as a version under %s, but no other tag of this image can be compared with it", info.CurrentTag, info.Versioning)))
+		}
+		return
+	}
+	info.LatestTag = latestVersion
+
+	// A reference that pins both a version and a digest (nginx:1.2.3@sha256:...)
+	// must have its digest moved along with the tag, otherwise the rewritten
+	// line would point the new tag at the old image.
+	if info.CurrentDigest != "" {
+		latestDigest, err := u.registry.FetchImageDigest(info.ImageName + ":" + latestVersion)
+		if err != nil {
+			slog.Error("Skipping (failed resolving digest for new tag)", "image", info.ImageName, "tag", latestVersion, "path", info.FilePath)
+			info.LatestTag = ""
+			return
+		}
+		info.LatestDigest = latestDigest
+		info.digestFor = latestVersion
+	}
 }
 
 // checkDigest fills in the update fields for images whose tag is not a semantic
