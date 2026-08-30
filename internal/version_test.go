@@ -3,7 +3,6 @@ package internal
 import (
 	"testing"
 
-	"github.com/Masterminds/semver/v3"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -227,6 +226,50 @@ func TestFindLatestVersion(t *testing.T) {
 			},
 		},
 		{
+			name: "major-only tag finds the next major-only tag",
+			testData: TestFindLatestVersionStruct{
+				Current:  "16",
+				Tags:     []string{"16", "17", "18"},
+				Major:    true,
+				Minor:    false,
+				Patch:    false,
+				Expected: "18",
+			},
+		},
+		{
+			name: "major-only tag with v prefix",
+			testData: TestFindLatestVersionStruct{
+				Current:  "v16",
+				Tags:     []string{"v16", "v17"},
+				Major:    true,
+				Minor:    false,
+				Patch:    false,
+				Expected: "v17",
+			},
+		},
+		{
+			name: "major-only tag never moves to a more precise one",
+			testData: TestFindLatestVersionStruct{
+				Current:  "16",
+				Tags:     []string{"16", "17", "17.2", "17.2.1"},
+				Major:    true,
+				Minor:    false,
+				Patch:    false,
+				Expected: "17",
+			},
+		},
+		{
+			name: "pinned tag never moves to a major-only one",
+			testData: TestFindLatestVersionStruct{
+				Current:  "20.11.0",
+				Tags:     []string{"20.11.0", "20.11.1", "21"},
+				Major:    true,
+				Minor:    false,
+				Patch:    false,
+				Expected: "20.11.1",
+			},
+		},
+		{
 			name: "huge version jump",
 			testData: TestFindLatestVersionStruct{
 				Current:  "1.0.0",
@@ -241,13 +284,7 @@ func TestFindLatestVersion(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			normalizedCurrent, ok := normalizeSemver(tt.testData.Current)
-			assert.True(t, ok, "invalid current version")
-
-			current, err := semver.NewVersion(normalizedCurrent)
-			assert.NoError(t, err, "invalid current version")
-
-			result := FindLatestVersion(current, tt.testData.Tags, tt.testData.Major, tt.testData.Minor, tt.testData.Patch)
+			result := FindLatestVersion(tt.testData.Current, tt.testData.Tags, tt.testData.Major, tt.testData.Minor, tt.testData.Patch)
 			assert.Equal(t, tt.testData.Expected, result)
 		})
 	}
@@ -317,12 +354,7 @@ func TestFindLatestPerLevel(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			normalized, ok := normalizeSemver(tt.current)
-			assert.True(t, ok, "invalid current version")
-			current, err := semver.NewVersion(normalized)
-			assert.NoError(t, err)
-
-			patch, minor, major := FindLatestPerLevel(current, tt.tags)
+			patch, minor, major := FindLatestPerLevel(tt.current, tt.tags)
 			assert.Equal(t, tt.wantPatch, patch, "patch")
 			assert.Equal(t, tt.wantMinor, minor, "minor")
 			assert.Equal(t, tt.wantMajor, major, "major")
@@ -339,9 +371,56 @@ func TestSuffixMismatch(t *testing.T) {
 		Patch:    true,
 		Expected: "",
 	}
-	current, err := semver.NewVersion(test.Current)
-	assert.NoError(t, err, "invalid current version")
-
-	result := FindLatestVersion(current, test.Tags, test.Major, test.Minor, test.Patch)
+	result := FindLatestVersion(test.Current, test.Tags, test.Major, test.Minor, test.Patch)
 	assert.Equal(t, test.Expected, result)
+}
+
+// TestParseVersionTag covers the shapes Docker tags actually take, and in
+// particular that a tag naming only a major parses at all: it used to be
+// accepted where the checker decides an image has a version, and rejected where
+// the upgrade target is looked for, so an image on "16" reported nothing and
+// fell through to no fallback either.
+func TestParseVersionTag(t *testing.T) {
+	tests := []struct {
+		tag          string
+		wantOK       bool
+		wantVersion  string
+		wantSegments int
+	}{
+		{"1.2.3", true, "1.2.3", 3},
+		{"v1.2.3", true, "1.2.3", 3},
+		{"1.2", true, "1.2.0", 2},
+		{"16", true, "16.0.0", 1},
+		{"v16", true, "16.0.0", 1},
+		{"0", true, "0.0.0", 1},
+		{"3.19-alpine", true, "3.19.0-alpine", 2},
+		{"1.2.3-rc1", true, "1.2.3-rc1", 3},
+		{"2026.7.7.2", false, "", 0},
+		{"latest", false, "", 0},
+		{"", false, "", 0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.tag, func(t *testing.T) {
+			vt, ok := parseVersionTag(tt.tag)
+			assert.Equal(t, tt.wantOK, ok)
+			if !tt.wantOK {
+				return
+			}
+			assert.Equal(t, tt.wantVersion, vt.Version.String())
+			assert.Equal(t, tt.wantSegments, vt.Segments)
+			assert.Equal(t, tt.tag, vt.Tag)
+		})
+	}
+}
+
+// TestSameTagFamily states the one shape rule: a tag naming only a major floats
+// across its major line, so it neither replaces nor is replaced by a tag that
+// pins more than that.
+func TestSameTagFamily(t *testing.T) {
+	assert.True(t, sameTagFamily(1, 1))
+	assert.True(t, sameTagFamily(2, 3))
+	assert.True(t, sameTagFamily(3, 2))
+	assert.False(t, sameTagFamily(1, 3))
+	assert.False(t, sameTagFamily(3, 1))
 }

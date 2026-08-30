@@ -9,29 +9,32 @@ import (
 )
 
 // versionTag pairs a parsed version with the tag it was parsed from, so the
-// tag can be returned in its original form (e.g. keeping a "v" prefix).
+// tag can be returned in its original form (e.g. keeping a "v" prefix), and
+// with the number of numeric segments the tag actually named. The count is kept
+// because the parsed version cannot tell "16" from "16.0.0" afterwards, and the
+// two are not interchangeable — see sameTagFamily.
 type versionTag struct {
-	Version *semver.Version
-	Tag     string
+	Version  *semver.Version
+	Tag      string
+	Segments int
 }
 
 // candidateVersions parses every tag that looks like a version and returns them
-// sorted newest first.
-func candidateVersions(tags []string) []versionTag {
+// sorted newest first. currentSegments is how many numeric segments the tag
+// being upgraded named; tags of an incompatible shape are dropped here rather
+// than later, so the callers below only ever see plausible targets.
+func candidateVersions(tags []string, currentSegments int) []versionTag {
 	var versionTags []versionTag
 
 	for _, tag := range tags {
-		candidate := strings.TrimPrefix(tag, "v")
-		normalized, ok := normalizeSemver(candidate)
+		vt, ok := parseVersionTag(tag)
 		if !ok {
 			continue
 		}
-
-		v, err := semver.NewVersion(normalized)
-		if err != nil {
+		if !sameTagFamily(vt.Segments, currentSegments) {
 			continue
 		}
-		versionTags = append(versionTags, versionTag{Version: v, Tag: tag})
+		versionTags = append(versionTags, vt)
 	}
 
 	sort.Slice(versionTags, func(i, j int) bool {
@@ -58,9 +61,15 @@ func isUpgradeCandidate(v, current *semver.Version) bool {
 // relative to current. Any return value is "" when no upgrade exists at that
 // level. patchTag stays within the current major.minor; minorTag stays within
 // the current major; majorTag crosses to a higher major.
-func FindLatestPerLevel(current *semver.Version, tags []string) (patchTag, minorTag, majorTag string) {
+func FindLatestPerLevel(currentTag string, tags []string) (patchTag, minorTag, majorTag string) {
+	cur, ok := parseVersionTag(currentTag)
+	if !ok {
+		return "", "", ""
+	}
+	current := cur.Version
+
 	// Sorted newest first, so the first match at a level is that level's best.
-	for _, vt := range candidateVersions(tags) {
+	for _, vt := range candidateVersions(tags, cur.Segments) {
 		v := vt.Version
 		if !isUpgradeCandidate(v, current) {
 			continue
@@ -89,7 +98,13 @@ func FindLatestPerLevel(current *semver.Version, tags []string) (patchTag, minor
 	return patchTag, minorTag, majorTag
 }
 
-func FindLatestVersion(current *semver.Version, tags []string, major, minor, patch bool) string {
+func FindLatestVersion(currentTag string, tags []string, major, minor, patch bool) string {
+	cur, ok := parseVersionTag(currentTag)
+	if !ok {
+		return ""
+	}
+	current := cur.Version
+
 	if major {
 		minor = true
 		patch = true
@@ -98,7 +113,7 @@ func FindLatestVersion(current *semver.Version, tags []string, major, minor, pat
 		patch = true
 	}
 
-	versionTags := candidateVersions(tags)
+	versionTags := candidateVersions(tags, cur.Segments)
 	if len(versionTags) == 0 {
 		return ""
 	}
@@ -129,29 +144,74 @@ func FindLatestVersion(current *semver.Version, tags []string, major, minor, pat
 	return ""
 }
 
-// normalizeSemver accepts strict semantic versions as well as "non-strict" forms
-// like "1.1" (treated as "1.1.0"). If the tag is not a supported version
-// format it returns ok=false.
-func normalizeSemver(tag string) (normalized string, ok bool) {
+// versionPattern captures the numeric segments a tag names, plus any
+// prerelease or build metadata trailing them. The minor and patch segments are
+// optional: Docker tags routinely name only part of a version ("16", "1.2"),
+// and a tool that refuses to read them has nothing to say about some of the
+// most commonly pinned images there are.
+var versionPattern = regexp.MustCompile(`^(?P<major>0|[1-9]\d*)(?:\.(?P<minor>0|[1-9]\d*))?(?:\.(?P<patch>0|[1-9]\d*))?(?P<rest>(?:-[0-9A-Za-z-.]+)?(?:\+[0-9A-Za-z-.]+)?)$`)
+
+// normalizeSemver accepts strict semantic versions as well as the "non-strict"
+// forms Docker tags take: "1.1" and "16" stand for "1.1.0" and "16.0.0". It
+// also reports how many segments were actually written, which the caller needs
+// because the normalized string no longer says. If the tag is not a supported
+// version format it returns ok=false.
+func normalizeSemver(tag string) (normalized string, segments int, ok bool) {
 	// Accept an optional leading "v" (e.g. "v1.2.3") as well as plain semver.
 	tag = strings.TrimPrefix(tag, "v")
 
-	// Capture major.minor[.patch] and optional prerelease/build metadata.
-	regex := regexp.MustCompile(`^(?P<major>0|[1-9]\d*)\.(?P<minor>0|[1-9]\d*)(?:\.(?P<patch>0|[1-9]\d*))?(?P<rest>(?:-[0-9A-Za-z-.]+)?(?:\+[0-9A-Za-z-.]+)?)$`)
-	matches := regex.FindStringSubmatch(tag)
+	matches := versionPattern.FindStringSubmatch(tag)
 	if len(matches) == 0 {
-		return "", false
+		return "", 0, false
 	}
 
-	major := matches[1]
-	minor := matches[2]
-	patch := matches[3]
-	rest := matches[4]
+	major, minor, patch, rest := matches[1], matches[2], matches[3], matches[4]
+
+	segments = 1
+	if minor != "" {
+		segments++
+	}
+	if patch != "" {
+		segments++
+	}
+
+	if minor == "" {
+		minor = "0"
+	}
 	if patch == "" {
 		patch = "0"
 	}
 
-	return major + "." + minor + "." + patch + rest, true
+	return major + "." + minor + "." + patch + rest, segments, true
+}
+
+// parseVersionTag turns a tag into a comparable version. It is the one place
+// tags are parsed: the checker deciding whether an image has a version at all
+// and the search for what to upgrade it to have to agree on the answer, or an
+// image passes the first and then silently matches nothing in the second.
+func parseVersionTag(tag string) (versionTag, bool) {
+	normalized, segments, ok := normalizeSemver(tag)
+	if !ok {
+		return versionTag{}, false
+	}
+
+	v, err := semver.NewVersion(normalized)
+	if err != nil {
+		return versionTag{}, false
+	}
+
+	return versionTag{Version: v, Tag: tag, Segments: segments}, true
+}
+
+// sameTagFamily reports whether a candidate tag has a shape that may stand in
+// for the current one. A tag naming only a major ("16") floats across its whole
+// major line the way "latest" floats across the repository, so replacing a
+// pinned "20.11.0" with "21" would quietly trade a fixed reference for a moving
+// one — and replacing "16" with "17.2" would do the reverse. Everything else
+// mixes freely: an image on "1.2" moving to "1.2.3" is the same release line
+// spelled more precisely.
+func sameTagFamily(candidate, current int) bool {
+	return (candidate == 1) == (current == 1)
 }
 
 func isEqualMajor(current, tag *semver.Version) bool {

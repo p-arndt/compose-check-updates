@@ -7,7 +7,6 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/Masterminds/semver/v3"
 	"github.com/regclient/regclient/types/ref"
 )
 
@@ -64,8 +63,7 @@ func (u *UpdateChecker) Check(major, minor, patch bool) ([]UpdateInfo, error) {
 	for i := range updateInfos {
 		info := &updateInfos[i]
 
-		version, err := semver.NewVersion(info.CurrentTag)
-		if err != nil {
+		if _, ok := parseVersionTag(info.CurrentTag); !ok {
 			// Not a semver tag. Comparing manifest digests is then the only way
 			// to tell whether the image moved on, which covers both digest-pinned
 			// images and repositories that publish commit tags instead of
@@ -82,9 +80,9 @@ func (u *UpdateChecker) Check(major, minor, patch bool) ([]UpdateInfo, error) {
 
 		// Every level is resolved so an interactive caller can offer a choice of
 		// target; LatestTag stays the highest tag the requested flags allow.
-		info.PatchTag, info.MinorTag, info.MajorTag = FindLatestPerLevel(version, tags)
+		info.PatchTag, info.MinorTag, info.MajorTag = FindLatestPerLevel(info.CurrentTag, tags)
 
-		latestVersion := FindLatestVersion(version, tags, major, minor, patch)
+		latestVersion := FindLatestVersion(info.CurrentTag, tags, major, minor, patch)
 		if latestVersion == "" {
 			continue
 		}
