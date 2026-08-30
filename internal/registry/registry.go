@@ -20,6 +20,8 @@ type Fetcher interface {
 	Digest(image string) (string, error)
 }
 
+// Client is the live Fetcher: a regclient talking to real registries over the
+// network. Tests use a stand-in rather than this.
 type Client struct {
 	rc *regclient.RegClient
 }

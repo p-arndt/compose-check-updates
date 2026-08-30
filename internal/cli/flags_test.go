@@ -4,6 +4,10 @@ import (
 	"flag"
 	"os"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+
+	"github.com/p-arndt/compose-check-updates/internal/policy"
 )
 
 func TestSplitSubcommand(t *testing.T) {
@@ -269,4 +273,159 @@ func TestParsePinFloating(t *testing.T) {
 			}
 		})
 	}
+}
+
+// Each subcommand sets exactly one mode flag, and nothing else: `ccu config`
+// opening the TUI, or `ccu check-update` running a scan, would be the kind of
+// mix-up that only shows up in front of a user.
+func TestParseSubcommandModes(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		want Flags
+	}{
+		{name: "check", args: []string{"check"}, want: Flags{Check: true}},
+		{name: "self-update", args: []string{"self-update"}, want: Flags{SelfUpdate: true}},
+		{name: "check-update", args: []string{"check-update"}, want: Flags{CheckUpdate: true}},
+		{name: "config", args: []string{"config"}, want: Flags{ShowConfig: true}},
+		// `config -image nginx` narrows the explanation to one image, so the
+		// name has to survive alongside the mode the subcommand picked.
+		{name: "config for one image", args: []string{"config", "-image", "nginx"}, want: Flags{ShowConfig: true, Image: "nginx"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			origArgs := os.Args
+			defer func() { os.Args = origArgs }()
+			os.Args = append([]string{"ccu"}, tt.args...)
+
+			flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ContinueOnError)
+
+			result := Parse("test")
+			assert.Equal(t, tt.want.Check, result.Check)
+			assert.Equal(t, tt.want.SelfUpdate, result.SelfUpdate)
+			assert.Equal(t, tt.want.CheckUpdate, result.CheckUpdate)
+			assert.Equal(t, tt.want.ShowConfig, result.ShowConfig)
+			assert.Equal(t, tt.want.Image, result.Image)
+			// None of these is the legacy spelling main warns about.
+			assert.False(t, result.LegacyPlain)
+		})
+	}
+}
+
+// -format only ever describes the report, so naming a real format states the
+// mode as plainly as `check` does — but without the legacy warning, since
+// there was never an older spelling of it.
+func TestParseFormatInfersTheReport(t *testing.T) {
+	tests := []struct {
+		name            string
+		args            []string
+		wantFormat      string
+		wantCheck       bool
+		wantLegacyPlain bool
+	}{
+		{name: "no format leaves the TUI", args: []string{}, wantFormat: "auto"},
+		// "auto" is the default, so spelling it out says nothing about the mode.
+		{name: "explicit auto is still the default", args: []string{"-format=auto"}, wantFormat: "auto"},
+		{name: "json infers the report", args: []string{"-format=json"}, wantFormat: "json", wantCheck: true},
+		{name: "pretty infers the report", args: []string{"-format=pretty"}, wantFormat: "pretty", wantCheck: true},
+		// Under `check` the mode was already stated; the format just carries.
+		{name: "json under check", args: []string{"check", "-format=json"}, wantFormat: "json", wantCheck: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			origArgs := os.Args
+			defer func() { os.Args = origArgs }()
+			os.Args = append([]string{"ccu"}, tt.args...)
+
+			flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ContinueOnError)
+
+			result := Parse("test")
+			assert.Equal(t, tt.wantFormat, result.Format)
+			assert.Equal(t, tt.wantCheck, result.Check)
+			assert.Equal(t, tt.wantLegacyPlain, result.LegacyPlain)
+		})
+	}
+}
+
+// -dockerfiles defaults to on, so its value alone cannot say whether the user
+// or the default asked for it; only DockerfilesSet can, and that is what lets
+// -dockerfiles=false override a config that turned it on.
+func TestParseDockerfiles(t *testing.T) {
+	tests := []struct {
+		name      string
+		args      []string
+		wantOn    bool
+		wantSet   bool
+		wantCheck bool
+	}{
+		{name: "absent keeps the default on", args: []string{}, wantOn: true},
+		{name: "explicitly on", args: []string{"-dockerfiles"}, wantOn: true, wantSet: true},
+		{name: "explicitly off", args: []string{"-dockerfiles=false"}, wantSet: true},
+		// Read outside the mode-inference block, so `check` in front of it is seen.
+		{name: "off under check", args: []string{"check", "-dockerfiles=false"}, wantSet: true, wantCheck: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			origArgs := os.Args
+			defer func() { os.Args = origArgs }()
+			os.Args = append([]string{"ccu"}, tt.args...)
+
+			flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ContinueOnError)
+
+			result := Parse("test")
+			assert.Equal(t, tt.wantOn, result.Dockerfiles)
+			assert.Equal(t, tt.wantSet, result.DockerfilesSet)
+			// Both modes read it, so naming it must not force the report.
+			assert.Equal(t, tt.wantCheck, result.Check)
+		})
+	}
+}
+
+// -versioning is passed through unvalidated: Parse cannot report an error, so
+// an unknown scheme has to reach the layer that resolves it, and an absent one
+// has to stay empty rather than becoming a default that outranks the config.
+func TestParseVersioning(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		want policy.Versioning
+	}{
+		{name: "absent leaves the config in charge", args: []string{}, want: ""},
+		{name: "semver", args: []string{"-versioning", "semver"}, want: policy.VersioningSemver},
+		{name: "loose", args: []string{"-versioning", "loose"}, want: policy.VersioningLoose},
+		{name: "unknown scheme is passed on unchanged", args: []string{"-versioning", "nonsense"}, want: policy.Versioning("nonsense")},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			origArgs := os.Args
+			defer func() { os.Args = origArgs }()
+			os.Args = append([]string{"ccu"}, tt.args...)
+
+			flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ContinueOnError)
+
+			result := Parse("test")
+			assert.Equal(t, tt.want, result.Versioning)
+			// A scheme applies to both modes, so it must not infer the report.
+			assert.False(t, result.Check)
+		})
+	}
+}
+
+// -config names a file to read instead of searching, and -exclude with nothing
+// in it must not produce a one-element list containing the empty string: that
+// would exclude everything under a relative root.
+func TestParseConfigAndEmptyExclude(t *testing.T) {
+	origArgs := os.Args
+	defer func() { os.Args = origArgs }()
+	os.Args = []string{"ccu", "-config", "/etc/ccu.yaml", "-exclude", ""}
+
+	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ContinueOnError)
+
+	result := Parse("test")
+	assert.Equal(t, "/etc/ccu.yaml", result.Config)
+	assert.Empty(t, result.Exclude)
 }

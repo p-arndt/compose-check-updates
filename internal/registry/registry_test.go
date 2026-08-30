@@ -5,11 +5,14 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/p-arndt/compose-check-updates/internal/registrytest"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/p-arndt/compose-check-updates/internal/registrytest"
 )
 
 func TestIsDigest(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		value    string
 		expected bool
@@ -25,12 +28,16 @@ func TestIsDigest(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.value, func(t *testing.T) {
+			t.Parallel()
+
 			assert.Equal(t, tt.expected, IsDigest(tt.value))
 		})
 	}
 }
 
 func TestDigest(t *testing.T) {
+	t.Parallel()
+
 	server := registrytest.Server(t, "library/myimage", []string{"latest"}, map[string]string{
 		"latest": registrytest.DigestNew,
 	})
@@ -49,6 +56,8 @@ func TestDigest(t *testing.T) {
 // in place and the tag, if any, is left alone.
 
 func TestParseRef(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		reference string
 		name      string
@@ -65,6 +74,8 @@ func TestParseRef(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.reference, func(t *testing.T) {
+			t.Parallel()
+
 			name, tag, dgst := ParseRef(tt.reference)
 			assert.Equal(t, tt.name, name)
 			assert.Equal(t, tt.tag, tag)

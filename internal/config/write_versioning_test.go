@@ -1,11 +1,12 @@
 package config
 
 import (
-	"github.com/p-arndt/compose-check-updates/internal/policy"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/p-arndt/compose-check-updates/internal/policy"
 )
 
 func TestSetImageVersioningKeepsCommentsAndOtherKeys(t *testing.T) {

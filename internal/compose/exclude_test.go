@@ -6,6 +6,8 @@ import "testing"
 // property that matters most for the walk: an excluded directory takes
 // everything below it with it.
 func TestExcludeMatcher(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name    string
 		exclude []string
@@ -42,6 +44,8 @@ func TestExcludeMatcher(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			m := NewExcludeMatcher(tt.exclude)
 			if got := m.Match(tt.relPath, ""); got != tt.want {
 				t.Errorf("Match(%q) with exclude %q = %v, expected %v", tt.relPath, tt.exclude, got, tt.want)
@@ -53,6 +57,8 @@ func TestExcludeMatcher(t *testing.T) {
 // TestExcludeMatcherAbsolute checks the entry a global config would use to name
 // a location that has nothing to do with the current scan root.
 func TestExcludeMatcherAbsolute(t *testing.T) {
+	t.Parallel()
+
 	m := NewExcludeMatcher([]string{"/mnt/backups"})
 
 	if !m.Match("data", "/mnt/backups/data") {
@@ -72,6 +78,8 @@ func TestExcludeMatcherAbsolute(t *testing.T) {
 }
 
 func TestExcludeMatcherEmpty(t *testing.T) {
+	t.Parallel()
+
 	if !NewExcludeMatcher(nil).Empty() {
 		t.Error("expected a matcher with no entries to be empty")
 	}

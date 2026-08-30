@@ -2,8 +2,8 @@ package modes
 
 import (
 	"context"
-	"github.com/p-arndt/compose-check-updates/internal/cli"
 
+	"github.com/p-arndt/compose-check-updates/internal/cli"
 	"github.com/p-arndt/compose-check-updates/internal/report"
 	"github.com/p-arndt/compose-check-updates/internal/scanner"
 )

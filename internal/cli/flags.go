@@ -13,6 +13,9 @@ import (
 	"github.com/p-arndt/compose-check-updates/internal/policy"
 )
 
+// Flags is what the command line said, before any config file is merged into
+// it. It stays a plain record of the invocation: the fields that end in Set
+// exist so a later layer can tell "the user asked" from "this is the default".
 type Flags struct {
 	Help        bool   // Show help message
 	Update      bool   // Update the Docker Compose files with the new image tags
@@ -74,12 +77,52 @@ func splitSubcommand(argv []string) (sub string, rest []string) {
 	return "", argv
 }
 
+// Parse reads the invocation and returns it as Flags. It exits the process for
+// the requests that are answered here and nowhere else — -v, -h and an unknown
+// command — so callers only ever see an invocation that means to do work.
 func Parse(version string) Flags {
 	args := Flags{}
 	versioningName := ""
 
 	sub, rest := splitSubcommand(os.Args[1:])
 
+	registerFlags(&args, &versioningName)
+
+	flag.Usage = func() { usage(flag.CommandLine.Output()) }
+	// flag.CommandLine is an ExitOnError set: a parse failure prints the usage
+	// and exits, so the returned error is always nil by the time we get here.
+	_ = flag.CommandLine.Parse(rest)
+
+	// Not a subcommand, and flag parsing stopped at it — `ccu nonsense -d /srv`
+	// would otherwise silently ignore the -d and scan the wrong directory.
+	if flag.NArg() > 0 {
+		fmt.Fprintf(os.Stderr, "unknown command %q\n\n", flag.Arg(0))
+		usage(os.Stderr)
+		os.Exit(2)
+	}
+
+	applySubcommand(&args, sub)
+	inferMode(&args)
+
+	if args.Version {
+		println("Version:", version)
+		os.Exit(0)
+	}
+
+	if args.Help {
+		flag.Usage()
+		os.Exit(0)
+	}
+
+	expandFlags(&args, versioningName)
+
+	return args
+}
+
+// registerFlags declares every option on the global flag set, which is also the
+// one usage walks to print them — a flag registered anywhere else would parse
+// but never be documented.
+func registerFlags(args *Flags, versioningName *string) {
 	flag.BoolVar(&args.Help, "h", false, "Show help message")
 	flag.BoolVar(&args.Update, "u", false, "Update the Docker Compose files with the new image tags")
 	flag.BoolVar(&args.Restart, "r", false, "Restart the services after updating the Docker Compose files")
@@ -96,27 +139,20 @@ func Parse(version string) Flags {
 	flag.BoolVar(&args.Dockerfiles, "dockerfiles", true, "Also check the base images of Dockerfiles built by a compose service")
 	flag.BoolVar(&args.Version, "v", false, "Show version information")
 	// Kept registered so existing scripts keep working, hidden from the usage text
-	// so only the subcommand form is taught. Unlike -v and -h below, neither is
-	// handled here: they talk to the network and Parse cannot report a failure.
+	// so only the subcommand form is taught. Unlike -v and -h, which Parse acts on,
+	// neither is handled here: they talk to the network and Parse cannot report a
+	// failure.
 	flag.BoolVar(&args.SelfUpdate, "self-update", false, "")
 	flag.BoolVar(&args.CheckUpdate, "check-update", false, "")
 	flag.StringVar(&args.ExcludeStr, "exclude", "", "Comma-separated list of directories to exclude from search")
 	flag.StringVar(&args.Config, "config", "", "Read this config file instead of searching for one")
 	flag.StringVar(&args.Format, "format", "auto", "Report output format: auto, pretty or json")
 	flag.StringVar(&args.Image, "image", "", "With the config command: explain how one image's settings were resolved")
-	flag.StringVar(&versioningName, "versioning", "", "Default scheme for reading image tags as versions: semver or loose (per-image config still wins)")
+	flag.StringVar(versioningName, "versioning", "", "Default scheme for reading image tags as versions: semver or loose (per-image config still wins)")
+}
 
-	flag.Usage = func() { usage(flag.CommandLine.Output()) }
-	flag.CommandLine.Parse(rest)
-
-	// Not a subcommand, and flag parsing stopped at it — `ccu nonsense -d /srv`
-	// would otherwise silently ignore the -d and scan the wrong directory.
-	if flag.NArg() > 0 {
-		fmt.Fprintf(os.Stderr, "unknown command %q\n\n", flag.Arg(0))
-		usage(os.Stderr)
-		os.Exit(2)
-	}
-
+// applySubcommand turns the leading word into the mode it names.
+func applySubcommand(args *Flags, sub string) {
 	switch sub {
 	case "check":
 		args.Check = true
@@ -131,7 +167,12 @@ func Parse(version string) Flags {
 	case "version":
 		args.Version = true
 	}
+}
 
+// inferMode reads which flags were actually passed, for the two questions a
+// flag's value alone cannot answer: which mode was meant, and whether a
+// setting came from the command line or from its default.
+func inferMode(args *Flags) {
 	// A report-only flag without `check` is what every pre-TUI-default script looks
 	// like, and `ccu -u` in a cron entry would hang waiting for a terminal. The
 	// implied mode is honoured, and main names the new spelling once.
@@ -159,17 +200,11 @@ func Parse(version string) Flags {
 			args.DockerfilesSet = true
 		}
 	})
+}
 
-	if args.Version {
-		println("Version:", version)
-		os.Exit(0)
-	}
-
-	if args.Help {
-		flag.Usage()
-		os.Exit(0)
-	}
-
+// expandFlags settles the values that are shorthand for others, so that the
+// rest of the program reads one spelling of each setting.
+func expandFlags(args *Flags, versioningName string) {
 	if args.Full {
 		args.Major = true
 		args.Minor = true
@@ -184,8 +219,6 @@ func Parse(version string) Flags {
 			args.Exclude[i] = strings.TrimSpace(args.Exclude[i])
 		}
 	}
-
-	return args
 }
 
 // usage replaces flag.PrintDefaults so the subcommands are documented alongside

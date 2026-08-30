@@ -20,6 +20,8 @@ const (
 	eventBuffer        = 64
 )
 
+// Options is everything a scan needs to know: where to look, which moves the
+// run is interested in, and what the user recorded about the images it finds.
 type Options struct {
 	Root    string   // root directory to walk
 	Exclude []string // directories to exclude
@@ -40,6 +42,9 @@ type Options struct {
 	Concurrency int // compose files checked at once; <=0 means defaultConcurrency
 }
 
+// EventKind says what an event reports. A consumer renders progress from the
+// file-level kinds and rows from EventUpdate, so the two must stay tellable
+// apart rather than arriving as one stream of findings.
 type EventKind int
 
 const (
@@ -50,6 +55,9 @@ const (
 	EventError                       // a non-fatal error; scan continues
 )
 
+// Event is one thing that happened during a scan, carried out as it resolves so
+// a caller can render while the scan runs. Only the fields Kind names are set;
+// the rest are zero.
 type Event struct {
 	Kind   EventKind
 	Path   string       // compose file involved (empty for EventDiscovered)

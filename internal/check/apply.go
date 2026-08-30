@@ -15,6 +15,14 @@ const backupSuffix = ".ccu"
 // other and only the last image to finish keeps its new version.
 var writeMu sync.Mutex
 
+// execCommand and lookPath are the only two points where this package reaches
+// out to the host. They are variables so tests can cover the compose shell-out
+// without a Docker daemon; production never reassigns them.
+var (
+	execCommand = exec.Command
+	lookPath    = exec.LookPath
+)
+
 // replacement is a single substring rewrite to apply to an image line.
 type replacement struct{ old, new string }
 
@@ -140,7 +148,7 @@ func (u *Update) Restart() error {
 		args = append(args, "--build")
 	}
 
-	cmd := exec.Command(compose[0], args...)
+	cmd := execCommand(compose[0], args...)
 	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
 	return cmd.Run()
 }
@@ -148,13 +156,13 @@ func (u *Update) Restart() error {
 // composeCommand returns the argv prefix for the compose CLI on this host,
 // preferring the plugin over the legacy binary.
 func composeCommand() ([]string, error) {
-	if _, err := exec.LookPath("docker"); err == nil {
+	if _, err := lookPath("docker"); err == nil {
 		// `docker` exists, but the compose plugin may not be installed.
-		if err := exec.Command("docker", "compose", "version").Run(); err == nil {
+		if err := execCommand("docker", "compose", "version").Run(); err == nil {
 			return []string{"docker", "compose"}, nil
 		}
 	}
-	if _, err := exec.LookPath("docker-compose"); err == nil {
+	if _, err := lookPath("docker-compose"); err == nil {
 		return []string{"docker-compose"}, nil
 	}
 	return nil, fmt.Errorf("neither `docker compose` nor `docker-compose` is available in $PATH")

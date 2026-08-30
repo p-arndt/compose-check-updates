@@ -1,15 +1,18 @@
 package check
 
 import (
-	"github.com/p-arndt/compose-check-updates/internal/policy"
 	"os"
 	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+
+	"github.com/p-arndt/compose-check-updates/internal/policy"
 )
 
 func TestHasNewVersion(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name       string
 		currentTag string
@@ -36,6 +39,8 @@ func TestHasNewVersion(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			u := &Update{
 				CurrentTag: tt.currentTag,
 				LatestTag:  tt.latestTag,
@@ -49,6 +54,8 @@ func TestHasNewVersion(t *testing.T) {
 }
 
 func TestTagForTarget(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name   string
 		info   Update
@@ -74,12 +81,16 @@ func TestTagForTarget(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			assert.Equal(t, tt.want, tt.info.TagForTarget(tt.target))
 		})
 	}
 }
 
 func TestAvailableTargets(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name string
 		info Update
@@ -93,31 +104,43 @@ func TestAvailableTargets(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			assert.Equal(t, tt.want, tt.info.AvailableTargets())
 		})
 	}
 }
 
 func TestSelectTarget(t *testing.T) {
+	t.Parallel()
+
 	t.Run("changes the tag", func(t *testing.T) {
+		t.Parallel()
+
 		u := Update{LatestTag: "3.7.8", PatchTag: "2.9.4", MinorTag: "2.11.3", MajorTag: "3.7.8"}
 		assert.True(t, u.SelectTarget("patch"))
 		assert.Equal(t, "2.9.4", u.LatestTag)
 	})
 
 	t.Run("reports no change when already selected", func(t *testing.T) {
+		t.Parallel()
+
 		u := Update{LatestTag: "3.7.8", MajorTag: "3.7.8"}
 		assert.False(t, u.SelectTarget("major"))
 		assert.Equal(t, "3.7.8", u.LatestTag)
 	})
 
 	t.Run("keeps the selection when the level is empty", func(t *testing.T) {
+		t.Parallel()
+
 		u := Update{LatestTag: "3.7.8", MajorTag: "3.7.8"}
 		assert.False(t, u.SelectTarget("patch"))
 		assert.Equal(t, "3.7.8", u.LatestTag)
 	})
 
 	t.Run("clears a digest resolved for another tag", func(t *testing.T) {
+		t.Parallel()
+
 		u := Update{
 			LatestTag:     "3.7.8",
 			PatchTag:      "2.9.4",
@@ -133,6 +156,8 @@ func TestSelectTarget(t *testing.T) {
 	})
 
 	t.Run("keeps a digest that still matches", func(t *testing.T) {
+		t.Parallel()
+
 		u := Update{
 			LatestTag:     "3.7.8",
 			MajorTag:      "3.7.8",
@@ -149,9 +174,13 @@ func TestSelectTarget(t *testing.T) {
 // TestUpdateRefusesDigestMismatch covers the case the guard exists for: a target
 // switch left the digest behind, and writing it would pin the wrong image.
 func TestUpdateRefusesDigestMismatch(t *testing.T) {
+	t.Parallel()
+
 	line := "image: myapp:1.0.0@sha256:old"
 
 	t.Run("missing digest", func(t *testing.T) {
+		t.Parallel()
+
 		path := writeComposeFile(t, line)
 		u := Update{
 			FilePath: path, RawLine: line,
@@ -167,6 +196,8 @@ func TestUpdateRefusesDigestMismatch(t *testing.T) {
 	})
 
 	t.Run("stale digest", func(t *testing.T) {
+		t.Parallel()
+
 		path := writeComposeFile(t, line)
 		u := Update{
 			FilePath: path, RawLine: line,
@@ -183,6 +214,8 @@ func TestUpdateRefusesDigestMismatch(t *testing.T) {
 	})
 
 	t.Run("matching digest is written", func(t *testing.T) {
+		t.Parallel()
+
 		path := writeComposeFile(t, line)
 		u := Update{
 			FilePath: path, RawLine: line,
@@ -202,6 +235,8 @@ func TestUpdateRefusesDigestMismatch(t *testing.T) {
 // TestResolveDigestNoop guards the cheap exits: references without a digest have
 // nothing to rewrite, so no registry call may happen.
 func TestResolveDigestNoop(t *testing.T) {
+	t.Parallel()
+
 	u := Update{LatestTag: "2.0.0"}
 	assert.NoError(t, u.ResolveDigest(nil))
 	assert.Empty(t, u.LatestDigest)
@@ -217,6 +252,8 @@ func TestResolveDigestNoop(t *testing.T) {
 // TestUpdateConcurrent guards against images of the same compose file
 // overwriting each other's rewrite, which is how they are updated in practice.
 func TestUpdateConcurrent(t *testing.T) {
+	t.Parallel()
+
 	path := writeComposeFile(t, "image: myapp:1.0.0\nimage: other:2.0.0\nimage: third:3.0.0")
 
 	infos := []Update{
@@ -249,6 +286,8 @@ func TestUpdateConcurrent(t *testing.T) {
 }
 
 func TestBackup(t *testing.T) {
+	t.Parallel()
+
 	tmpFile, err := os.CreateTemp("", "testfile")
 	if err != nil {
 		t.Fatal(err)
@@ -272,6 +311,8 @@ func TestBackup(t *testing.T) {
 }
 
 func TestUpdate(t *testing.T) {
+	t.Parallel()
+
 	tmpFile, err := os.CreateTemp("", "testfile")
 	if err != nil {
 		t.Fatal(err)
@@ -309,34 +350,48 @@ func TestUpdate(t *testing.T) {
 // TestCap covers the per-image cap: the user recorded how far this image may
 // move, and every question about a target has to respect that.
 func TestCap(t *testing.T) {
+	t.Parallel()
+
 	t.Run("hides levels above the cap", func(t *testing.T) {
+		t.Parallel()
+
 		u := Update{Cap: "minor", PatchTag: "2.9.4", MinorTag: "2.11.3", MajorTag: "3.7.8"}
 		assert.Equal(t, []policy.Level{"patch", "minor"}, u.AvailableTargets())
 	})
 
 	t.Run("degrades a request above the cap", func(t *testing.T) {
+		t.Parallel()
+
 		u := Update{Cap: "minor", PatchTag: "2.9.4", MinorTag: "2.11.3", MajorTag: "3.7.8"}
 		assert.Equal(t, "2.11.3", u.TagForTarget("major"))
 		assert.Equal(t, u.TagForTarget("minor"), u.TagForTarget("major"))
 	})
 
 	t.Run("SelectTarget cannot select above the cap", func(t *testing.T) {
+		t.Parallel()
+
 		u := Update{Cap: "minor", LatestTag: "3.7.8", PatchTag: "2.9.4", MinorTag: "2.11.3", MajorTag: "3.7.8"}
 		assert.True(t, u.SelectTarget("major"))
 		assert.Equal(t, "2.11.3", u.LatestTag)
 	})
 
 	t.Run("an update above the cap is not a new version", func(t *testing.T) {
+		t.Parallel()
+
 		u := Update{Cap: "patch", CurrentTag: "1.0.0", LatestTag: "2.0.0", MajorTag: "2.0.0"}
 		assert.False(t, u.HasNewVersion())
 	})
 
 	t.Run("an update within the cap still counts", func(t *testing.T) {
+		t.Parallel()
+
 		u := Update{Cap: "minor", CurrentTag: "1.0.0", LatestTag: "1.1.0", MinorTag: "1.1.0"}
 		assert.True(t, u.HasNewVersion())
 	})
 
 	t.Run("a cap has no say over a digest update", func(t *testing.T) {
+		t.Parallel()
+
 		u := Update{
 			Cap: "patch", CurrentTag: "stable", LatestTag: "stable",
 			CurrentDigest: "sha256:old", LatestDigest: "sha256:new",
@@ -346,6 +401,8 @@ func TestCap(t *testing.T) {
 	})
 
 	t.Run("an empty cap changes nothing", func(t *testing.T) {
+		t.Parallel()
+
 		u := Update{PatchTag: "2.9.4", MinorTag: "2.11.3", MajorTag: "3.7.8"}
 		assert.Equal(t, []policy.Level{"patch", "minor", "major"}, u.AvailableTargets())
 		assert.Equal(t, "3.7.8", u.TagForTarget("major"))
@@ -355,6 +412,8 @@ func TestCap(t *testing.T) {
 	})
 
 	t.Run("an unrecognised cap permits everything", func(t *testing.T) {
+		t.Parallel()
+
 		u := Update{Cap: "nonsense", PatchTag: "2.9.4", MinorTag: "2.11.3", MajorTag: "3.7.8"}
 		assert.Equal(t, []policy.Level{"patch", "minor", "major"}, u.AvailableTargets())
 		assert.Equal(t, "3.7.8", u.TagForTarget("major"))
@@ -369,6 +428,8 @@ func TestCap(t *testing.T) {
 // than being a release of its own, so it stays inside the three levels the caps
 // and the filters already speak.
 func TestUpdateLevelVersioning(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name       string
 		currentTag string
@@ -392,6 +453,8 @@ func TestUpdateLevelVersioning(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			u := &Update{
 				CurrentTag: tt.currentTag,
 				LatestTag:  tt.latestTag,

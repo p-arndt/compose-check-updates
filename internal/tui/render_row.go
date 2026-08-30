@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+
 	"github.com/p-arndt/compose-check-updates/internal/policy"
 )
 

@@ -59,6 +59,8 @@ func TestBarLineStaysOnOneLineWithinItsWidth(t *testing.T) {
 }
 
 func TestBarLineHasNoTrailingWhitespace(t *testing.T) {
+	t.Parallel()
+
 	m := barModel(t)
 	out := plain(m.barLine(200))
 	assert.Equal(t, out, strings.TrimRight(out, " "))
@@ -91,6 +93,8 @@ func TestBarMarksTheFocusedStop(t *testing.T) {
 // The stops never come and go. A bar that dropped its issues button when there
 // was nothing to report would move every stop after it under the user's cursor.
 func TestBarStopsAreStableButDisabled(t *testing.T) {
+	t.Parallel()
+
 	m := barModel(t)
 	require.Empty(t, m.scanErrs)
 
@@ -119,6 +123,8 @@ func TestBarStopsAreStableButDisabled(t *testing.T) {
 }
 
 func TestBarChangesTheFilter(t *testing.T) {
+	t.Parallel()
+
 	m := focusStop(t, barModel(t), "show")
 	require.Equal(t, FilterAll, m.filter)
 
@@ -130,6 +136,8 @@ func TestBarChangesTheFilter(t *testing.T) {
 }
 
 func TestBarChangesTheTarget(t *testing.T) {
+	t.Parallel()
+
 	m := focusStop(t, barModel(t), "target")
 	require.Equal(t, TargetMajor, m.target, "major is the default")
 
@@ -146,6 +154,8 @@ func TestBarChangesTheTarget(t *testing.T) {
 
 // ←/→ move along the bar without changing any value.
 func TestBarArrowsMoveBetweenStopsWithoutChangingAnything(t *testing.T) {
+	t.Parallel()
+
 	m := focusStop(t, barModel(t), "show")
 	filter, target := m.filter, m.target
 
@@ -166,6 +176,8 @@ func TestBarArrowsMoveBetweenStopsWithoutChangingAnything(t *testing.T) {
 
 // enter presses a button. The bar never claims space, which belongs to the list.
 func TestBarPressesIssues(t *testing.T) {
+	t.Parallel()
+
 	m := barModel(t)
 	m = feed(t, m, issueEvent("a/compose.yml", "broken yaml"))
 	m = focusStop(t, m, "issues")
@@ -176,6 +188,8 @@ func TestBarPressesIssues(t *testing.T) {
 }
 
 func TestBarIssuesButtonDoesNothingWithoutIssues(t *testing.T) {
+	t.Parallel()
+
 	m := focusStop(t, barModel(t), "issues")
 	require.Empty(t, m.scanErrs)
 
@@ -184,6 +198,8 @@ func TestBarIssuesButtonDoesNothingWithoutIssues(t *testing.T) {
 }
 
 func TestBarPressesApply(t *testing.T) {
+	t.Parallel()
+
 	m := barModel(t)
 	m.currentRow().Selected = true
 	m = focusStop(t, m, "apply")
@@ -196,6 +212,8 @@ func TestBarPressesApply(t *testing.T) {
 }
 
 func TestBarApplyButtonDoesNothingWithoutASelection(t *testing.T) {
+	t.Parallel()
+
 	m := focusStop(t, barModel(t), "apply")
 	require.Zero(t, m.selectedCount())
 
@@ -206,6 +224,8 @@ func TestBarApplyButtonDoesNothingWithoutASelection(t *testing.T) {
 // The bar claims the arrows, tab and the acting keys, and nothing else: anything
 // else reaches the list, so tabbing across is never a mode you are stuck in.
 func TestBarPassesUnclaimedKeysToTheList(t *testing.T) {
+	t.Parallel()
+
 	m := focusStop(t, barModel(t), "show")
 	require.Empty(t, m.collapsed)
 
@@ -217,6 +237,8 @@ func TestBarPassesUnclaimedKeysToTheList(t *testing.T) {
 // space acts on whatever has the focus. On the bar that is the stop, so it must
 // not also select the row that happens to be under the list cursor.
 func TestBarSpaceActsOnTheStopNotOnTheRow(t *testing.T) {
+	t.Parallel()
+
 	m := focusStop(t, barModel(t), "show")
 	selected := m.currentRow().Selected
 
@@ -228,6 +250,8 @@ func TestBarSpaceActsOnTheStopNotOnTheRow(t *testing.T) {
 // Every stop names the key that does the same thing, and it has to be the one
 // the map actually binds.
 func TestBarHintsMatchTheKeyMap(t *testing.T) {
+	t.Parallel()
+
 	m := barModel(t)
 	k := DefaultKeyMap()
 
@@ -247,6 +271,8 @@ func TestBarHintsMatchTheKeyMap(t *testing.T) {
 }
 
 func TestBarFooterHints(t *testing.T) {
+	t.Parallel()
+
 	m := focusStop(t, barModel(t), "show")
 	assert.Equal(t, m.keys.BarHints(), m.hintBindings())
 
@@ -257,6 +283,8 @@ func TestBarFooterHints(t *testing.T) {
 // The bar is drawn at every width, including one too narrow for the detail
 // column. That is the point of putting the list-wide controls there.
 func TestBarIsDrawnWhenTheColumnIsNot(t *testing.T) {
+	t.Parallel()
+
 	m := barModel(t)
 	m.width = sidebarMinTotal - 1
 	require.Zero(t, sidebarWidth(m.width))
@@ -266,6 +294,8 @@ func TestBarIsDrawnWhenTheColumnIsNot(t *testing.T) {
 
 // The way out has to be one keypress, not a lap round the remaining stops.
 func TestBarLeavesOnEsc(t *testing.T) {
+	t.Parallel()
+
 	m := focusStop(t, barModel(t), "show")
 	require.Equal(t, focusBar, m.focus)
 	cursor := m.cursor
@@ -278,6 +308,8 @@ func TestBarLeavesOnEsc(t *testing.T) {
 // The vertical arrows go back down into the list. Letting them fall through
 // scrolled the list while the keyboard said it was on the bar.
 func TestBarVerticalArrowsReturnToTheList(t *testing.T) {
+	t.Parallel()
+
 	for _, k := range []tea.KeyMsg{{Type: tea.KeyDown}, {Type: tea.KeyUp}} {
 		m := focusStop(t, barModel(t), "show")
 		cursor := m.cursor
@@ -290,6 +322,8 @@ func TestBarVerticalArrowsReturnToTheList(t *testing.T) {
 
 // The footer has to name the way out, or the way out may as well not exist.
 func TestBarHintsLeadWithTheWayOut(t *testing.T) {
+	t.Parallel()
+
 	k := DefaultKeyMap()
 	hints := k.BarHints()
 	require.NotEmpty(t, hints)
@@ -298,6 +332,8 @@ func TestBarHintsLeadWithTheWayOut(t *testing.T) {
 
 // `m` reaches the bar whatever the cursor is on, the detail column included.
 func TestBarIsReachableWithMFromAnywhere(t *testing.T) {
+	t.Parallel()
+
 	m := barModel(t)
 	require.NotNil(t, m.currentRow(), "this test starts on an image")
 
@@ -315,6 +351,8 @@ func TestBarIsReachableWithMFromAnywhere(t *testing.T) {
 // tab on an image opens the detail column and comes straight back; the bar is
 // not on the way.
 func TestTabOnAnImageOpensTheColumnAndBack(t *testing.T) {
+	t.Parallel()
+
 	m := barModel(t)
 
 	m = feed(t, m, keyMsg("tab"))
@@ -326,6 +364,8 @@ func TestTabOnAnImageOpensTheColumnAndBack(t *testing.T) {
 
 // `m` walks the bar: onto it, one stop further each press, wrapping round.
 func TestMStepsAlongTheBar(t *testing.T) {
+	t.Parallel()
+
 	m := barModel(t)
 
 	for i := range m.barStops() {
@@ -341,6 +381,8 @@ func TestMStepsAlongTheBar(t *testing.T) {
 
 // On a header there is no image to describe, so tab is free to walk the bar.
 func TestTabStepsAlongTheBarOnAHeader(t *testing.T) {
+	t.Parallel()
+
 	m := barModel(t)
 	m.cursor = 0
 	require.Nil(t, m.currentRow(), "this test needs the cursor on a header")
@@ -353,6 +395,8 @@ func TestTabStepsAlongTheBarOnAHeader(t *testing.T) {
 }
 
 func TestShiftTabStepsBackAlongTheBar(t *testing.T) {
+	t.Parallel()
+
 	m := focusStop(t, barModel(t), "target")
 	require.Equal(t, 1, m.barStop)
 
@@ -366,6 +410,8 @@ func TestShiftTabStepsBackAlongTheBar(t *testing.T) {
 // tab asks what the cursor is on, not where the focus is. Arrowing out of the
 // bar onto an image and tabbing has to open that image's details.
 func TestTabGoesToDetailsAfterLeavingTheBarOntoAnImage(t *testing.T) {
+	t.Parallel()
+
 	m := barModel(t)
 	m.cursor = 0
 	require.Nil(t, m.currentRow(), "this test starts on a header")
@@ -384,6 +430,8 @@ func TestTabGoesToDetailsAfterLeavingTheBarOntoAnImage(t *testing.T) {
 
 // Up at the top of the list carries on into the bar drawn directly above it.
 func TestUpAtTheTopOfTheListEntersTheBar(t *testing.T) {
+	t.Parallel()
+
 	m := barModel(t)
 	m.cursor = 0
 	require.Equal(t, focusList, m.focus)
@@ -400,6 +448,8 @@ func TestUpAtTheTopOfTheListEntersTheBar(t *testing.T) {
 
 // Anywhere else up still just moves the cursor.
 func TestUpBelowTheTopStillMovesTheCursor(t *testing.T) {
+	t.Parallel()
+
 	m := barModel(t)
 	require.NotZero(t, m.cursor, "this test needs the cursor off the top")
 

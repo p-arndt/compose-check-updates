@@ -27,7 +27,11 @@ func writeStack(t *testing.T, compose string, files map[string]string) string {
 }
 
 func TestBuildTargets(t *testing.T) {
+	t.Parallel()
+
 	t.Run("long form with a quoted context", func(t *testing.T) {
+		t.Parallel()
+
 		// The shape a real stack takes, commented-out image line included: it
 		// must not be read as the service's image.
 		path := writeStack(t, `services:
@@ -52,6 +56,8 @@ func TestBuildTargets(t *testing.T) {
 	})
 
 	t.Run("short form names the context on the key", func(t *testing.T) {
+		t.Parallel()
+
 		path := writeStack(t, `services:
   app:
     build: ./app
@@ -64,6 +70,8 @@ func TestBuildTargets(t *testing.T) {
 	})
 
 	t.Run("a named dockerfile is resolved against the context", func(t *testing.T) {
+		t.Parallel()
+
 		path := writeStack(t, `services:
   app:
     build:
@@ -80,6 +88,8 @@ func TestBuildTargets(t *testing.T) {
 	})
 
 	t.Run("two services building the same file yield one target", func(t *testing.T) {
+		t.Parallel()
+
 		path := writeStack(t, `services:
   web:
     build: .
@@ -91,6 +101,8 @@ func TestBuildTargets(t *testing.T) {
 	})
 
 	t.Run("nothing to read on disk yields nothing", func(t *testing.T) {
+		t.Parallel()
+
 		path := writeStack(t, `services:
   missing:
     build: ./nowhere
@@ -113,6 +125,8 @@ func TestBuildTargets(t *testing.T) {
 }
 
 func TestParseFrom(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name  string
 		line  string
@@ -132,6 +146,8 @@ func TestParseFrom(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			image, stage, ok := parseFrom(tt.line)
 			assert.Equal(t, tt.ok, ok)
 			assert.Equal(t, tt.image, image)
@@ -144,6 +160,8 @@ func TestParseFrom(t *testing.T) {
 // commented FROM line parses like any other, or the stage it declares would be
 // left behind on the old base image while its twin moves.
 func TestParseFromWithTrailingComment(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name  string
 		line  string
@@ -157,6 +175,8 @@ func TestParseFromWithTrailingComment(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			image, stage, ok := parseFrom(tt.line)
 			assert.True(t, ok)
 			assert.Equal(t, tt.image, image)
@@ -172,6 +192,8 @@ func TestParseFromWithTrailingComment(t *testing.T) {
 // read something that was not its own: a comment where its value would be, and a
 // build arg one level deeper that happens to be called `context`.
 func TestGetBuildTargetsIgnoresNestedKeys(t *testing.T) {
+	t.Parallel()
+
 	path := writeStack(t, `services:
   app:
     build:  # built locally, not pulled

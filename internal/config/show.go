@@ -2,11 +2,12 @@ package config
 
 import (
 	"fmt"
-	"github.com/p-arndt/compose-check-updates/internal/policy"
 	"io"
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/p-arndt/compose-check-updates/internal/policy"
 )
 
 // Show writes the configuration a scan would run with: which files were read,

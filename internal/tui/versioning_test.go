@@ -5,12 +5,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/p-arndt/compose-check-updates/internal/check"
-	"github.com/p-arndt/compose-check-updates/internal/policy"
-
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/p-arndt/compose-check-updates/internal/check"
+	"github.com/p-arndt/compose-check-updates/internal/policy"
 	"github.com/p-arndt/compose-check-updates/internal/scanner"
 )
 
@@ -45,6 +44,8 @@ func onSidebar(t *testing.T, m Model, field sideField) Model {
 // The field exists where the reading failed and nowhere else: every other row is
 // proof that the scheme it is read under works.
 func TestVersioningFieldOnlyShowsOnUnreadableRows(t *testing.T) {
+	t.Parallel()
+
 	m := newTestModel()
 	m = feed(t, m,
 		unreadableEvent("a/compose.yml", "vert", "sha-e1c83ba", check.ReasonNoTagForDigest),
@@ -75,6 +76,8 @@ func sidebarText(m Model) string {
 // Stepping the field writes the scheme straight to the config, the way the cap
 // field writes a cap, and asks for that one image to be checked again.
 func TestCyclingVersioningWritesAndRechecks(t *testing.T) {
+	t.Parallel()
+
 	var writes []versioningWrite
 
 	m := newTestModel().withVersioningWriter(&writes)
@@ -112,6 +115,8 @@ func TestCyclingVersioningWritesAndRechecks(t *testing.T) {
 // A failed write leaves the field alone: the sidebar may not show a scheme that
 // is not on disk, and there is nothing to re-check either.
 func TestFailedVersioningWriteChangesNothing(t *testing.T) {
+	t.Parallel()
+
 	m := newTestModel()
 	m.setVersioning = func(pinScope, string, policy.Versioning) error { return errors.New("read-only file system") }
 	m = feed(t, m, unreadableEvent("a/compose.yml", "vert", "sha-e1c83ba", check.ReasonNoTagForDigest))
@@ -125,6 +130,8 @@ func TestFailedVersioningWriteChangesNothing(t *testing.T) {
 // The re-check answers for one row, and the row it answers for is the one that
 // changes — the rest of the list is untouched.
 func TestRecheckReplacesOnlyItsOwnRow(t *testing.T) {
+	t.Parallel()
+
 	m := newTestModel()
 	m = feed(t, m,
 		unreadableEvent("a/compose.yml", "vert", "sha-e1c83ba", check.ReasonNoTagForDigest),
@@ -157,6 +164,8 @@ func TestRecheckReplacesOnlyItsOwnRow(t *testing.T) {
 // An image that reads fine and turns out to be up to date has nothing left to
 // say: it was only ever listed because it could not be read.
 func TestRecheckDropsARowThatNeedsNothing(t *testing.T) {
+	t.Parallel()
+
 	m := newTestModel()
 	m = feed(t, m,
 		unreadableEvent("a/compose.yml", "vert", "1.2.3", check.ReasonNoComparableTag),
@@ -183,6 +192,8 @@ func TestRecheckDropsARowThatNeedsNothing(t *testing.T) {
 // A re-check that failed says so and leaves the row exactly as it was: the row
 // still cannot be read, and pretending otherwise would hide that.
 func TestFailedRecheckKeepsTheRow(t *testing.T) {
+	t.Parallel()
+
 	m := newTestModel()
 	m = feed(t, m, unreadableEvent("a/compose.yml", "vert", "sha-e1c83ba", check.ReasonNoTagForDigest))
 

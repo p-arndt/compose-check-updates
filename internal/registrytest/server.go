@@ -26,7 +26,7 @@ func Server(t *testing.T, repo string, tags []string, tagDigests map[string]stri
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/tags/list") {
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]any{"name": repo, "tags": tags})
+			_ = json.NewEncoder(w).Encode(map[string]any{"name": repo, "tags": tags})
 			return
 		}
 
@@ -47,7 +47,7 @@ func Server(t *testing.T, repo string, tags []string, tagDigests map[string]stri
 		w.Header().Set("Content-Length", fmt.Sprint(len(body)))
 		w.WriteHeader(http.StatusOK)
 		if r.Method != http.MethodHead {
-			w.Write(body)
+			_, _ = w.Write(body)
 		}
 	}))
 	t.Cleanup(server.Close)

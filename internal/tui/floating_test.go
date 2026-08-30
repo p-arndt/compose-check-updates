@@ -4,12 +4,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/p-arndt/compose-check-updates/internal/check"
-	"github.com/p-arndt/compose-check-updates/internal/policy"
-
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/p-arndt/compose-check-updates/internal/check"
+	"github.com/p-arndt/compose-check-updates/internal/policy"
 	"github.com/p-arndt/compose-check-updates/internal/scanner"
 )
 
@@ -29,6 +28,8 @@ const testDigest = "sha256:22222222222222222222222222222222222222222222222222222
 // The scan resolves the pins whichever way the setting is, so the list starts
 // out following the setting alone — and hiding them is the default.
 func TestPinRowsAreHiddenUntilAskedFor(t *testing.T) {
+	t.Parallel()
+
 	m := newTestModel()
 	m = feed(t, m,
 		pinEvent("a/compose.yml", "nginx", "latest", testDigest),
@@ -50,6 +51,8 @@ func TestPinRowsAreHiddenUntilAskedFor(t *testing.T) {
 
 // The setting the config and -pin-floating resolved to decides the first frame.
 func TestPinDisplayStartsFromTheSetting(t *testing.T) {
+	t.Parallel()
+
 	m := NewModel(scanner.Options{Policies: policy.Set{PinFloating: true}})
 	assert.True(t, m.showFloating, "the scan was asked to pin, so the rows are listed")
 
@@ -60,6 +63,8 @@ func TestPinDisplayStartsFromTheSetting(t *testing.T) {
 // A pin keeps its tag, so the version column has to say what actually changes.
 // "latest → latest" would be a row that reads as a no-op.
 func TestPinRowShowsTheDigestItWouldWrite(t *testing.T) {
+	t.Parallel()
+
 	m := newTestModel().withFloatingListed()
 	m = feed(t, m, pinEvent("a/compose.yml", "nginx", "latest", testDigest))
 
@@ -74,6 +79,8 @@ func TestPinRowShowsTheDigestItWouldWrite(t *testing.T) {
 // The badge and the colour are the level's own, so a pin cannot be mistaken for
 // a version bump at a glance.
 func TestPinLevelHasItsOwnColour(t *testing.T) {
+	t.Parallel()
+
 	theme := DefaultTheme()
 	assert.Equal(t, theme.Pin, theme.LevelColor(policy.LevelPin))
 	assert.NotEqual(t, theme.Digest, theme.LevelColor(policy.LevelPin))
@@ -83,6 +90,8 @@ func TestPinLevelHasItsOwnColour(t *testing.T) {
 // The bar's stop and the `p` key are the same setting, and the stop says which
 // of the two states it is in.
 func TestBarPinsStopTogglesTheSameSetting(t *testing.T) {
+	t.Parallel()
+
 	m := newTestModel()
 	m = feed(t, m, pinEvent("a/compose.yml", "nginx", "latest", testDigest))
 	require.False(t, m.showFloating)
@@ -100,6 +109,8 @@ func TestBarPinsStopTogglesTheSameSetting(t *testing.T) {
 // Pinning offers no choice of level, so the target keys have to leave the row
 // exactly as the scan resolved it rather than clearing the digest under it.
 func TestTargetKeysLeaveAPinAlone(t *testing.T) {
+	t.Parallel()
+
 	m := newTestModel().withFloatingListed()
 	m = feed(t, m, pinEvent("a/compose.yml", "nginx", "latest", testDigest))
 
@@ -116,6 +127,8 @@ func TestTargetKeysLeaveAPinAlone(t *testing.T) {
 // into a line nobody can see, and the apply count would name rows no header
 // reports. A version row's selection is none of the switch's business.
 func TestHidingFloatingRowsClearsTheirSelection(t *testing.T) {
+	t.Parallel()
+
 	m := newTestModel().withFloatingListed()
 	m = feed(t, m,
 		pinEvent("a/compose.yml", "nginx", "latest", testDigest),
@@ -141,6 +154,8 @@ func TestHidingFloatingRowsClearsTheirSelection(t *testing.T) {
 // switch has to move both: a group claiming "2 updates" over one line is the
 // failure this guards.
 func TestGroupCountersFollowTheFloatingSwitch(t *testing.T) {
+	t.Parallel()
+
 	m := newTestModel().withFloatingListed()
 	m = feed(t, m,
 		pinEvent("a/compose.yml", "nginx", "latest", testDigest),
@@ -163,6 +178,8 @@ func TestGroupCountersFollowTheFloatingSwitch(t *testing.T) {
 // The filter speaks about versions, and a pin moves none, so no setting of it
 // may take the row away: `p` is the only switch that decides a pin's fate.
 func TestPinRowsIgnoreTheLevelFilter(t *testing.T) {
+	t.Parallel()
+
 	m := newTestModel().withFloatingListed()
 	m = feed(t, m,
 		pinEvent("a/compose.yml", "nginx", "latest", testDigest),
@@ -186,6 +203,8 @@ func TestPinRowsIgnoreTheLevelFilter(t *testing.T) {
 // The detail column says what changes. For a pin that is the digest, so the tag
 // is stated once rather than as a "latest → latest" delta that reads as a no-op.
 func TestDetailPaneNamesThePinsTagInsteadOfADelta(t *testing.T) {
+	t.Parallel()
+
 	u := check.Update{
 		FullImageName: "nginx:latest",
 		ImageName:     "library/nginx",

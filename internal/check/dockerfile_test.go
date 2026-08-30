@@ -5,12 +5,17 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/p-arndt/compose-check-updates/internal/policy"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/p-arndt/compose-check-updates/internal/policy"
 )
 
 func TestCreateDockerfileUpdateInfos(t *testing.T) {
+	t.Parallel()
+
 	t.Run("a multi-stage base image is one update carrying both lines", func(t *testing.T) {
+		t.Parallel()
+
 		dir := t.TempDir()
 		path := filepath.Join(dir, "Dockerfile")
 		assert.NoError(t, os.WriteFile(path, []byte(`FROM keycloak/keycloak:26.7.2 AS builder
@@ -36,6 +41,8 @@ USER keycloak
 	})
 
 	t.Run("references no registry can answer are skipped", func(t *testing.T) {
+		t.Parallel()
+
 		dir := t.TempDir()
 		path := filepath.Join(dir, "Dockerfile")
 		assert.NoError(t, os.WriteFile(path, []byte(`ARG BASE=alpine:3.19
@@ -63,6 +70,8 @@ FROM alpine:3.19
 // on the old base would have the final image copy artefacts out of a release it
 // is no longer built from.
 func TestUpdateRewritesEveryStage(t *testing.T) {
+	t.Parallel()
+
 	dir := t.TempDir()
 	path := filepath.Join(dir, "Dockerfile")
 	content := `FROM keycloak/keycloak:26.7.2 AS builder
@@ -108,6 +117,8 @@ COPY --from=builder /opt/keycloak/ /opt/keycloak/
 // TestDockerfileCommentedStageStillMoves is the same guard one level up: both
 // stages end up in one update even when one of them carries a comment.
 func TestDockerfileCommentedStageStillMoves(t *testing.T) {
+	t.Parallel()
+
 	dir := t.TempDir()
 	path := filepath.Join(dir, "Dockerfile")
 	assert.NoError(t, os.WriteFile(path, []byte(`FROM keycloak/keycloak:26.7.2 AS builder

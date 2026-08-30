@@ -1,13 +1,14 @@
 package check
 
 import (
-	"github.com/p-arndt/compose-check-updates/internal/policy"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/p-arndt/compose-check-updates/internal/policy"
 )
 
 // infosFor writes a compose file and returns what the parser made of it, without
@@ -24,6 +25,8 @@ func infosFor(t *testing.T, body string) []Update {
 }
 
 func TestServiceNamesAreRecorded(t *testing.T) {
+	t.Parallel()
+
 	infos := infosFor(t, `services:
   web:
     image: nginx:1.25.0
@@ -41,6 +44,8 @@ func TestServiceNamesAreRecorded(t *testing.T) {
 // Identical references collapse into one entry, so both service names have to
 // end up on the entry that survived.
 func TestSharedImageCollectsEveryService(t *testing.T) {
+	t.Parallel()
+
 	infos := infosFor(t, `services:
   worker:
     image: redis:7.2.0
@@ -55,6 +60,8 @@ func TestSharedImageCollectsEveryService(t *testing.T) {
 // Keys nested below a service — build args, an image key inside x- blocks —
 // must not be mistaken for service names.
 func TestNestedKeysAreNotServices(t *testing.T) {
+	t.Parallel()
+
 	infos := infosFor(t, `version: "3"
 services:
   app:
@@ -74,6 +81,8 @@ volumes:
 // A block ending returns the tracker to no service at all, so an image declared
 // outside services carries no name rather than the last one seen.
 func TestImageOutsideServicesHasNoService(t *testing.T) {
+	t.Parallel()
+
 	infos := infosFor(t, `services:
   web:
     image: nginx:1.25.0
@@ -90,6 +99,8 @@ x-templates:
 // Compose files in the wild are indented four spaces as often as two, and the
 // tracker takes its depth from the file rather than assuming one of them.
 func TestFourSpaceIndentation(t *testing.T) {
+	t.Parallel()
+
 	infos := infosFor(t, `services:
     web:
         image: nginx:1.25.0
@@ -105,6 +116,8 @@ func TestFourSpaceIndentation(t *testing.T) {
 // A file with no services block at all still parses; there is simply no name to
 // report for what it declares.
 func TestNoServicesBlock(t *testing.T) {
+	t.Parallel()
+
 	infos := infosFor(t, `image: nginx:1.25.0
 `)
 
@@ -113,6 +126,8 @@ func TestNoServicesBlock(t *testing.T) {
 }
 
 func TestCommentsAndBlankLinesDoNotEndTheBlock(t *testing.T) {
+	t.Parallel()
+
 	infos := infosFor(t, `services:
   web:
     # the public entrypoint

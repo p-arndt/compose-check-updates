@@ -1,11 +1,11 @@
 package config
 
 import (
-	"github.com/p-arndt/compose-check-updates/internal/policy"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/p-arndt/compose-check-updates/internal/policy"
 	"github.com/p-arndt/compose-check-updates/internal/versioning"
 )
 

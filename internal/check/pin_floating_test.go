@@ -1,18 +1,21 @@
 package check
 
 import (
-	"github.com/p-arndt/compose-check-updates/internal/policy"
-	"github.com/p-arndt/compose-check-updates/internal/registry"
-	"github.com/p-arndt/compose-check-updates/internal/registrytest"
 	"net/url"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+
+	"github.com/p-arndt/compose-check-updates/internal/policy"
+	"github.com/p-arndt/compose-check-updates/internal/registry"
+	"github.com/p-arndt/compose-check-updates/internal/registrytest"
 )
 
 // A bare floating tag has nothing to compare against, so the only thing to do
 // for it is to write down what it resolves to right now.
 func TestPinFloatingTagWritesTheDigestItResolvesTo(t *testing.T) {
+	t.Parallel()
+
 	server := registrytest.Server(t, "library/myimage",
 		[]string{"latest"},
 		map[string]string{"latest": registrytest.DigestNew})
@@ -43,8 +46,12 @@ func TestPinFloatingTagWritesTheDigestItResolvesTo(t *testing.T) {
 
 // Every mutable tag, not only "latest": the point is that the tag floats.
 func TestPinFloatingCoversEveryMutableTag(t *testing.T) {
+	t.Parallel()
+
 	for _, tag := range policy.BuiltInFloatingTags() {
 		t.Run(tag, func(t *testing.T) {
+			t.Parallel()
+
 			server := registrytest.Server(t, "library/myimage",
 				[]string{tag},
 				map[string]string{tag: registrytest.DigestNew})
@@ -67,6 +74,8 @@ func TestPinFloatingCoversEveryMutableTag(t *testing.T) {
 // Off by default, and off means exactly what it meant before the feature
 // existed: the floating tag is skipped without a single request spent on it.
 func TestPinFloatingOffLeavesFloatingTagsAlone(t *testing.T) {
+	t.Parallel()
+
 	server := registrytest.Server(t, "library/myimage",
 		[]string{"latest"},
 		map[string]string{"latest": registrytest.DigestNew})
@@ -90,6 +99,8 @@ func TestPinFloatingOffLeavesFloatingTagsAlone(t *testing.T) {
 // can tell that the floating tag has moved. That path is the pre-existing
 // digest-pinned one, so this is the seam between the two.
 func TestPinnedFloatingTagThenDetectsDrift(t *testing.T) {
+	t.Parallel()
+
 	server := registrytest.Server(t, "library/myimage",
 		[]string{"latest"},
 		map[string]string{"latest": registrytest.DigestNew})
@@ -119,6 +130,8 @@ func TestPinnedFloatingTagThenDetectsDrift(t *testing.T) {
 // happens to read "latest" — a repository named after the tag would otherwise be
 // rewritten into nonsense.
 func TestPinFloatingAppendsToTheReferenceNotTheFirstMatch(t *testing.T) {
+	t.Parallel()
+
 	server := registrytest.Server(t, "library/latest-app",
 		[]string{"latest"},
 		map[string]string{"latest": registrytest.DigestNew})
@@ -138,6 +151,8 @@ func TestPinFloatingAppendsToTheReferenceNotTheFirstMatch(t *testing.T) {
 // A registry that cannot answer for the floating tag leaves the image alone
 // rather than half-pinned.
 func TestPinFloatingSkipsWhenTheTagCannotBeResolved(t *testing.T) {
+	t.Parallel()
+
 	server := registrytest.Server(t, "library/myimage", []string{"latest"}, map[string]string{})
 
 	serverURL, _ := url.Parse(server.URL)
@@ -158,6 +173,8 @@ func TestPinFloatingSkipsWhenTheTagCannotBeResolved(t *testing.T) {
 // anything to say about it — otherwise an image capped at "patch" could never be
 // pinned at all.
 func TestPinFloatingIsNotBoundByACap(t *testing.T) {
+	t.Parallel()
+
 	info := Update{
 		FullImageName: "nginx:latest",
 		ImageName:     "library/nginx",
@@ -178,6 +195,8 @@ func TestPinFloatingIsNotBoundByACap(t *testing.T) {
 // became `nginx:stable@sha256:…-alpine` — a reference no registry can resolve.
 // Only the line the reference was scanned from may be touched.
 func TestPinFloatingLeavesALongerTagOnTheNextLineAlone(t *testing.T) {
+	t.Parallel()
+
 	before := "services:\n" +
 		"  a:\n" +
 		"    image: nginx:stable\n" +
@@ -207,6 +226,8 @@ func TestPinFloatingLeavesALongerTagOnTheNextLineAlone(t *testing.T) {
 // The same for a version bump, which is the far more common shape: `myapp:1.0`
 // must not drag `myapp:1.0.1` along with it.
 func TestUpdateLeavesALongerTagOnTheNextLineAlone(t *testing.T) {
+	t.Parallel()
+
 	file := writeComposeFile(t, "    image: myapp:1.0\n    image: myapp:1.0.1\n")
 
 	info := Update{
@@ -224,6 +245,8 @@ func TestUpdateLeavesALongerTagOnTheNextLineAlone(t *testing.T) {
 // visible in the reference, so neither may stop the line from being rewritten.
 // The line endings themselves stay as they were found.
 func TestUpdateMatchesThroughInvisibleTrailingCharacters(t *testing.T) {
+	t.Parallel()
+
 	file := writeComposeFile(t, "    image: myapp:1.0  \r\n    image: other:2.0\r\n")
 
 	info := Update{

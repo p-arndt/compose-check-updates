@@ -1,19 +1,22 @@
 package check
 
 import (
-	"github.com/p-arndt/compose-check-updates/internal/policy"
-	"github.com/p-arndt/compose-check-updates/internal/registry"
-	"github.com/p-arndt/compose-check-updates/internal/registrytest"
 	"net/url"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+
+	"github.com/p-arndt/compose-check-updates/internal/policy"
+	"github.com/p-arndt/compose-check-updates/internal/registry"
+	"github.com/p-arndt/compose-check-updates/internal/registrytest"
 )
 
 // The image whose tags no scheme can read used to leave the run entirely: a
 // warning on stderr and nothing else. It is reported now, with the reason it
 // could not be resolved attached to it.
 func TestUnreadableImageIsReportedWhenNoTagMatchesTheNewestDigest(t *testing.T) {
+	t.Parallel()
+
 	server := registrytest.Server(t, "library/myimage",
 		[]string{"latest", "sha-e1c83ba"},
 		map[string]string{"latest": registrytest.DigestNew, "sha-e1c83ba": registrytest.DigestOld})
@@ -43,6 +46,8 @@ func TestUnreadableImageIsReportedWhenNoTagMatchesTheNewestDigest(t *testing.T) 
 // A repository with no floating reference tag leaves an unreadable tag with
 // nothing at all to compare against.
 func TestUnreadableImageIsReportedWhenThereIsNoReferenceTag(t *testing.T) {
+	t.Parallel()
+
 	server := registrytest.Server(t, "library/myimage",
 		[]string{"sha-e1c83ba"},
 		map[string]string{"sha-e1c83ba": registrytest.DigestOld})
@@ -63,6 +68,8 @@ func TestUnreadableImageIsReportedWhenThereIsNoReferenceTag(t *testing.T) {
 // the loose scheme, "2024-01-01" being release [2024] plus the suffix "-01-01" —
 // never reaches the digest fallback, so this is the only place it can be caught.
 func TestUnreadableImageIsReportedWhenNoTagIsComparable(t *testing.T) {
+	t.Parallel()
+
 	tags := []string{"2024-01-01", "2024-02-01", "2024-03-01"}
 	digests := map[string]string{"2024-01-01": registrytest.DigestOld, "2024-02-01": registrytest.DigestNew, "2024-03-01": registrytest.DigestNew}
 
@@ -86,6 +93,8 @@ func TestUnreadableImageIsReportedWhenNoTagIsComparable(t *testing.T) {
 // The ordinary image must be left exactly as it was: an image sitting on the
 // newest release of a readable repository is up to date, not unreadable.
 func TestImageOnTheNewestVersionIsNotUnreadable(t *testing.T) {
+	t.Parallel()
+
 	server := registrytest.Server(t, "library/myimage",
 		[]string{"1.0.0", "1.1.0"},
 		map[string]string{"1.0.0": registrytest.DigestOld, "1.1.0": registrytest.DigestNew})
@@ -107,6 +116,8 @@ func TestImageOnTheNewestVersionIsNotUnreadable(t *testing.T) {
 // not: the level flags simply left nothing to move to. Guarding the difference
 // here, because getting it wrong would report every up-to-date image.
 func TestOnlyLevelFlagsNarrowingTheChoiceIsNotUnreadable(t *testing.T) {
+	t.Parallel()
+
 	server := registrytest.Server(t, "library/myimage",
 		[]string{"1.0.0", "2.0.0"},
 		map[string]string{"1.0.0": registrytest.DigestOld, "2.0.0": registrytest.DigestNew})
@@ -125,6 +136,8 @@ func TestOnlyLevelFlagsNarrowingTheChoiceIsNotUnreadable(t *testing.T) {
 }
 
 func TestUpdateRefusesAnUnreadableImage(t *testing.T) {
+	t.Parallel()
+
 	file := writeComposeFile(t, "image: library/myimage:sha-e1c83ba")
 
 	info := Update{
@@ -142,6 +155,8 @@ func TestUpdateRefusesAnUnreadableImage(t *testing.T) {
 // MarkUnreadable clears whatever was resolved before it: a digest fetched for a
 // tag that was then never found is not an update, it is a leftover.
 func TestMarkUnreadableClearsTheHalfResolvedTarget(t *testing.T) {
+	t.Parallel()
+
 	info := Update{
 		CurrentTag:   "sha-e1c83ba",
 		LatestTag:    "sha-49821e5",
@@ -160,6 +175,8 @@ func TestMarkUnreadableClearsTheHalfResolvedTarget(t *testing.T) {
 // Changing one image's scheme has to be answerable without re-scanning the tree,
 // and the answer has to be the one a full scan would have given.
 func TestCheckImageResolvesOneImageUnderANewScheme(t *testing.T) {
+	t.Parallel()
+
 	tags := []string{"2026.7.7", "2026.7.7.2"}
 	server := registrytest.Server(t, "library/myimage", tags,
 		map[string]string{"2026.7.7": registrytest.DigestOld, "2026.7.7.2": registrytest.DigestNew})
@@ -191,6 +208,8 @@ func TestCheckImageResolvesOneImageUnderANewScheme(t *testing.T) {
 // A reference the file no longer names is not an error: the user may have edited
 // the file while the session was open.
 func TestCheckImageReportsAnImageThatIsGone(t *testing.T) {
+	t.Parallel()
+
 	file := writeComposeFile(t, "image: library/myimage:1.0.0")
 
 	_, found, err := New(file, nil, policy.Set{}).CheckImage("library/other:1.0.0", true, true, true)

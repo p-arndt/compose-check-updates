@@ -4,16 +4,19 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
-	"github.com/p-arndt/compose-check-updates/internal/check"
-	"github.com/p-arndt/compose-check-updates/internal/policy"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/p-arndt/compose-check-updates/internal/check"
+	"github.com/p-arndt/compose-check-updates/internal/policy"
 )
 
 func TestParseFormat(t *testing.T) {
+	t.Parallel()
+
 	for in, want := range map[string]Format{
 		"":       FormatAuto,
 		"auto":   FormatAuto,
@@ -33,6 +36,8 @@ func TestParseFormat(t *testing.T) {
 }
 
 func TestFormatResolve(t *testing.T) {
+	t.Parallel()
+
 	assert.Equal(t, FormatPretty, FormatAuto.Resolve(true))
 	assert.Equal(t, FormatJSONL, FormatAuto.Resolve(false))
 	// An explicit choice survives whatever stdout turns out to be, which is the
@@ -59,6 +64,8 @@ func decode(t *testing.T, buf *bytes.Buffer) []map[string]any {
 }
 
 func TestJSONLUpdate(t *testing.T) {
+	t.Parallel()
+
 	var buf bytes.Buffer
 	w := New(FormatJSONL, &buf)
 
@@ -98,6 +105,8 @@ func TestJSONLUpdate(t *testing.T) {
 }
 
 func TestJSONLDigestUpdate(t *testing.T) {
+	t.Parallel()
+
 	var buf bytes.Buffer
 	w := New(FormatJSONL, &buf)
 
@@ -119,6 +128,8 @@ func TestJSONLDigestUpdate(t *testing.T) {
 // A digest that did not move must not be reported as the "latest" one: it would
 // read as a change that never happened.
 func TestJSONLUnchangedDigestIsNotReportedAsLatest(t *testing.T) {
+	t.Parallel()
+
 	var buf bytes.Buffer
 	w := New(FormatJSONL, &buf)
 
@@ -137,6 +148,8 @@ func TestJSONLUnchangedDigestIsNotReportedAsLatest(t *testing.T) {
 }
 
 func TestJSONLAppliedAndFailedApply(t *testing.T) {
+	t.Parallel()
+
 	var buf bytes.Buffer
 	w := New(FormatJSONL, &buf)
 
@@ -155,6 +168,8 @@ func TestJSONLAppliedAndFailedApply(t *testing.T) {
 }
 
 func TestJSONLError(t *testing.T) {
+	t.Parallel()
+
 	var buf bytes.Buffer
 	w := New(FormatJSONL, &buf)
 
@@ -170,6 +185,8 @@ func TestJSONLError(t *testing.T) {
 // Every line has to stand on its own: a consumer reading line by line must be
 // able to parse each without the ones around it.
 func TestJSONLIsOneObjectPerLine(t *testing.T) {
+	t.Parallel()
+
 	var buf bytes.Buffer
 	w := New(FormatJSONL, &buf)
 
@@ -189,6 +206,8 @@ func TestJSONLIsOneObjectPerLine(t *testing.T) {
 // The pretty writer must not write to the stream the machine format owns; it
 // goes through slog, which main points at stderr in that case.
 func TestPrettyWriterWritesNothingToTheStream(t *testing.T) {
+	t.Parallel()
+
 	var buf bytes.Buffer
 	w := New(FormatPretty, &buf)
 
@@ -203,6 +222,8 @@ func TestPrettyWriterWritesNothingToTheStream(t *testing.T) {
 // `compose_file` is the one to hand `docker compose -f`. A compose-file update
 // carries no `compose_file` at all, since `file` already is one.
 func TestJSONLDockerfileUpdate(t *testing.T) {
+	t.Parallel()
+
 	var buf bytes.Buffer
 	w := New(FormatJSONL, &buf)
 
@@ -238,6 +259,8 @@ func TestJSONLDockerfileUpdate(t *testing.T) {
 // An image ccu could not read gets a kind of its own: a consumer counting
 // "update" lines is being told what to change, and this line changes nothing.
 func TestJSONLUnreadable(t *testing.T) {
+	t.Parallel()
+
 	var buf bytes.Buffer
 	w := New(FormatJSONL, &buf)
 

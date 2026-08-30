@@ -7,6 +7,8 @@ import (
 )
 
 func TestHasComparableTag(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name     string
 		scheme   Scheme
@@ -60,6 +62,8 @@ func TestHasComparableTag(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			assert.Equal(t, tt.expected, HasComparableTag(tt.scheme, tt.current, tt.tags))
 		})
 	}

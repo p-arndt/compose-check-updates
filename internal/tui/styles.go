@@ -3,9 +3,9 @@ package tui
 import (
 	"strings"
 
-	"github.com/p-arndt/compose-check-updates/internal/policy"
-
 	"github.com/charmbracelet/lipgloss"
+
+	"github.com/p-arndt/compose-check-updates/internal/policy"
 )
 
 // minWidth is the narrowest layout the renderers will attempt. Terminal width is
@@ -226,20 +226,10 @@ func (t Theme) dim() lipgloss.Style {
 	return lipgloss.NewStyle().Foreground(t.Dim)
 }
 
-func (t Theme) rule() string {
-	return t.dim().Render(" │ ")
-}
-
 // sideTitle names the image the column is about. It is the only bold line in
 // the sidebar, because everything below it is qualified by this one.
 func (t Theme) sideTitle(image string, width int) string {
 	return lipgloss.NewStyle().Foreground(t.Accent).Bold(true).Render(fit(image, width))
-}
-
-// sideField is a read-only fact: a dim label and its value.
-func (t Theme) sideField(label, value string, width int) string {
-	l := t.dim().Render(padRight(label, 6))
-	return fit(l+lipgloss.NewStyle().Foreground(t.Text).Render(value), width)
 }
 
 // boxChrome is what a box costs a caller in width: two border columns and the

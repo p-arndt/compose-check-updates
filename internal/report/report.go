@@ -7,11 +7,12 @@ package report
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/p-arndt/compose-check-updates/internal/check"
-	"github.com/p-arndt/compose-check-updates/internal/policy"
 	"io"
 	"log/slog"
 	"strings"
+
+	"github.com/p-arndt/compose-check-updates/internal/check"
+	"github.com/p-arndt/compose-check-updates/internal/policy"
 )
 
 // Format is how a run writes its findings.
@@ -125,6 +126,10 @@ type record struct {
 	Error string `json:"error,omitempty"`
 }
 
+// The Encode errors are discarded on purpose: the destination is the process's
+// own stdout, so a failure there means the reader is gone (a closed pipe) and
+// there is nowhere left to report it to. The run's exit code still comes from
+// the check itself, not from whether anyone read the output.
 type jsonlWriter struct{ enc *json.Encoder }
 
 func (w *jsonlWriter) Update(u check.Update, level policy.Level, res Result) {
@@ -132,7 +137,7 @@ func (w *jsonlWriter) Update(u check.Update, level policy.Level, res Result) {
 	// counting "update" lines is being told what to change, and an image nobody
 	// could read gives it nothing to change.
 	if u.IsUnreadable() {
-		w.enc.Encode(record{
+		_ = w.enc.Encode(record{
 			Kind:        "unreadable",
 			Image:       u.ImageName,
 			Reference:   u.FullImageName,
@@ -183,11 +188,11 @@ func (w *jsonlWriter) Update(u check.Update, level policy.Level, res Result) {
 		rec.Restarted = &res.Restarted
 	}
 
-	w.enc.Encode(rec)
+	_ = w.enc.Encode(rec)
 }
 
 func (w *jsonlWriter) Error(file string, err error) {
-	w.enc.Encode(record{Kind: "error", File: file, Error: err.Error()})
+	_ = w.enc.Encode(record{Kind: "error", File: file, Error: err.Error()})
 }
 
 func (w *jsonlWriter) Close() error { return nil }

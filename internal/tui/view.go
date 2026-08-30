@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -332,9 +333,11 @@ func (m Model) rowDepth(e entry) int {
 
 // issueParts splits a collected issue into its message and its attributes. Only
 // captured slog records carry attributes; the scanner's own failures are a bare
-// message, which is why this is a type switch and not a field access.
+// message, which is why this asks the error what it is rather than reading a
+// field off it.
 func issueParts(err error) (msg string, attrs []string) {
-	if c, ok := err.(capturedLog); ok {
+	var c capturedLog
+	if errors.As(err, &c) {
 		return c.Msg, c.Attrs
 	}
 	return err.Error(), nil
