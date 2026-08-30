@@ -2,8 +2,8 @@ package modes
 
 import (
 	"context"
+	"github.com/p-arndt/compose-check-updates/internal/cli"
 
-	"github.com/p-arndt/compose-check-updates/internal"
 	"github.com/p-arndt/compose-check-updates/internal/report"
 	"github.com/p-arndt/compose-check-updates/internal/scanner"
 )
@@ -24,7 +24,7 @@ type Outcome struct {
 // the updates the scanner finds. Events already arrive from concurrent workers,
 // so handling them inline here keeps the output ordering the scanner produced;
 // Update() serializes its own writes.
-func Default(ctx context.Context, opts scanner.Options, ccuFlags internal.CCUFlags, out report.Writer) (Outcome, error) {
+func Default(ctx context.Context, opts scanner.Options, ccuFlags cli.Flags, out report.Writer) (Outcome, error) {
 	var outcome Outcome
 
 	events, err := scanner.Scan(ctx, opts)
@@ -47,7 +47,7 @@ func Default(ctx context.Context, opts scanner.Options, ccuFlags internal.CCUFla
 			// tell. Unreadable is a fact about ccu's reading, not about the image.
 			if i.IsUnreadable() {
 				outcome.Unreadable++
-				out.Update(i, i.UpdateLevel(), report.Result{})
+				out.Update(i, i.Level(), report.Result{})
 				continue
 			}
 
@@ -59,7 +59,7 @@ func Default(ctx context.Context, opts scanner.Options, ccuFlags internal.CCUFla
 			}
 
 			if ccuFlags.Update {
-				if err := i.Update(); err != nil {
+				if err := i.Apply(); err != nil {
 					outcome.Failed = true
 					out.Error(i.FilePath, err)
 				} else {
@@ -85,7 +85,7 @@ func Default(ctx context.Context, opts scanner.Options, ccuFlags internal.CCUFla
 				outcome.Pending++
 			}
 
-			out.Update(i, i.UpdateLevel(), res)
+			out.Update(i, i.Level(), res)
 		}
 	}
 

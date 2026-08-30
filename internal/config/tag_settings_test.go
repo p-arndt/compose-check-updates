@@ -2,6 +2,7 @@ package config
 
 import (
 	"bytes"
+	"github.com/p-arndt/compose-check-updates/internal/policy"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -61,25 +62,21 @@ func TestParseReferenceTag(t *testing.T) {
 	}
 }
 
-// ReferenceTags is what reaches the scanner, and an image that named no tag has
-// to stay out of it: a lookup miss is how the checker is told to compare against
-// "latest" as before.
-func TestReferenceTagsFlattening(t *testing.T) {
-	cfg := Config{Images: map[string]ImagePolicy{
+// An image that named no reference tag is compared against the default, which is
+// what every image got before the setting existed.
+func TestReferenceTagResolution(t *testing.T) {
+	policies := Config{Images: map[string]policy.Image{
 		"internal/thing": {ReferenceTag: "stable"},
-		"library/redis":  {Max: LevelMinor},
-	}}
+		"library/redis":  {Max: policy.LevelMinor},
+	}}.Policies()
 
-	tags := cfg.ReferenceTags()
-	if len(tags) != 1 || tags["internal/thing"] != "stable" {
-		t.Errorf("want only internal/thing mapped to stable, got %v", tags)
+	if got := policies.For("internal/thing").ReferenceTag; got != "stable" {
+		t.Errorf("want stable, got %q", got)
 	}
-
-	if got := (Config{}).ReferenceTags(); got != nil {
-		t.Errorf("want nil for a config naming no image, got %v", got)
-	}
-	if got := (Config{Images: map[string]ImagePolicy{"redis": {Max: LevelMinor}}}).ReferenceTags(); got != nil {
-		t.Errorf("want nil when no image named a tag, got %v", got)
+	for _, image := range []string{"library/redis", "never/named"} {
+		if got := policies.For(image).ReferenceTag; got != policy.DefaultReferenceTag {
+			t.Errorf("%s: want the default %q, got %q", image, policy.DefaultReferenceTag, got)
+		}
 	}
 }
 
@@ -140,22 +137,18 @@ func TestParseFloatingTags(t *testing.T) {
 // The list reaching the scanner is trimmed and deduplicated, and an image that
 // named none stays out of the map: a lookup miss is how the checker is told to
 // use nothing but the tags it already knows.
-func TestFloatingTagsFlattening(t *testing.T) {
-	cfg := Config{Images: map[string]ImagePolicy{
+func TestFloatingTagsResolution(t *testing.T) {
+	cfg := Config{Images: map[string]policy.Image{
 		"internal/thing": {FloatingTags: []string{" release ", "canary", "release"}},
-		"library/redis":  {Max: LevelMinor},
+		"library/redis":  {Max: policy.LevelMinor},
 	}}
 
-	tags := cfg.ImageFloatingTags()
-	if len(tags) != 1 {
-		t.Fatalf("want only internal/thing listed, got %v", tags)
-	}
-	if got := strings.Join(tags["internal/thing"], ","); got != "release,canary" {
+	policies := cfg.Policies()
+	if got := strings.Join(policies.For("internal/thing").FloatingTags, ","); got != "release,canary" {
 		t.Errorf("want release,canary — trimmed and deduplicated — got %q", got)
 	}
-
-	if got := (Config{}).ImageFloatingTags(); got != nil {
-		t.Errorf("want nil for a config naming no image, got %v", got)
+	if got := policies.For("library/redis").FloatingTags; len(got) != 0 {
+		t.Errorf("want no extra floating tags, got %v", got)
 	}
 }
 
@@ -164,11 +157,11 @@ func TestFloatingTagsFlattening(t *testing.T) {
 // merging list by list: within one entry the list is complete.
 func TestTagSettingsLayerLikeTheOtherPolicies(t *testing.T) {
 	merged := mergeImages(
-		map[string]ImagePolicy{
+		map[string]policy.Image{
 			"internal/thing": {ReferenceTag: "stable", FloatingTags: []string{"release"}},
-			"library/redis":  {Max: LevelMinor},
+			"library/redis":  {Max: policy.LevelMinor},
 		},
-		map[string]ImagePolicy{
+		map[string]policy.Image{
 			"internal/thing": {ReferenceTag: "edge"},
 		},
 	)
@@ -180,7 +173,7 @@ func TestTagSettingsLayerLikeTheOtherPolicies(t *testing.T) {
 	if len(thing.FloatingTags) != 0 {
 		t.Errorf("want the project entry to replace the global one whole, got %v", thing.FloatingTags)
 	}
-	if merged["library/redis"].Max != LevelMinor {
+	if merged["library/redis"].Max != policy.LevelMinor {
 		t.Errorf("want an image only the global file names to keep its policy")
 	}
 }
@@ -189,10 +182,10 @@ func TestTagSettingsLayerLikeTheOtherPolicies(t *testing.T) {
 // mean reading an image's settings in two places.
 func TestShowListsTagSettingsPerImage(t *testing.T) {
 	var out bytes.Buffer
-	Show(&out, Loaded{}, Config{Images: map[string]ImagePolicy{
-		"internal/thing": {Max: LevelMinor, ReferenceTag: "stable"},
+	Show(&out, Loaded{}, Config{Images: map[string]policy.Image{
+		"internal/thing": {Max: policy.LevelMinor, ReferenceTag: "stable"},
 		"internal/other": {FloatingTags: []string{"release", "canary"}},
-		"library/redis":  {Versioning: VersioningLoose},
+		"library/redis":  {Versioning: policy.VersioningLoose},
 	}})
 
 	want := []string{

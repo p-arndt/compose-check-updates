@@ -4,10 +4,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/p-arndt/compose-check-updates/internal/check"
+	"github.com/p-arndt/compose-check-updates/internal/policy"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/p-arndt/compose-check-updates/internal"
 )
 
 // unreadableEvent is an image the scan could resolve nothing for: no target, no
@@ -16,7 +17,7 @@ func unreadableEvent(path, image, tag, reason string) scanEventMsg {
 	ev := updateEvent(path, image, tag, "", "")
 	u := &ev.ev.Update
 	u.MarkUnreadable(reason, "none of this image's tags matches its newest digest; if this image's tags are versions, try `versioning: loose` for it")
-	ev.ev.Level = u.UpdateLevel()
+	ev.ev.Level = u.Level()
 	return ev
 }
 
@@ -24,11 +25,11 @@ func unreadableEvent(path, image, tag, reason string) scanEventMsg {
 // the scan without a line anywhere.
 func TestUnreadableRowIsListed(t *testing.T) {
 	m := newTestModel()
-	m = feed(t, m, unreadableEvent("a/compose.yml", "vert", "sha-e1c83ba", internal.ReasonNoTagForDigest))
+	m = feed(t, m, unreadableEvent("a/compose.yml", "vert", "sha-e1c83ba", check.ReasonNoTagForDigest))
 
 	require.Len(t, m.rows, 1)
 	assert.Len(t, m.visible, 1)
-	assert.Equal(t, internal.LevelUnreadable, m.rows[0].Level)
+	assert.Equal(t, policy.LevelUnreadable, m.rows[0].Level)
 }
 
 // The filter speaks about update levels and this row has none, so hiding it
@@ -36,7 +37,7 @@ func TestUnreadableRowIsListed(t *testing.T) {
 func TestUnreadableRowSurvivesEveryFilter(t *testing.T) {
 	m := newTestModel()
 	m = feed(t, m,
-		unreadableEvent("a/compose.yml", "vert", "sha-e1c83ba", internal.ReasonNoTagForDigest),
+		unreadableEvent("a/compose.yml", "vert", "sha-e1c83ba", check.ReasonNoTagForDigest),
 		updateEvent("a/compose.yml", "traefik", "v2.9.3", "v2.9.4", "patch"),
 	)
 
@@ -50,7 +51,7 @@ func TestUnreadableRowSurvivesEveryFilter(t *testing.T) {
 // the sweeping selects may tick it.
 func TestUnreadableRowCannotBeSelected(t *testing.T) {
 	m := newTestModel()
-	m = feed(t, m, unreadableEvent("a/compose.yml", "vert", "sha-e1c83ba", internal.ReasonNoTagForDigest))
+	m = feed(t, m, unreadableEvent("a/compose.yml", "vert", "sha-e1c83ba", check.ReasonNoTagForDigest))
 
 	assert.False(t, rowFor(t, m, "vert").Actionable())
 
@@ -67,7 +68,7 @@ func TestUnreadableRowCannotBeSelected(t *testing.T) {
 // refuse: the reason is what the user is here for.
 func TestApplyRowOnAnUnreadableRowExplainsItself(t *testing.T) {
 	m := newTestModel()
-	m = feed(t, m, unreadableEvent("a/compose.yml", "vert", "sha-e1c83ba", internal.ReasonNoTagForDigest))
+	m = feed(t, m, unreadableEvent("a/compose.yml", "vert", "sha-e1c83ba", check.ReasonNoTagForDigest))
 	m = feed(t, m, keyMsg("j"), keyMsg("u"))
 
 	assert.Equal(t, phaseBrowsing, m.phase)
@@ -79,25 +80,25 @@ func TestApplyRowOnAnUnreadableRowExplainsItself(t *testing.T) {
 // and not a row that merely has nothing at the current target.
 func TestUnreadableRowRendersAsItsOwnState(t *testing.T) {
 	m := newTestModel()
-	m = feed(t, m, unreadableEvent("a/compose.yml", "vert", "sha-e1c83ba", internal.ReasonNoTagForDigest))
+	m = feed(t, m, unreadableEvent("a/compose.yml", "vert", "sha-e1c83ba", check.ReasonNoTagForDigest))
 
 	r := *rowFor(t, m, "vert")
-	assert.Equal(t, "unreadable · "+internal.ReasonNoTagForDigest, rowTailPlain(r))
+	assert.Equal(t, "unreadable · "+check.ReasonNoTagForDigest, rowTailPlain(r))
 	assert.Contains(t, m.theme.RowLine(r, false, 100), "[!]")
 
 	// The badge has to name the state within the width a chip has.
-	badge := m.theme.Badge(internal.LevelUnreadable)
+	badge := m.theme.Badge(policy.LevelUnreadable)
 	assert.Contains(t, badge, "UNREAD")
 	assert.NotContains(t, badge, "…")
 
 	// Its own colour, or the row reads as one of the levels it is not.
 	theme := DefaultTheme()
-	assert.Equal(t, theme.Unreadable, theme.LevelColor(internal.LevelUnreadable))
-	assert.NotEqual(t, theme.Digest, theme.LevelColor(internal.LevelUnreadable))
+	assert.Equal(t, theme.Unreadable, theme.LevelColor(policy.LevelUnreadable))
+	assert.NotEqual(t, theme.Digest, theme.LevelColor(policy.LevelUnreadable))
 
 	// Wide enough for the sentence: the field truncates like any other, and what
 	// is being asserted here is that it is in the pane at all.
 	detail := m.theme.Detail(r.Update, r.Level, 200)
-	assert.Contains(t, detail, internal.ReasonNoTagForDigest)
+	assert.Contains(t, detail, check.ReasonNoTagForDigest)
 	assert.True(t, strings.Contains(detail, "versioning: loose"), "the detail pane names the way out")
 }

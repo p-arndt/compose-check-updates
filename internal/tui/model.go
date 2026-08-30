@@ -6,9 +6,11 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/p-arndt/compose-check-updates/internal/check"
+	"github.com/p-arndt/compose-check-updates/internal/policy"
+
 	"github.com/charmbracelet/bubbles/spinner"
 
-	"github.com/p-arndt/compose-check-updates/internal"
 	"github.com/p-arndt/compose-check-updates/internal/config"
 	"github.com/p-arndt/compose-check-updates/internal/scanner"
 )
@@ -85,12 +87,12 @@ type Model struct {
 
 	// setCap writes a pin; a field rather than a direct config call so a test can
 	// observe writes. An empty level means "remove the cap for this image".
-	setCap func(scope pinScope, image string, max config.Level) error
+	setCap func(scope pinScope, image string, max policy.Level) error
 
 	// setVersioning writes the scheme an image's tags are read under, for the same
 	// reason and in the same shape as setCap. An empty scheme means "let this
 	// image take the run's default again".
-	setVersioning func(scope pinScope, image string, versioning config.Versioning) error
+	setVersioning func(scope pinScope, image string, versioning policy.Versioning) error
 
 	// focus is which half of the frame the keyboard is talking to. The list holds
 	// it by default, so every reflex key keeps its old meaning.
@@ -138,7 +140,7 @@ type Model struct {
 	// restartTargets is filled when the user answers yes to the restart prompt
 	// and is consumed by Run after the alt screen is gone — docker writes
 	// straight to stdout and would otherwise paint over the UI.
-	restartTargets []internal.UpdateInfo
+	restartTargets []check.Update
 
 	err error
 }
@@ -164,8 +166,8 @@ func NewModel(opts scanner.Options) Model {
 		filter:        FilterAll,
 		// The scan resolved them only if it was asked to, which is the same
 		// condition under which they are listed to begin with.
-		showFloating:     opts.PinFloating,
-		floatingResolved: opts.PinFloating,
+		showFloating:     opts.Policies.PinFloating,
+		floatingResolved: opts.Policies.PinFloating,
 		collapsed:        make(map[string]bool),
 		// The highest available version is what a fresh session offers.
 		target: TargetMajor,
@@ -176,8 +178,8 @@ func NewModel(opts scanner.Options) Model {
 
 // writeCap is the real writer behind Model.setCap: it resolves the file the
 // chosen scope writes to and then sets or clears the entry.
-func writeCap(root string) func(pinScope, string, config.Level) error {
-	return func(scope pinScope, image string, max config.Level) error {
+func writeCap(root string) func(pinScope, string, policy.Level) error {
+	return func(scope pinScope, image string, max policy.Level) error {
 		path, err := scopePath(scope, root)
 		if err != nil {
 			return err
@@ -191,8 +193,8 @@ func writeCap(root string) func(pinScope, string, config.Level) error {
 
 // writeVersioning is the real writer behind Model.setVersioning, resolving the
 // file the chosen scope writes to exactly as writeCap does.
-func writeVersioning(root string) func(pinScope, string, config.Versioning) error {
-	return func(scope pinScope, image string, versioning config.Versioning) error {
+func writeVersioning(root string) func(pinScope, string, policy.Versioning) error {
+	return func(scope pinScope, image string, versioning policy.Versioning) error {
 		path, err := scopePath(scope, root)
 		if err != nil {
 			return err
@@ -215,14 +217,14 @@ func scopePath(scope pinScope, root string) (string, error) {
 
 // versioningInScope is the scheme one scope records for an image, or "" when it
 // says nothing about it.
-func (m Model) versioningInScope(scope pinScope, image string) config.Versioning {
+func (m Model) versioningInScope(scope pinScope, image string) policy.Versioning {
 	return m.pins[scope].Images[image].Versioning
 }
 
 // versioningFor is the scheme recorded for an image, project first — the same
 // precedence a cap has, and the same the two config layers have when merged.
 // Empty means the image was never given one and takes the run's default.
-func (m Model) versioningFor(image string) config.Versioning {
+func (m Model) versioningFor(image string) policy.Versioning {
 	if v := m.versioningInScope(pinProject, image); v != "" {
 		return v
 	}
@@ -231,49 +233,34 @@ func (m Model) versioningFor(image string) config.Versioning {
 
 // defaultVersioning is the scheme an image with none of its own is read under,
 // named so the sidebar can say what "default" currently means.
-func (m Model) defaultVersioning() config.Versioning {
-	if m.opts.DefaultVersioning == "" {
-		return config.VersioningSemver
+func (m Model) defaultVersioning() policy.Versioning {
+	if m.opts.Policies.Versioning == "" {
+		return policy.VersioningSemver
 	}
-	return config.Versioning(m.opts.DefaultVersioning)
+	return policy.Versioning(m.opts.Policies.Versioning)
 }
 
 // recordVersioning folds a written scheme back into the in-memory layers and
 // into the scan options, so the re-check that follows reads the image the way
 // the file now says to. Nothing else re-reads the config during a session.
-func (m *Model) recordVersioning(scope pinScope, image string, versioning config.Versioning) {
+func (m *Model) recordVersioning(scope pinScope, image string, versioning policy.Versioning) {
 	for s := range m.pins {
-		cfg := m.pins[s]
-		if policy, ok := cfg.Images[image]; ok {
-			policy.Versioning = ""
-			cfg.Images[image] = policy
-		}
-		m.pins[s] = cfg
+		m.updateImage(s, image, func(p *policy.Image) { p.Versioning = "" })
 	}
-
 	if versioning != "" {
-		cfg := m.pins[scope]
-		if cfg.Images == nil {
-			cfg.Images = map[string]config.ImagePolicy{}
-		}
-		policy := cfg.Images[image]
-		policy.Versioning = versioning
-		cfg.Images[image] = policy
-		m.pins[scope] = cfg
+		m.updateImage(scope, image, func(p *policy.Image) { p.Versioning = versioning })
 	}
 
 	// Copied rather than written through: the map came from the loaded config and
 	// is shared with whoever else was handed it.
-	schemes := make(map[string]string, len(m.opts.Versionings)+1)
-	for k, v := range m.opts.Versionings {
-		schemes[k] = v
+	images := make(map[string]policy.Image, len(m.opts.Policies.Images)+1)
+	for k, v := range m.opts.Policies.Images {
+		images[k] = v
 	}
-	if versioning == "" {
-		delete(schemes, image)
-	} else {
-		schemes[image] = string(versioning)
-	}
-	m.opts.Versionings = schemes
+	entry := images[image]
+	entry.Versioning = versioning
+	images[image] = entry
+	m.opts.Policies.Images = images
 }
 
 // WithPins attaches the caps already on disk, so the list can mark a pinned
@@ -286,13 +273,13 @@ func (m Model) WithPins(project, global config.Config) Model {
 
 // capInScope is the cap recorded for an image in one scope, or "" when that
 // scope says nothing about it.
-func (m Model) capInScope(scope pinScope, image string) config.Level {
+func (m Model) capInScope(scope pinScope, image string) policy.Level {
 	return m.pins[scope].MaxLevel(image)
 }
 
 // capFor is the cap that applies to an image, project first: a project file
 // exists to override the global one, so that is the level the row shows.
-func (m Model) capFor(image string) config.Level {
+func (m Model) capFor(image string) policy.Level {
 	if l := m.capInScope(pinProject, image); l != "" {
 		return l
 	}
@@ -301,21 +288,33 @@ func (m Model) capFor(image string) config.Level {
 
 // recordPin folds a written pin back into the in-memory scopes, so the marker
 // and the next toggle agree with the file without re-reading it.
-func (m *Model) recordPin(scope pinScope, image string, max config.Level) {
-	cfg := m.pins[scope]
-	if max == "" {
-		delete(cfg.Images, image)
-	} else {
-		if cfg.Images == nil {
-			cfg.Images = make(map[string]config.ImagePolicy)
-		}
-		cfg.Images[image] = config.ImagePolicy{Max: max}
-	}
+func (m *Model) recordPin(scope pinScope, image string, max policy.Level) {
+	m.updateImage(scope, image, func(p *policy.Image) { p.Max = max })
+	m.refreshPins()
+}
+
+// updateImage edits one image's entry in one scope's in-memory config, creating
+// the entry as needed and dropping it again once nothing is left to say.
+func (m *Model) updateImage(scope pinScope, image string, edit func(*policy.Image)) {
 	if m.pins == nil {
 		m.pins = make(map[pinScope]config.Config)
 	}
+	cfg := m.pins[scope]
+
+	entry := cfg.Images[image]
+	edit(&entry)
+
+	switch {
+	case entry.IsZero() && cfg.Images != nil:
+		delete(cfg.Images, image)
+	case !entry.IsZero():
+		if cfg.Images == nil {
+			cfg.Images = make(map[string]policy.Image)
+		}
+		cfg.Images[image] = entry
+	}
+
 	m.pins[scope] = cfg
-	m.refreshPins()
 }
 
 // refreshPins re-stamps every row with the cap for its image. Rows carry it so
@@ -327,8 +326,8 @@ func (m *Model) refreshPins() {
 
 		// The cap binds the selection too: a row left aimed above its own cap
 		// would let `A` write the version the user just forbade.
-		r.Update.Cap = string(r.Pin)
-		if r.Pin != "" && !r.Update.AllowsLevel(string(r.Target)) {
+		r.Update.Cap = r.Pin
+		if r.Pin != "" && !r.Update.Cap.Allows(r.Target) {
 			m.retarget(r, Target(r.Pin))
 		}
 	}
@@ -356,7 +355,7 @@ func (m *Model) addRow(r Row) {
 	// is the same update either way.
 	if existing := m.rowByKey(rowKey(r)); existing != nil {
 		for _, s := range r.Update.Services {
-			existing.Update.Services = internal.AppendService(existing.Update.Services, s)
+			existing.Update.Services = check.AppendService(existing.Update.Services, s)
 		}
 		return
 	}
@@ -426,7 +425,7 @@ func (m Model) cursorKey() string {
 // counted either — a header reading "1 of 2 updates" would send them to `f`,
 // which cannot reveal it.
 func (m Model) rowEligible(r Row) bool {
-	if r.Level == internal.LevelPin {
+	if r.Level == policy.LevelPin {
 		return m.showFloating
 	}
 	return true
@@ -440,13 +439,13 @@ func (m Model) rowVisible(r Row) bool {
 	if !m.rowEligible(r) {
 		return false
 	}
-	if r.Level == internal.LevelPin {
+	if r.Level == policy.LevelPin {
 		return true
 	}
 	// An unreadable image has no level for the filter to speak about, and hiding
 	// it under every filter but "all" would put it out of reach of the very field
 	// that fixes it.
-	if r.Level == internal.LevelUnreadable {
+	if r.Level == policy.LevelUnreadable {
 		return true
 	}
 	return m.filter.Matches(r.Level)
@@ -472,7 +471,7 @@ func (m Model) hiddenFloatingCount() int {
 	}
 	n := 0
 	for _, r := range m.rows {
-		if r.Level == internal.LevelPin {
+		if r.Level == policy.LevelPin {
 			n++
 		}
 	}
@@ -680,16 +679,16 @@ func (m *Model) retarget(r *Row, target Target) {
 	// SelectTarget reports whether the tag *changed*, which is false both when
 	// there is nothing at this level and when the row already sits on it — so
 	// availability is decided by TagForTarget, not by that bool.
-	if r.Update.TagForTarget(string(target)) == "" {
+	if r.Update.TagForTarget(target) == "" {
 		r.NoTarget = true
 		r.Selected = false
 		r.Level = ""
 		return
 	}
 
-	r.Update.SelectTarget(string(target))
+	r.Update.SelectTarget(target)
 	r.NoTarget = false
-	r.Level = r.Update.UpdateLevel()
+	r.Level = r.Update.Level()
 }
 
 // setTarget re-points every row and rebuilds the view, because a row that lost
@@ -739,7 +738,7 @@ func (m *Model) cycleRowTarget(delta int) {
 
 	key := rowKey(*r)
 	m.retarget(r, Target(avail[i]))
-	m.setStatus(StatusInfo, fmt.Sprintf("%s → %s (%s)", r.Update.ImageName, r.Update.LatestTag, r.Target.Label()))
+	m.setStatus(StatusInfo, fmt.Sprintf("%s → %s (%s)", r.Update.ImageName, r.Update.LatestTag, targetLabel(r.Target)))
 	m.rebuild(key)
 	m.syncScroll()
 }

@@ -392,5 +392,5 @@ func (m Model) emptyText() string {
 		return "Everything is up to date"
 	}
 	return fmt.Sprintf("No %s updates at target %s (f changes the filter, t the target)",
-		m.filter.Label(), m.target.Label())
+		m.filter.Label(), targetLabel(m.target))
 }

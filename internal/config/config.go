@@ -7,6 +7,8 @@ package config
 import (
 	"errors"
 	"fmt"
+	"github.com/p-arndt/compose-check-updates/internal/policy"
+	"github.com/p-arndt/compose-check-updates/internal/versioning"
 	"io"
 	"os"
 	"path/filepath"
@@ -28,7 +30,7 @@ type Config struct {
 	// digest. Unlike Exclude these replace rather than union when merged: a
 	// project has to be able to raise a cap the global file set, not only
 	// tighten it.
-	Images map[string]ImagePolicy `yaml:"images"`
+	Images map[string]policy.Image `yaml:"images"`
 
 	// PinFloating turns on pinning bare floating tags to the digest they resolve
 	// to. A pointer because absent and `false` have to stay distinguishable: a
@@ -48,10 +50,9 @@ type Config struct {
 	FloatingTags []string `yaml:"floating_tags"`
 
 	// Versioning is the scheme every image's tags are read under unless the image
-	// names one of its own. Empty means `semver`. A plain string rather than a
-	// pointer because "" is already the "not set here" the merge below needs, and
-	// there is no false to tell apart from absent.
-	Versioning Versioning `yaml:"versioning"`
+	// names one of its own. Empty means `semver`; "" is already the "not set
+	// here" the merge needs, so no pointer.
+	Versioning policy.Versioning `yaml:"versioning"`
 
 	// Dockerfiles turns off checking the base images of Dockerfiles built by a
 	// compose service. A pointer for the same reason PinFloating is one, and
@@ -264,7 +265,7 @@ func Parse(r io.Reader) (Config, error) {
 		}
 	}
 
-	if err := ValidateDefaultVersioning(cfg.Versioning); err != nil {
+	if err := versioning.ValidateDefault(cfg.Versioning); err != nil {
 		return Config{}, err
 	}
 

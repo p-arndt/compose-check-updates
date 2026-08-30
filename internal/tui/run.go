@@ -9,10 +9,11 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/p-arndt/compose-check-updates/internal/check"
+
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mattn/go-isatty"
 
-	"github.com/p-arndt/compose-check-updates/internal"
 	"github.com/p-arndt/compose-check-updates/internal/config"
 	"github.com/p-arndt/compose-check-updates/internal/scanner"
 )
@@ -151,7 +152,7 @@ func dumpLogs(c *logCapture) {
 // runRestarts shells out to docker once per affected compose file. It runs only
 // after the alt screen is gone: Restart writes docker's output straight to
 // os.Stdout, which would otherwise scribble over the rendered UI.
-func runRestarts(targets []internal.UpdateInfo) error {
+func runRestarts(targets []check.Update) error {
 	var errs []error
 	for _, t := range targets {
 		// The compose file the restart acts on, which for a Dockerfile update is

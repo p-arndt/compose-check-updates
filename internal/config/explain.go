@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/p-arndt/compose-check-updates/internal"
+	"github.com/p-arndt/compose-check-updates/internal/policy"
 )
 
 // Explain writes how one image's settings were resolved: the value in effect and
@@ -19,7 +19,7 @@ import (
 // said nothing. It has to arrive separately: main folds it into effective before
 // anything here runs, and from the merged value alone the flag and a config file
 // are indistinguishable.
-func Explain(w io.Writer, loaded Loaded, effective Config, image, flagVersioning string) {
+func Explain(w io.Writer, loaded Loaded, effective Config, image string, flagVersioning policy.Versioning) {
 	fmt.Fprintf(w, "Image: %s\n\n", image)
 
 	if len(loaded.Sources) == 0 {
@@ -48,14 +48,13 @@ func Explain(w io.Writer, loaded Loaded, effective Config, image, flagVersioning
 }
 
 // explainVersioning resolves the scheme and names the layer it came from. The
-// value itself goes through internal.ResolveVersioning, the one copy of the
-// precedence rule, so this can never report a scheme the checker would not use;
-// the layers are then walked in that same order to say which one decided.
-func explainVersioning(loaded Loaded, effective Config, image, flagVersioning string) (scheme, from string) {
-	perImage := effective.Versionings()
-	scheme = internal.ResolveVersioning(perImage, effective.DefaultVersioning(), image)
+// value itself comes from policy.Set.For, the one copy of the precedence rule,
+// so this can never report a scheme the checker would not use; the layers are
+// then walked in that same order to say which one decided.
+func explainVersioning(loaded Loaded, effective Config, image string, flagVersioning policy.Versioning) (scheme policy.Versioning, from string) {
+	scheme = effective.Policies().For(image).Versioning
 
-	if _, ok := perImage[image]; ok {
+	if effective.Images[image].Versioning != "" {
 		return scheme, entryOrigin(loaded, image, ".versioning")
 	}
 	if flagVersioning != "" {
@@ -137,7 +136,7 @@ func explainMatch(w io.Writer, loaded Loaded, effective Config, image string) {
 // nearMisses lists the configured keys that look like what the user typed, in a
 // stable order: a map iterates at random, and a hint that moves between two
 // identical runs is one nobody can diff.
-func nearMisses(images map[string]ImagePolicy, image string) []string {
+func nearMisses(images map[string]policy.Image, image string) []string {
 	var out []string
 	for key := range images {
 		if key != image && isNearMiss(image, key) {

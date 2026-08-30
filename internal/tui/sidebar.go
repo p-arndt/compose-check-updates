@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/p-arndt/compose-check-updates/internal/policy"
+
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-
-	"github.com/p-arndt/compose-check-updates/internal/config"
 )
 
 // The sidebar is where a single image is decided: which release it moves to, and
@@ -134,10 +134,10 @@ const (
 // Levels the image has no release for are still offered — a cap is a policy about
 // the future. Major is the exception: it means nothing on its own, and appears
 // only when a global cap exists, where it is how a project waives that ceiling.
-func (m Model) capChoicesFor(image string) []config.Level {
-	choices := []config.Level{"", config.LevelPatch, config.LevelMinor}
+func (m Model) capChoicesFor(image string) []policy.Level {
+	choices := []policy.Level{"", policy.LevelPatch, policy.LevelMinor}
 	if m.capInScope(pinGlobal, image) != "" {
-		choices = append(choices, config.LevelMajor)
+		choices = append(choices, policy.LevelMajor)
 	}
 	return choices
 }
@@ -149,7 +149,7 @@ var scopeChoices = []pinScope{pinProject, pinGlobal}
 // versioningChoices are the values the versioning field steps through. The empty
 // one comes first because it is where every image starts: it is not a third
 // scheme but the absence of a preference, i.e. the run's default.
-var versioningChoices = []config.Versioning{"", config.VersioningSemver, config.VersioningLoose}
+var versioningChoices = []policy.Versioning{"", policy.VersioningSemver, policy.VersioningLoose}
 
 // sidebarLines renders the right column for the row under the cursor, within the
 // height it is given. Lines are added in priority order rather than top to
@@ -231,7 +231,7 @@ func (m Model) targetValue(r *Row) string {
 		return m.theme.sideText("—", focused)
 	}
 	// The same badge the row carries in the list, so field and row read as one.
-	return m.theme.BadgeTight(r.Target.Label()) + " " + m.theme.sideText(r.Update.LatestTag, focused)
+	return m.theme.BadgeTight(policy.Level(targetLabel(r.Target))) + " " + m.theme.sideText(r.Update.LatestTag, focused)
 }
 
 // capValue is the ceiling this image may never move past, phrased as a rule
@@ -242,11 +242,11 @@ func (m Model) capValue(r *Row) string {
 		return m.theme.sideText("off", focused)
 	}
 
-	value := m.theme.BadgeTight(string(r.Pin))
+	value := m.theme.BadgeTight(r.Pin)
 
 	// Spelled out because "major" only means something here: it lifts a ceiling
 	// the global file set.
-	if r.Pin == config.LevelMajor {
+	if r.Pin == policy.LevelMajor {
 		value += m.theme.dim().Render("  lifts the global cap")
 	}
 	return value
@@ -440,7 +440,7 @@ func (m *Model) cycleScope(r *Row, delta int) {
 // can never end up in two files — and reports whether it got that far. A failed
 // write leaves the rows alone: the sidebar must not show a cap that is not on
 // disk.
-func (m *Model) writeCapValue(scope pinScope, image string, level config.Level) bool {
+func (m *Model) writeCapValue(scope pinScope, image string, level policy.Level) bool {
 	if level == "" {
 		for _, s := range scopeChoices {
 			if err := m.setCap(s, image, ""); err != nil {
@@ -469,7 +469,7 @@ func scopeLabel(s pinScope) string {
 
 // applyPin records the new cap in the in-memory layers and restamps the rows, so
 // marker and field agree with the file without re-reading it.
-func (m *Model) applyPin(image string, level config.Level, scope pinScope) {
+func (m *Model) applyPin(image string, level policy.Level, scope pinScope) {
 	for s := range m.pins {
 		cfg := m.pins[s]
 		if cfg.Images != nil {
@@ -481,9 +481,9 @@ func (m *Model) applyPin(image string, level config.Level, scope pinScope) {
 	if level != "" {
 		cfg := m.pins[scope]
 		if cfg.Images == nil {
-			cfg.Images = map[string]config.ImagePolicy{}
+			cfg.Images = map[string]policy.Image{}
 		}
-		cfg.Images[image] = config.ImagePolicy{Max: level}
+		cfg.Images[image] = policy.Image{Max: level}
 		m.pins[scope] = cfg
 	}
 

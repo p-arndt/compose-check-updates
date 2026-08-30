@@ -2,8 +2,8 @@ package tui
 
 import (
 	tea "github.com/charmbracelet/bubbletea"
-
-	"github.com/p-arndt/compose-check-updates/internal"
+	"github.com/p-arndt/compose-check-updates/internal/check"
+	"github.com/p-arndt/compose-check-updates/internal/registry"
 )
 
 // applyResultMsg reports one finished Update() so the row can flip state while
@@ -22,11 +22,11 @@ func applyCmd(r Row) tea.Cmd {
 		// command keeps the network call off the UI thread; a no-op for images
 		// that are not digest-pinned.
 		if info.CurrentDigest != "" {
-			if err := info.ResolveDigest(internal.NewRegistry("")); err != nil {
+			if err := info.ResolveDigest(registry.New("")); err != nil {
 				return applyResultMsg{key: key, err: err}
 			}
 		}
-		return applyResultMsg{key: key, err: info.Update()}
+		return applyResultMsg{key: key, err: info.Apply()}
 	}
 }
 
@@ -124,9 +124,9 @@ func (m *Model) finishApply() tea.Cmd {
 // it was written to: a stack whose compose file *and* whose Dockerfile changed is
 // still one `up`. Of those two the Dockerfile update wins, because only it asks
 // for the rebuild that puts the new base image into the running container.
-func (m Model) affectedFiles() []internal.UpdateInfo {
+func (m Model) affectedFiles() []check.Update {
 	at := make(map[string]int)
-	var out []internal.UpdateInfo
+	var out []check.Update
 	for _, r := range m.rows {
 		if r.State != RowApplied {
 			continue

@@ -4,10 +4,11 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/p-arndt/compose-check-updates/internal/check"
+	"github.com/p-arndt/compose-check-updates/internal/policy"
+
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/lipgloss"
-
-	"github.com/p-arndt/compose-check-updates/internal"
 )
 
 // None of the renderers below append a trailing newline: the model joins the
@@ -164,7 +165,7 @@ func rowTailPlain(r Row) string {
 		return "unreadable · " + r.Update.UnreadableReason + pinMarker(r)
 	}
 	if r.NoTarget {
-		return "no " + r.Target.Label() + " update" + pinMarker(r)
+		return "no " + targetLabel(r.Target) + " update" + pinMarker(r)
 	}
 	s := plainDelta(rowDelta(r))
 	if n := r.otherTargets(); n > 0 {
@@ -218,7 +219,7 @@ func (t Theme) rowTail(r Row, tailPlain string, budget int) string {
 // what makes it a pin — so the digest it resolved to stands in for the new
 // version; without it the column would read "latest → latest" and say nothing.
 func rowDelta(r Row) (current, latest string) {
-	if r.Level == internal.LevelPin && r.Update.LatestDigest != "" {
+	if r.Level == policy.LevelPin && r.Update.LatestDigest != "" {
 		return r.Update.CurrentTag, "@" + shortDigest(r.Update.LatestDigest)
 	}
 	return r.Update.CurrentTag, r.Update.LatestTag
@@ -239,7 +240,7 @@ func plainDelta(current, latest string) string {
 // Detail is the pane under the list describing the highlighted row. Digest
 // lines are omitted entirely when the image is not digest-pinned, so an
 // ordinary tag update does not show two empty fields.
-func (t Theme) Detail(u internal.UpdateInfo, level string, width int) string {
+func (t Theme) Detail(u check.Update, level policy.Level, width int) string {
 	w := clampWidth(width)
 
 	type field struct{ label, value string }
@@ -250,7 +251,7 @@ func (t Theme) Detail(u internal.UpdateInfo, level string, width int) string {
 	// A pin keeps its tag, so there is no delta to show: "latest → latest" is the
 	// no-op line the list column already goes out of its way to avoid, and the
 	// digest fields below say what actually changes.
-	if level == internal.LevelPin {
+	if level == policy.LevelPin {
 		fields = append(fields, field{"tag", u.CurrentTag})
 	} else if u.CurrentTag != "" || u.LatestTag != "" {
 		fields = append(fields, field{"version", plainDelta(u.CurrentTag, u.LatestTag)})

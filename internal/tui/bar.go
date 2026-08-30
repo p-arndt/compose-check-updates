@@ -66,7 +66,7 @@ func (m Model) barStops() []barStop {
 		},
 		{
 			kind: barValue, field: barFieldTarget,
-			label: "target", value: m.target.Label(), hint: hintFor(m.keys.Target),
+			label: "target", value: targetLabel(m.target), hint: hintFor(m.keys.Target),
 		},
 		{
 			kind: barValue, field: barFieldFloating,

@@ -3,9 +3,9 @@ package tui
 import (
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
+	"github.com/p-arndt/compose-check-updates/internal/policy"
 
-	"github.com/p-arndt/compose-check-updates/internal"
+	"github.com/charmbracelet/lipgloss"
 )
 
 // minWidth is the narrowest layout the renderers will attempt. Terminal width is
@@ -36,21 +36,21 @@ func DefaultTheme() Theme {
 	}
 }
 
-// LevelColor maps an internal.UpdateInfo.UpdateLevel value to its colour,
-// falling back to the dim grey used for undetermined updates.
-func (t Theme) LevelColor(level string) lipgloss.Color {
-	switch strings.ToLower(level) {
-	case "major":
+// LevelColor maps an update level to its colour, falling back to the dim grey
+// used for undetermined updates.
+func (t Theme) LevelColor(level policy.Level) lipgloss.Color {
+	switch policy.Level(strings.ToLower(level.String())) {
+	case policy.LevelMajor:
 		return t.Major
-	case "minor":
+	case policy.LevelMinor:
 		return t.Minor
-	case "patch":
+	case policy.LevelPatch:
 		return t.Patch
-	case "digest":
+	case policy.LevelDigest:
 		return t.Digest
-	case internal.LevelPin:
+	case policy.LevelPin:
 		return t.Pin
-	case internal.LevelUnreadable:
+	case policy.LevelUnreadable:
 		return t.Unreadable
 	default:
 		return t.Dim
@@ -64,18 +64,19 @@ const badgeWidth = 8
 // badgeLabels holds the word a level wears on its chip where its own name does
 // not fit: truncating "unreadable" to the chip leaves "UNREAD…", which reads as
 // a level of its own rather than as the one it is short for.
-var badgeLabels = map[string]string{internal.LevelUnreadable: "UNREAD"}
+var badgeLabels = map[policy.Level]string{policy.LevelUnreadable: "UNREAD"}
 
 // badgeLabel is the chip text for a level, in the case the chip is drawn in.
-func badgeLabel(level string) string {
-	if l, ok := badgeLabels[strings.ToLower(strings.TrimSpace(level))]; ok {
+func badgeLabel(level policy.Level) string {
+	name := strings.TrimSpace(level.String())
+	if l, ok := badgeLabels[policy.Level(strings.ToLower(name))]; ok {
 		return l
 	}
-	return strings.ToUpper(strings.TrimSpace(level))
+	return strings.ToUpper(name)
 }
 
 // Badge renders the level tag as a fixed-width chip.
-func (t Theme) Badge(level string) string {
+func (t Theme) Badge(level policy.Level) string {
 	label := badgeLabel(level)
 	if label == "" {
 		label = "-"
@@ -92,7 +93,7 @@ func (t Theme) Badge(level string) string {
 
 // BadgeTight is the same chip without the fixed width. Nothing lines up after a
 // badge in the sidebar, where the padding would only open a gap.
-func (t Theme) BadgeTight(level string) string {
+func (t Theme) BadgeTight(level policy.Level) string {
 	label := badgeLabel(level)
 	if label == "" {
 		label = "-"
@@ -107,7 +108,7 @@ func (t Theme) BadgeTight(level string) string {
 // VersionDelta renders "current → latest" with only the version segments that
 // actually changed carrying the level colour, so the eye lands on the part of
 // the number that moved (the ncu trick the CLI logger uses).
-func (t Theme) VersionDelta(current, latest, level string) string {
+func (t Theme) VersionDelta(current, latest string, level policy.Level) string {
 	dim := lipgloss.NewStyle().Foreground(t.Dim)
 	col := lipgloss.NewStyle().Foreground(t.LevelColor(level)).Bold(true)
 

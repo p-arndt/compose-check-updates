@@ -4,11 +4,12 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/p-arndt/compose-check-updates/internal/policy"
+
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/p-arndt/compose-check-updates/internal"
 	"github.com/p-arndt/compose-check-updates/internal/scanner"
 )
 
@@ -221,7 +222,7 @@ func (m *Model) applyRecheck(msg recheckDoneMsg) {
 	switch {
 	case info.IsUnreadable():
 		m.setStatus(StatusWarn, info.UnreadableMessage)
-	case row.Update.HasNewVersion(m.opts.Major, m.opts.Minor, m.opts.Patch):
+	case row.Update.HasNewVersion():
 		m.setStatus(StatusSuccess, fmt.Sprintf("%s → %s", image, row.Update.LatestTag))
 	default:
 		m.dropRow(msg.key)
@@ -549,7 +550,7 @@ func (m Model) handleApplyRow() (tea.Model, tea.Cmd) {
 		m.setStatus(StatusWarn, r.Update.UnreadableMessage)
 		return m, nil
 	case r.NoTarget:
-		m.setStatus(StatusWarn, fmt.Sprintf("no %s release for this image — press T to retarget it", r.Target.Label()))
+		m.setStatus(StatusWarn, fmt.Sprintf("no %s release for this image — press T to retarget it", targetLabel(r.Target)))
 		return m, nil
 	}
 
@@ -658,13 +659,13 @@ func (m *Model) setFilter(f Filter) {
 
 // cycleTarget steps the level every row is pointed at, and says so — a change
 // this wide has to be announced or it reads as the list re-sorting itself.
-func (m *Model) cycleTarget() { m.setTargetAnnounced(m.target.Next()) }
+func (m *Model) cycleTarget() { m.setTargetAnnounced(nextTarget(m.target)) }
 
 // setTargetAnnounced is setTarget plus the status line, so every way in leaves
 // the same trace.
 func (m *Model) setTargetAnnounced(t Target) {
 	m.setTarget(t)
-	m.setStatus(StatusInfo, fmt.Sprintf("target level: %s", t.Label()))
+	m.setStatus(StatusInfo, fmt.Sprintf("target level: %s", targetLabel(t)))
 }
 
 // Nothing to browse is a no-op with an explanation rather than an empty pane.
@@ -681,7 +682,7 @@ func (m *Model) toggleFloating() tea.Cmd {
 	// reports.
 	if !m.showFloating {
 		for i := range m.rows {
-			if m.rows[i].Level == internal.LevelPin {
+			if m.rows[i].Level == policy.LevelPin {
 				m.rows[i].Selected = false
 			}
 		}
@@ -704,7 +705,7 @@ func (m *Model) toggleFloating() tea.Cmd {
 func (m Model) floatingSummary() string {
 	n := 0
 	for _, r := range m.rows {
-		if r.Level == internal.LevelPin {
+		if r.Level == policy.LevelPin {
 			n++
 		}
 	}

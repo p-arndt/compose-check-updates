@@ -3,10 +3,11 @@ package tui
 import (
 	"testing"
 
+	"github.com/p-arndt/compose-check-updates/internal/check"
+
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/stretchr/testify/assert"
 
-	"github.com/p-arndt/compose-check-updates/internal"
 	"github.com/p-arndt/compose-check-updates/internal/scanner"
 )
 
@@ -17,7 +18,7 @@ func dockerfileEvent() scanEventMsg {
 		Kind:  scanner.EventUpdate,
 		Path:  "tests/keycloak/compose.yaml",
 		Level: "minor",
-		Update: internal.UpdateInfo{
+		Update: check.Update{
 			FilePath:      "tests/keycloak/Dockerfile",
 			ComposePath:   "tests/keycloak/compose.yaml",
 			Services:      []string{"keycloak"},

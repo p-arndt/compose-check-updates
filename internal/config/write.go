@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"github.com/p-arndt/compose-check-updates/internal/policy"
+	"github.com/p-arndt/compose-check-updates/internal/versioning"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -20,11 +22,11 @@ const configFileMode fs.FileMode = 0o644
 // creating the file (and its directory) when it does not exist yet. An existing
 // file is edited in place, keeping its comments, key order and formatting: it is
 // a file the user writes by hand.
-func SetImageMax(path, image string, max Level) error {
+func SetImageMax(path, image string, max policy.Level) error {
 	// Refuse before touching the file rather than writing a value the next Parse
 	// would reject: a config ccu itself wrote should never fail to load.
 	if !max.Valid() {
-		return fmt.Errorf("config: max: %q is not one of %s, %s, %s", max, LevelPatch, LevelMinor, LevelMajor)
+		return fmt.Errorf("config: max: %q is not one of %s, %s, %s", max, policy.LevelPatch, policy.LevelMinor, policy.LevelMajor)
 	}
 
 	return setImageKey(path, image, "max", string(max))
@@ -34,18 +36,18 @@ func SetImageMax(path, image string, max Level) error {
 // config file at path, the same way SetImageMax records a cap. It exists so the
 // answer to "ccu cannot read this image" can be given where the question is
 // asked, instead of being a hand edit the user has to find their own way to.
-func SetImageVersioning(path, image string, versioning Versioning) error {
-	if err := ValidateVersioning(versioning); err != nil {
+func SetImageVersioning(path, image string, scheme policy.Versioning) error {
+	if err := versioning.Validate(scheme); err != nil {
 		return fmt.Errorf("config: %w", err)
 	}
 	// An empty scheme is the absence of one, and absence is what clearing means:
 	// writing it out would leave the file saying nothing in a way that still has
 	// to be read.
-	if versioning == "" {
+	if scheme == "" {
 		return ClearImageVersioning(path, image)
 	}
 
-	return setImageKey(path, image, "versioning", string(versioning))
+	return setImageKey(path, image, "versioning", string(scheme))
 }
 
 // ClearImageMax removes the cap for image from the config file at path. Removing
