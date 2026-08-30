@@ -2,6 +2,7 @@ package tui
 
 import (
 	tea "github.com/charmbracelet/bubbletea"
+
 	"github.com/p-arndt/compose-check-updates/internal/check"
 	"github.com/p-arndt/compose-check-updates/internal/registry"
 )

@@ -4,13 +4,14 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"github.com/p-arndt/compose-check-updates/internal/policy"
-	"github.com/p-arndt/compose-check-updates/internal/versioning"
 	"io/fs"
 	"os"
 	"path/filepath"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/p-arndt/compose-check-updates/internal/policy"
+	"github.com/p-arndt/compose-check-updates/internal/versioning"
 )
 
 // configFileMode is the mode a config file ccu creates gets. It is a file the

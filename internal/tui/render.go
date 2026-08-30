@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/charmbracelet/lipgloss"
+
 	"github.com/p-arndt/compose-check-updates/internal/check"
 	"github.com/p-arndt/compose-check-updates/internal/policy"
-
-	"github.com/charmbracelet/lipgloss"
 )
 
 // None of the renderers below append a trailing newline: the model joins the

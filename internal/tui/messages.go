@@ -4,6 +4,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+
 	"github.com/p-arndt/compose-check-updates/internal/scanner"
 )
 

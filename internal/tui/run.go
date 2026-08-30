@@ -9,11 +9,10 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/p-arndt/compose-check-updates/internal/check"
-
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mattn/go-isatty"
 
+	"github.com/p-arndt/compose-check-updates/internal/check"
 	"github.com/p-arndt/compose-check-updates/internal/config"
 	"github.com/p-arndt/compose-check-updates/internal/scanner"
 )

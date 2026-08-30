@@ -107,13 +107,6 @@ func (m Model) capFor(image string) policy.Level {
 	return m.capInScope(pinGlobal, image)
 }
 
-// recordPin folds a written pin back into the in-memory scopes, so the marker
-// and the next toggle agree with the file without re-reading it.
-func (m *Model) recordPin(scope pinScope, image string, max policy.Level) {
-	m.updateImage(scope, image, func(p *policy.Image) { p.Max = max })
-	m.refreshPins()
-}
-
 // updateImage edits one image's entry in one scope's in-memory config, creating
 // the entry as needed and dropping it again once nothing is left to say.
 func (m *Model) updateImage(scope pinScope, image string, edit func(*policy.Image)) {

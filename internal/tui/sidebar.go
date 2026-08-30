@@ -3,9 +3,9 @@ package tui
 import (
 	"strings"
 
-	"github.com/p-arndt/compose-check-updates/internal/policy"
-
 	"github.com/charmbracelet/lipgloss"
+
+	"github.com/p-arndt/compose-check-updates/internal/policy"
 )
 
 // The sidebar is where a single image is decided: which release it moves to, and

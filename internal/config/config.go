@@ -5,14 +5,15 @@ package config
 import (
 	"errors"
 	"fmt"
-	"github.com/p-arndt/compose-check-updates/internal/policy"
-	"github.com/p-arndt/compose-check-updates/internal/versioning"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/p-arndt/compose-check-updates/internal/policy"
+	"github.com/p-arndt/compose-check-updates/internal/versioning"
 )
 
 // Config is the on-disk shape of a ccu config file. Absent has to stay

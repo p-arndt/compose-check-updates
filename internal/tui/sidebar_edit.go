@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	tea "github.com/charmbracelet/bubbletea"
+
 	"github.com/p-arndt/compose-check-updates/internal/policy"
 )
 

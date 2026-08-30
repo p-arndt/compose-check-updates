@@ -3,12 +3,11 @@ package tui
 import (
 	"context"
 
-	"github.com/p-arndt/compose-check-updates/internal/check"
-	"github.com/p-arndt/compose-check-updates/internal/policy"
-
 	"github.com/charmbracelet/bubbles/spinner"
 
+	"github.com/p-arndt/compose-check-updates/internal/check"
 	"github.com/p-arndt/compose-check-updates/internal/config"
+	"github.com/p-arndt/compose-check-updates/internal/policy"
 	"github.com/p-arndt/compose-check-updates/internal/scanner"
 )
 

@@ -6,6 +6,7 @@ package tui
 
 import (
 	"github.com/charmbracelet/lipgloss"
+
 	"github.com/p-arndt/compose-check-updates/internal/check"
 	"github.com/p-arndt/compose-check-updates/internal/policy"
 )

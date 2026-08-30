@@ -9,6 +9,9 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/p-arndt/selfupdate"
+	"github.com/p-arndt/selfupdate/layout"
+
 	"github.com/p-arndt/compose-check-updates/internal/buildinfo"
 	"github.com/p-arndt/compose-check-updates/internal/cli"
 	"github.com/p-arndt/compose-check-updates/internal/config"
@@ -18,8 +21,6 @@ import (
 	"github.com/p-arndt/compose-check-updates/internal/scanner"
 	"github.com/p-arndt/compose-check-updates/internal/tui"
 	"github.com/p-arndt/compose-check-updates/internal/versioning"
-	"github.com/p-arndt/selfupdate"
-	"github.com/p-arndt/selfupdate/layout"
 )
 
 // Exit codes, so a CI step can gate on the result without reading the report

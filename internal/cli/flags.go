@@ -89,7 +89,9 @@ func Parse(version string) Flags {
 	registerFlags(&args, &versioningName)
 
 	flag.Usage = func() { usage(flag.CommandLine.Output()) }
-	flag.CommandLine.Parse(rest)
+	// flag.CommandLine is an ExitOnError set: a parse failure prints the usage
+	// and exits, so the returned error is always nil by the time we get here.
+	_ = flag.CommandLine.Parse(rest)
 
 	// Not a subcommand, and flag parsing stopped at it — `ccu nonsense -d /srv`
 	// would otherwise silently ignore the -d and scan the wrong directory.
