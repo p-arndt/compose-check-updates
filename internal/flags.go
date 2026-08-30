@@ -40,6 +40,11 @@ type CCUFlags struct {
 	Config         string   // Explicit config file to read instead of searching for one
 	Format         string   // Output format of the report: auto, pretty or json
 	ShowConfig     bool     // Print the resolved configuration and where it came from
+	// Versioning overrides the default scheme image tags are read under for this
+	// run. Empty means the command line said nothing, which leaves the config —
+	// and, failing that, `semver` — to decide. Per-image entries still win over
+	// it: naming an image is the more specific statement.
+	Versioning string
 }
 
 // plainOnlyFlags are the flags that only the non-interactive report reads: the
@@ -92,6 +97,7 @@ func Parse(version string) CCUFlags {
 	flag.StringVar(&args.ExcludeStr, "exclude", "", "Comma-separated list of directories to exclude from search")
 	flag.StringVar(&args.Config, "config", "", "Read this config file instead of searching for one")
 	flag.StringVar(&args.Format, "format", "auto", "Report output format: auto, pretty or json")
+	flag.StringVar(&args.Versioning, "versioning", "", "Default scheme for reading image tags as versions: semver or loose (per-image config still wins)")
 
 	flag.Usage = func() { usage(flag.CommandLine.Output()) }
 	flag.CommandLine.Parse(rest)
@@ -194,7 +200,7 @@ func usage(w io.Writer) {
 	fmt.Fprintln(tw, "  config\tShow the resolved configuration and the files it was read from")
 	fmt.Fprintln(tw, "  help\tShow this help message")
 	fmt.Fprintln(tw, "  version\tShow version information")
-	fmt.Fprintf(tw, "\nFlags (-d, -exclude, -config and -pin-floating apply to both modes, the rest only to `%s check`):\n", name)
+	fmt.Fprintf(tw, "\nFlags (-d, -exclude, -config, -pin-floating and -versioning apply to both modes, the rest only to `%s check`):\n", name)
 	flag.VisitAll(func(f *flag.Flag) {
 		// An empty usage string marks a flag kept only for backwards
 		// compatibility; see the registrations in Parse.

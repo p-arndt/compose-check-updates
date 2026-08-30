@@ -49,6 +49,12 @@ type UpdateInfo struct {
 	// independent of wherever the preference was read from.
 	Cap string
 
+	// Versioning names the scheme this image's tags are read under ("semver" or
+	// "loose"); empty means the default. A plain string for the same reason Cap
+	// is one, and carried on the update itself because the level and the cap are
+	// re-derived from the tags long after the checker that resolved them is gone.
+	Versioning string
+
 	// PinsFloating marks the one update that adds a digest instead of changing
 	// one: a bare floating tag ("latest") gaining the digest it resolves to right
 	// now. Nothing about the image moved, so it carries no level of its own and
@@ -212,17 +218,19 @@ func (u *UpdateInfo) HasNewVersion(major, minor, patch bool) bool {
 		return false
 	}
 
-	current, ok := parseVersionTag(u.CurrentTag)
+	scheme := u.versioning()
+
+	current, ok := scheme.Parse(u.CurrentTag)
 	if !ok {
 		return false
 	}
 
-	latest, ok := parseVersionTag(u.LatestTag)
+	latest, ok := scheme.Parse(u.LatestTag)
 	if !ok {
 		return false
 	}
 
-	if !latest.Version.GreaterThan(current.Version) {
+	if !latest.GreaterThan(current) {
 		return false
 	}
 
@@ -250,7 +258,9 @@ func (u *UpdateInfo) UpdateLevel() string {
 		return ""
 	}
 
-	parsedCurrent, ok := parseVersionTag(u.CurrentTag)
+	scheme := u.versioning()
+
+	current, ok := scheme.Parse(u.CurrentTag)
 	if !ok {
 		if u.IsDigestUpdate() {
 			return "digest"
@@ -258,15 +268,13 @@ func (u *UpdateInfo) UpdateLevel() string {
 		return ""
 	}
 
-	parsedLatest, ok := parseVersionTag(u.LatestTag)
+	latest, ok := scheme.Parse(u.LatestTag)
 	if !ok {
 		if u.IsDigestUpdate() {
 			return "digest"
 		}
 		return ""
 	}
-
-	current, latest := parsedCurrent.Version, parsedLatest.Version
 
 	if latest.Major() > current.Major() {
 		return "major"
@@ -274,10 +282,24 @@ func (u *UpdateInfo) UpdateLevel() string {
 	if latest.Minor() > current.Minor() {
 		return "minor"
 	}
-	if latest.Patch() > current.Patch() {
+	// Anything left that still moved forward is a patch, which is how a fourth
+	// segment advancing on its own is reported: "2026.7.7.2" rebuilds the release
+	// "2026.7.7" names rather than being a release of its own.
+	if latest.GreaterThan(current) {
 		return "patch"
 	}
 	return ""
+}
+
+// versioning is the scheme this image's tags are read under. An unrecognised
+// name falls back to the default rather than failing: the config layer rejects
+// those on load, so one reaching this far is not worth hiding every update over.
+func (u *UpdateInfo) versioning() Versioning {
+	scheme, ok := VersioningByName(u.Versioning)
+	if !ok {
+		return DefaultVersioning()
+	}
+	return scheme
 }
 
 // replacement is a single substring rewrite to apply to an image line.

@@ -27,13 +27,46 @@ func (l Level) Valid() bool {
 	return ok
 }
 
-// ImagePolicy is what the user recorded about one image. Today that is a cap on
-// how far it may move; the struct exists so the next preference does not have to
-// change the shape of the config file.
+// Versioning names the scheme an image's tags are read as versions under. Docker
+// tags are not required to be semantic versions, so an image whose tags ccu
+// cannot read is given the scheme that can read them rather than every image
+// being taught a looser rule it never needed.
+type Versioning string
+
+const (
+	// VersioningSemver is the default: at most three segments, no leading zeros.
+	VersioningSemver Versioning = "semver"
+	// VersioningLoose reads up to six numeric segments and tolerates the leading
+	// zeros a calendar tag brings with it, so "2026.7.7.2" orders after
+	// "2026.7.7" and before "2026.7.30".
+	VersioningLoose Versioning = "loose"
+)
+
+// versionings is every scheme a config may name, for validation and for the
+// error message that lists them.
+var versionings = []Versioning{VersioningSemver, VersioningLoose}
+
+// Valid reports whether v names a scheme ccu knows.
+func (v Versioning) Valid() bool {
+	for _, known := range versionings {
+		if v == known {
+			return true
+		}
+	}
+	return false
+}
+
+// ImagePolicy is what the user recorded about one image: how far it may move,
+// and how its tags are to be read.
 type ImagePolicy struct {
 	// Max is the highest level this image may be updated to. Empty means no cap,
 	// which is also what an image with no entry at all gets.
 	Max Level `yaml:"max"`
+
+	// Versioning is the scheme this image's tags are read under. Empty means the
+	// scheme the run resolved as its default, which is `semver` unless the config
+	// or -versioning said otherwise.
+	Versioning Versioning `yaml:"versioning"`
 }
 
 // MaxLevel returns the cap recorded for an image, or "" when there is none.
@@ -65,6 +98,35 @@ func (c Config) Caps() map[string]string {
 		return nil
 	}
 	return caps
+}
+
+// Versionings flattens the per-image schemes into the map the scanner reads,
+// leaving out images that named none so a lookup miss and "use the default" are
+// the same thing.
+func (c Config) Versionings() map[string]string {
+	if len(c.Images) == 0 {
+		return nil
+	}
+
+	schemes := make(map[string]string, len(c.Images))
+	for image, policy := range c.Images {
+		if policy.Versioning == "" {
+			continue
+		}
+		schemes[image] = string(policy.Versioning)
+	}
+	if len(schemes) == 0 {
+		return nil
+	}
+	return schemes
+}
+
+// DefaultVersioning is the scheme for images that named none of their own.
+func (c Config) DefaultVersioning() string {
+	if c.Versioning == "" {
+		return string(VersioningSemver)
+	}
+	return string(c.Versioning)
 }
 
 // Allows reports whether an update of the given level is permitted under cap.
@@ -103,19 +165,33 @@ func mergeImages(base, over map[string]ImagePolicy) map[string]ImagePolicy {
 	return merged
 }
 
-// validateImages rejects a cap that names no level, for the same reason an
-// unknown key is rejected: a silently ignored `max: mayor` looks exactly like a
-// feature that does not work.
+// validateImages rejects a value that names no level or no scheme, for the same
+// reason an unknown key is rejected: a silently ignored `max: mayor` looks
+// exactly like a feature that does not work.
 func validateImages(images map[string]ImagePolicy) error {
 	for image, policy := range images {
-		if policy.Max == "" {
-			continue
-		}
-		if !policy.Max.Valid() {
+		if policy.Max != "" && !policy.Max.Valid() {
 			return fmt.Errorf("image %q: max: %q is not one of %s", image, policy.Max, strings.Join([]string{
 				string(LevelPatch), string(LevelMinor), string(LevelMajor),
 			}, ", "))
 		}
+		if err := ValidateVersioning(policy.Versioning); err != nil {
+			return fmt.Errorf("image %q: %w", image, err)
+		}
 	}
 	return nil
+}
+
+// ValidateVersioning rejects a scheme name ccu does not know. An empty name is
+// fine: it means the image, or the run, said nothing and takes the default.
+func ValidateVersioning(v Versioning) error {
+	if v == "" || v.Valid() {
+		return nil
+	}
+
+	names := make([]string, 0, len(versionings))
+	for _, known := range versionings {
+		names = append(names, string(known))
+	}
+	return fmt.Errorf("versioning: %q is not one of %s", v, strings.Join(names, ", "))
 }
