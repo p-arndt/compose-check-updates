@@ -239,6 +239,26 @@ required; project layers over global, `-exclude` over both, and the lists are
 depth, `services/legacy` only that path, `/mnt/backups` that absolute location —
 all three with `*` wildcards. `ccu config` shows what was read.
 
+When a setting does not seem to arrive, ask about the one image:
+
+```bash
+ccu config -image library/traefik
+```
+
+It prints the versioning scheme and the cap in effect **and the layer that
+produced each** — the per-image entry, `-versioning`, a global `versioning:`, or
+the built-in default — naming the file it was read from. And if nothing matched,
+it says so: the key is the image name **without tag or digest**, the way `ccu`
+reports it, so an entry spelled `traefik` never reaches `library/traefik`. An
+entry that nearly matches what you typed is offered as a hint:
+
+```
+No config entry names "traefik:1.2".
+  Lookup is exact and on the image name without tag or digest, as ccu
+  reports it — e.g. "library/traefik", not "traefik:1.2".
+  Did you mean "library/traefik"? (images.library/traefik in /srv/stacks/.ccu.yaml)
+```
+
 ## Registries
 
 Any OCI registry works — Docker Hub, GHCR, Quay, Harbor, ECR, a self-hosted
@@ -335,7 +355,8 @@ versioning: loose   # 3. every image, in .ccu.yaml or ~/.config/ccu/config.yaml
 
 An entry naming an image outranks both defaults, **including the flag** — a flag
 meant as a quick try should not silently undo a preference written down on
-purpose. `ccu config` shows what was resolved.
+purpose. `ccu config` shows what was resolved, and `ccu config -image <name>`
+which of the three decided it.
 
 > [!TIP]
 > If `ccu` says `no tag matches the newest digest` for an image whose tags look
