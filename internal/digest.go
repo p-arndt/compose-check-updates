@@ -8,11 +8,16 @@ import (
 )
 
 const (
-	// referenceTag is the mutable tag consulted to find out what "newest" means
-	// for images that do not publish semver tags. Their commit tags (for example
-	// "sha-e1c83ba") carry no ordering, so the digest this tag resolves to is
-	// what identifies the current release.
-	referenceTag = "latest"
+	// defaultReferenceTag is the mutable tag consulted to find out what "newest"
+	// means for images that do not publish semver tags. Their commit tags (for
+	// example "sha-e1c83ba") carry no ordering, so the digest this tag resolves
+	// to is what identifies the current release.
+	//
+	// It is only the default: a repository publishing no "latest" at all would
+	// otherwise fall out of digest mode entirely, leaving ccu with nothing to say
+	// about it, so an image may name the tag it does publish instead. See
+	// UpdateChecker.referenceTags.
+	defaultReferenceTag = "latest"
 
 	// maxDigestCandidates bounds how many sibling tags are probed while looking
 	// for the one matching the reference digest. Each probe is a request, so an
@@ -29,9 +34,10 @@ const (
 // digestPattern matches a fully qualified digest such as "sha256:ab12...".
 var digestPattern = regexp.MustCompile(`^[a-z0-9]+(?:[.+_-][a-z0-9]+)*:[0-9a-fA-F]{32,}$`)
 
-// mutableTags are tags that float to whatever is newest. They are never
+// mutableTags are the tags ccu knows float to whatever is newest. They are never
 // proposed as an update target: moving from one floating tag to another says
-// nothing about the image having changed.
+// nothing about the image having changed. An image whose moving tag is spelled
+// differently adds it to this set; see isFloatingTag.
 var mutableTags = map[string]struct{}{
 	"latest":  {},
 	"main":    {},
@@ -41,6 +47,26 @@ var mutableTags = map[string]struct{}{
 	"nightly": {},
 	"dev":     {},
 	"develop": {},
+}
+
+// isFloatingTag reports whether tag floats. extra names the tags one image
+// declared floating, and they are *added* to mutableTags rather than replacing
+// it: the built-in set is not a preference of the user's to be overridden but a
+// fact about how registries name moving tags, and a repository whose releases
+// are tagged "release" almost certainly still publishes a "latest" beside it.
+// Replacing would make that "latest" look like an ordinary version tag again —
+// pinnable, and offered as an update target — which is the one thing mutableTags
+// exists to prevent.
+func isFloatingTag(tag string, extra []string) bool {
+	if _, floating := mutableTags[tag]; floating {
+		return true
+	}
+	for _, e := range extra {
+		if e == tag {
+			return true
+		}
+	}
+	return false
 }
 
 // IsDigest reports whether s is a digest reference rather than a tag.
@@ -63,14 +89,22 @@ func tagFamily(tag string) string {
 // digestCandidates narrows a repository's tag list to the tags that could
 // plausibly be a newer spelling of currentTag. It returns the candidates and
 // how many were dropped by maxDigestCandidates.
-func digestCandidates(tags []string, currentTag string) (candidates []string, dropped int) {
+//
+// reference is the tag whose digest is being chased. It is dropped along with
+// the floating ones, because the tag that *carries* the newest digest is what is
+// being looked for and the reference is never the answer: rewriting a commit tag
+// to "stable" would trade a fixed reference for a moving one. The built-in
+// floating tags cover the default reference already, so this only matters for an
+// image that named a reference tag of its own. floating is that image's extra
+// floating tags, dropped for the same reason the built-in ones are.
+func digestCandidates(tags []string, currentTag, reference string, floating []string) (candidates []string, dropped int) {
 	family := tagFamily(currentTag)
 
 	for _, tag := range tags {
-		if tag == currentTag {
+		if tag == currentTag || tag == reference {
 			continue
 		}
-		if _, floating := mutableTags[tag]; floating {
+		if isFloatingTag(tag, floating) {
 			continue
 		}
 		if tagFamily(tag) != family {

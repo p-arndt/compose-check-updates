@@ -33,6 +33,17 @@ type Options struct {
 	// entry takes DefaultVersioning.
 	Versionings map[string]string
 
+	// ReferenceTags is the tag digest mode compares an image against, keyed by
+	// image name without tag or digest. An image with no entry is compared
+	// against "latest".
+	ReferenceTags map[string]string
+
+	// FloatingTags names the extra tags an image treats as moving, keyed the same
+	// way and added to the built-in ones ("latest", "main", …) rather than
+	// replacing them. It is what gives -pin-floating something to pin for a
+	// repository whose moving tag is spelled "release" or "canary".
+	FloatingTags map[string][]string
+
 	// DefaultVersioning is the scheme for images Versionings says nothing about.
 	// Empty means "semver", which is what every image gets until a config file or
 	// -versioning says otherwise.
@@ -151,7 +162,9 @@ func checkFile(ctx context.Context, events chan<- Event, opts Options, path stri
 	registry := internal.NewRegistry("")
 	checker := internal.NewUpdateChecker(path, registry).
 		WithPinFloating(opts.PinFloating).
-		WithVersioning(opts.Versionings, opts.DefaultVersioning)
+		WithVersioning(opts.Versionings, opts.DefaultVersioning).
+		WithReferenceTags(opts.ReferenceTags).
+		WithFloatingTags(opts.FloatingTags)
 	infos, err := checker.Check(opts.Major, opts.Minor, opts.Patch)
 	if err != nil {
 		send(ctx, events, Event{Kind: EventError, Path: path, Err: err})
@@ -205,7 +218,9 @@ func dockerfileCheckers(opts Options, registry *internal.Registry, path string) 
 			path: target.Dockerfile,
 			checker: internal.NewDockerfileChecker(target.Dockerfile, path, target.Service, registry).
 				WithPinFloating(opts.PinFloating).
-				WithVersioning(opts.Versionings, opts.DefaultVersioning),
+				WithVersioning(opts.Versionings, opts.DefaultVersioning).
+				WithReferenceTags(opts.ReferenceTags).
+				WithFloatingTags(opts.FloatingTags),
 		})
 	}
 	return checkers
@@ -224,7 +239,13 @@ type dockerfileChecker struct {
 // there is no level for a cap to clamp.
 func checkFilePins(ctx context.Context, events chan<- Event, opts Options, path string) {
 	registry := internal.NewRegistry("")
-	pins, err := internal.NewUpdateChecker(path, registry).CheckPins()
+	// The floating tags are the one setting this path cannot do without: CheckPins
+	// decides what to pin by asking whether the tag floats, so an image whose
+	// moving tag ccu does not know would silently have nothing to pin here even
+	// though the full scan pins it.
+	pins, err := internal.NewUpdateChecker(path, registry).
+		WithFloatingTags(opts.FloatingTags).
+		CheckPins()
 	if err != nil {
 		send(ctx, events, Event{Kind: EventError, Path: path, Err: err})
 		return

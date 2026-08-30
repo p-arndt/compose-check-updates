@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 )
 
@@ -67,6 +68,24 @@ type ImagePolicy struct {
 	// scheme the run resolved as its default, which is `semver` unless the config
 	// or -versioning said otherwise.
 	Versioning Versioning `yaml:"versioning"`
+
+	// ReferenceTag is the tag digest mode compares this image against. Empty
+	// means `latest`, which is what every image is compared against until one
+	// says otherwise — and a repository that publishes no `latest` has nothing to
+	// be compared against at all, so naming the tag it does publish is the only
+	// way ccu can say anything about it.
+	ReferenceTag string `yaml:"reference_tag"`
+
+	// FloatingTags names the tags this image floats under, for a repository whose
+	// moving tag is spelled "release" or "canary" rather than one of the words ccu
+	// already knows. They are added to that built-in set, not substituted for it:
+	// see internal.isFloatingTag for why replacing would be the wrong offer.
+	//
+	// Note this is the one per-image setting that adds rather than replaces, and
+	// deliberately so — the layering rule (a project file replaces the global
+	// one's entry) is about two files disagreeing about the same image, while
+	// this is a list of facts about how one repository names its tags.
+	FloatingTags []string `yaml:"floating_tags"`
 }
 
 // MaxLevel returns the cap recorded for an image, or "" when there is none.
@@ -119,6 +138,49 @@ func (c Config) Versionings() map[string]string {
 		return nil
 	}
 	return schemes
+}
+
+// ReferenceTags flattens the per-image reference tags into the map the scanner
+// reads, leaving out images that named none so a lookup miss and "compare
+// against latest" are the same thing.
+func (c Config) ReferenceTags() map[string]string {
+	if len(c.Images) == 0 {
+		return nil
+	}
+
+	tags := make(map[string]string, len(c.Images))
+	for image, policy := range c.Images {
+		if policy.ReferenceTag == "" {
+			continue
+		}
+		tags[image] = policy.ReferenceTag
+	}
+	if len(tags) == 0 {
+		return nil
+	}
+	return tags
+}
+
+// FloatingTags flattens the per-image floating tags into the map the scanner
+// reads, leaving out images that named none so a lookup miss and "only the
+// built-in floating tags" are the same thing.
+func (c Config) FloatingTags() map[string][]string {
+	if len(c.Images) == 0 {
+		return nil
+	}
+
+	tags := make(map[string][]string, len(c.Images))
+	for image, policy := range c.Images {
+		// Union rather than a plain copy: it trims the entries and drops repeats,
+		// so a tag named twice across the two config files is probed once.
+		if list := Union(policy.FloatingTags); len(list) > 0 {
+			tags[image] = list
+		}
+	}
+	if len(tags) == 0 {
+		return nil
+	}
+	return tags
 }
 
 // DefaultVersioning is the scheme for images that named none of their own.
@@ -178,8 +240,30 @@ func validateImages(images map[string]ImagePolicy) error {
 		if err := ValidateVersioning(policy.Versioning); err != nil {
 			return fmt.Errorf("image %q: %w", image, err)
 		}
+		if policy.ReferenceTag != "" && !validTag(policy.ReferenceTag) {
+			return fmt.Errorf("image %q: reference_tag: %q is not a valid tag", image, policy.ReferenceTag)
+		}
+		for _, tag := range policy.FloatingTags {
+			// An empty entry is a list item written and left blank, which names no
+			// tag; it is rejected here rather than dropped, because the user meant
+			// to say something with it.
+			if strings.TrimSpace(tag) == "" || !validTag(strings.TrimSpace(tag)) {
+				return fmt.Errorf("image %q: floating_tags: %q is not a valid tag", image, tag)
+			}
+		}
 	}
 	return nil
+}
+
+// tagPattern is the tag grammar registries accept: a word character, then up to
+// 127 word characters, dots or dashes. Checking it here rather than letting the
+// registry refuse the request is what turns a typo into an error naming the file
+// it came from, instead of a lookup that quietly finds nothing.
+var tagPattern = regexp.MustCompile(`^[a-zA-Z0-9_][a-zA-Z0-9._-]{0,127}$`)
+
+// validTag reports whether s is a tag a registry could serve.
+func validTag(s string) bool {
+	return tagPattern.MatchString(s)
 }
 
 // ValidateVersioning rejects a scheme name ccu does not know. An empty name is

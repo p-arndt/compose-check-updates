@@ -51,21 +51,29 @@ func Show(w io.Writer, loaded Loaded, effective Config) {
 func showImages(w io.Writer, effective Config) {
 	caps := effective.Caps()
 	schemes := effective.Versionings()
-	if len(caps) == 0 && len(schemes) == 0 {
+	references := effective.ReferenceTags()
+	floating := effective.FloatingTags()
+	if len(caps) == 0 && len(schemes) == 0 && len(references) == 0 && len(floating) == 0 {
 		fmt.Fprintln(w, "  images: (nothing set)")
 		return
 	}
 
-	seen := make(map[string]struct{}, len(caps)+len(schemes))
-	images := make([]string, 0, len(caps)+len(schemes))
-	for _, m := range []map[string]string{caps, schemes} {
-		for image := range m {
-			if _, dup := seen[image]; dup {
-				continue
-			}
-			seen[image] = struct{}{}
-			images = append(images, image)
+	seen := make(map[string]struct{})
+	var images []string
+	add := func(image string) {
+		if _, dup := seen[image]; dup {
+			return
 		}
+		seen[image] = struct{}{}
+		images = append(images, image)
+	}
+	for _, m := range []map[string]string{caps, schemes, references} {
+		for image := range m {
+			add(image)
+		}
+	}
+	for image := range floating {
+		add(image)
 	}
 	sort.Strings(images)
 
@@ -77,6 +85,12 @@ func showImages(w io.Writer, effective Config) {
 		}
 		if scheme, ok := schemes[image]; ok {
 			settings = append(settings, "versioning "+scheme)
+		}
+		if reference, ok := references[image]; ok {
+			settings = append(settings, "reference_tag "+reference)
+		}
+		if tags, ok := floating[image]; ok {
+			settings = append(settings, "floating_tags "+strings.Join(tags, " "))
 		}
 		fmt.Fprintf(w, "    %s: %s\n", image, strings.Join(settings, ", "))
 	}
