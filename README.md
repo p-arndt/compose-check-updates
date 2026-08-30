@@ -156,7 +156,9 @@ Only `-d`, `-exclude`, `-config`, `-pin-floating` and `-dockerfiles` also apply 
 picks levels in the UI instead.
 
 **Exit codes:** `0` nothing left to do · `1` updates available, not applied ·
-`2` something failed. So CI gates without parsing anything:
+`2` something failed. An image ccu could read no version from is reported but
+never counts as an update — nobody can say whether it has one. So CI gates
+without parsing anything:
 
 ```bash
 ccu check -f || echo "images are behind"
@@ -171,12 +173,13 @@ it streaming. `--format=pretty` / `--format=json` force either one.
 
 ```json
 {"kind":"update","image":"library/traefik","reference":"traefik:v2.9.3","services":["proxy"],"file":"proxy/compose.yaml","current":"v2.9.3","latest":"v3.2.0","level":"major","targets":{"minor":"v2.11.4","major":"v3.2.0"}}
+{"kind":"unreadable","image":"ghcr.io/vert-sh/vert","reference":"ghcr.io/vert-sh/vert:sha-e1c83ba","file":"vert/compose.yaml","current":"sha-e1c83ba","level":"unreadable","reason":"no-tag-for-digest","message":"none of this image's tags matches its newest digest, and none of them reads as a version; if this image's tags are versions, try `versioning: loose` for it"}
 {"kind":"error","file":"data/docker-compose.yml","error":"fetching tags: 429"}
 ```
 
 | Key | On | Meaning |
 | --- | -- | ------- |
-| `kind` | every line | `update` or `error` — dispatch on this |
+| `kind` | every line | `update`, `unreadable` or `error` — dispatch on this |
 | `image` / `reference` | update | the image name, and the reference as the Compose file writes it |
 | `services` | update | the Compose services that declare it; a list, because identical references are reported once |
 | `file` | both | the file involved — the Compose file, or the Dockerfile when the update sits on a `FROM` line |
@@ -187,6 +190,7 @@ it streaming. `--format=pretty` / `--format=json` force either one.
 | `targets` | update | the tag available at each level, so you can pick a different one |
 | `cap` | capped images | the ceiling recorded in your config |
 | `applied` / `restarted` | with `-u` / `-r` | whether the write or restart succeeded — `false` says it was asked for and failed |
+| `reason` / `message` | unreadable | why ccu could resolve nothing for the image: a stable name to dispatch on, and the same thing in a sentence |
 | `error` | error | the failure, as text |
 
 Only the report goes to stdout — warnings, lookup failures and the "a newer ccu

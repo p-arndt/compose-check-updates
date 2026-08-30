@@ -359,6 +359,12 @@ func (m Model) rowVisible(r Row) bool {
 	if r.Level == internal.LevelPin {
 		return true
 	}
+	// An unreadable image has no level for the filter to speak about, and hiding
+	// it under every filter but "all" would put it out of reach of the very field
+	// that fixes it.
+	if r.Level == internal.LevelUnreadable {
+		return true
+	}
 	return m.filter.Matches(r.Level)
 }
 

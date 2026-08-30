@@ -2,6 +2,7 @@ package internal
 
 import (
 	"bufio"
+	"fmt"
 	"log/slog"
 	"os"
 	"regexp"
@@ -74,6 +75,61 @@ func (u *UpdateChecker) versioningFor(image string) string {
 	return ResolveVersioning(u.versionings, u.defaultVersioning, image)
 }
 
+// looseHint is the way out of an unreadable image, worth naming only when the
+// image is not already on the loose scheme — where loose could not read the tags
+// either and suggesting it again would be no help at all.
+const looseHint = "; if this image's tags are versions, try `versioning: " + VersioningLoose + "` for it"
+
+// loosePostfix is looseHint for the scheme an image is actually being read
+// under, so both the log line and the message on the update say it or stay quiet
+// on the same rule.
+func loosePostfix(scheme string) string {
+	if scheme == VersioningLoose {
+		return ""
+	}
+	return looseHint
+}
+
+// unreadableHint is the sentence an unreadable image carries: what went wrong,
+// plus the setting that would fix it where one would.
+func (u *UpdateChecker) unreadableHint(info *UpdateInfo, message string) string {
+	return message + loosePostfix(u.versioningFor(info.ImageName))
+}
+
+// hasComparableTag reports whether the repository publishes any tag other than
+// the current one that could ever stand in for it. It answers the question
+// FindLatestVersion cannot: an empty result there means either "already newest"
+// or "nothing here is comparable at all", and only the second is a reason to
+// report the image as unreadable.
+//
+// The current tag is excluded because it always matches itself, which would make
+// every image look comparable. The rule is the one the search itself uses — same
+// family, same suffix — so an image whose tag ccu keeps parsing into a suffix
+// nobody else shares ("2024-01-01" as release [2024] plus "-01-01") comes out
+// here rather than silently offering nothing forever.
+func hasComparableTag(scheme Versioning, currentTag string, tags []string) bool {
+	current, ok := scheme.Parse(currentTag)
+	if !ok {
+		return false
+	}
+
+	for _, tag := range tags {
+		if tag == currentTag {
+			continue
+		}
+		v, ok := scheme.Parse(tag)
+		if !ok {
+			continue
+		}
+		if !sameTagFamily(v.Segments(), current.Segments()) || v.Suffix != current.Suffix {
+			continue
+		}
+		return true
+	}
+
+	return false
+}
+
 func (u *UpdateChecker) Check(major, minor, patch bool) ([]UpdateInfo, error) {
 	updateInfos, err := u.createUpdateInfos()
 	if err != nil {
@@ -117,6 +173,15 @@ func (u *UpdateChecker) Check(major, minor, patch bool) ([]UpdateInfo, error) {
 
 		latestVersion := FindLatestVersion(scheme, info.CurrentTag, tags, major, minor, patch)
 		if latestVersion == "" {
+			// Nothing to move to, which is the ordinary case of an image already on
+			// its newest release — unless there is nothing here that could ever be
+			// compared with the current tag, in which case no run will offer this
+			// image anything and the user deserves to hear so rather than to keep
+			// waiting for an update that cannot arrive.
+			if !hasComparableTag(scheme, info.CurrentTag, tags) {
+				info.MarkUnreadable(ReasonNoComparableTag, u.unreadableHint(info,
+					fmt.Sprintf("%q reads as a version under %s, but no other tag of this image can be compared with it", info.CurrentTag, info.Versioning)))
+			}
 			continue
 		}
 		info.LatestTag = latestVersion
@@ -159,12 +224,14 @@ func (u *UpdateChecker) checkDigest(info *UpdateInfo) {
 		return
 	}
 	if info.CurrentTag == "" && !pinnedByDigest {
+		info.MarkUnreadable(ReasonNoTagOrDigest, "this reference names neither a tag nor a digest, so there is nothing to look up")
 		slog.Warn("Skipping (no tag or digest)", "image", info.ImageName, "path", info.FilePath)
 		return
 	}
 
 	latestDigest, err := u.registry.FetchImageDigest(info.ImageName + ":" + referenceTag)
 	if err != nil {
+		info.MarkUnreadable(ReasonNoReferenceTag, "no "+referenceTag+" tag to compare against, and this image's tag names no version ccu can read")
 		slog.Warn("Skipping (no "+referenceTag+" tag to compare against)", "image", info.ImageName, "path", info.FilePath)
 		return
 	}
@@ -174,6 +241,7 @@ func (u *UpdateChecker) checkDigest(info *UpdateInfo) {
 	if !pinnedByDigest {
 		currentDigest, err = u.registry.FetchImageDigest(info.ImageName + ":" + info.CurrentTag)
 		if err != nil {
+			info.MarkUnreadable(ReasonNoCurrentDigest, fmt.Sprintf("the tag %q in this file resolves to no image in the registry", info.CurrentTag))
 			slog.Warn("Skipping (failed resolving current digest)", "image", info.ImageName, "tag", info.CurrentTag, "path", info.FilePath)
 			return
 		}
@@ -211,12 +279,10 @@ func (u *UpdateChecker) checkDigest(info *UpdateInfo) {
 		// so the way out is named rather than left to be discovered — unless the
 		// image is already on that scheme, in which case loose could not read the
 		// tags either and suggesting it again would be no help at all.
-		message := "Skipping (no tag matches the newest digest)"
-		if u.versioningFor(info.ImageName) != VersioningLoose {
-			message += "; if this image's tags are versions, try `versioning: loose` for it"
-		}
-		slog.Warn(message, "image", info.ImageName, "tag", info.CurrentTag, "path", info.FilePath)
-		info.LatestDigest = ""
+		info.MarkUnreadable(ReasonNoTagForDigest, u.unreadableHint(info,
+			"none of this image's tags matches its newest digest, and none of them reads as a version"))
+		slog.Warn("Skipping (no tag matches the newest digest)"+loosePostfix(u.versioningFor(info.ImageName)),
+			"image", info.ImageName, "tag", info.CurrentTag, "path", info.FilePath)
 		return
 	}
 	info.LatestTag = latestTag
@@ -263,6 +329,7 @@ func (u *UpdateChecker) CheckPins() ([]UpdateInfo, error) {
 func (u *UpdateChecker) pinFloatingTag(info *UpdateInfo) {
 	digest, err := u.registry.FetchImageDigest(info.ImageName + ":" + info.CurrentTag)
 	if err != nil {
+		info.MarkUnreadable(ReasonNoFloatingDigest, fmt.Sprintf("the floating tag %q resolves to no image, so there is nothing to pin it to", info.CurrentTag))
 		slog.Warn("Skipping (failed resolving digest for floating tag)", "image", info.ImageName, "tag", info.CurrentTag, "path", info.FilePath)
 		return
 	}

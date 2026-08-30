@@ -11,9 +11,13 @@ import (
 // Outcome is what the run found, so the caller can turn it into an exit code
 // without parsing its own output back.
 type Outcome struct {
-	Updates int  // images with an update available
-	Pending int  // updates still to be made after this run: everything not applied
-	Failed  bool // at least one non-fatal error was reported
+	Updates int // images with an update available
+	Pending int // updates still to be made after this run: everything not applied
+	// Unreadable counts the images ccu could resolve nothing for. Kept apart from
+	// Updates on purpose: they are reported, but they are no reason for a check to
+	// fail — nobody knows whether they have an update at all.
+	Unreadable int
+	Failed     bool // at least one non-fatal error was reported
 }
 
 // Default checks every compose file below opts.Root and reports — or applies —
@@ -36,6 +40,17 @@ func Default(ctx context.Context, opts scanner.Options, ccuFlags internal.CCUFla
 
 		case scanner.EventUpdate:
 			i := event.Update
+
+			// An image ccu could not read is reported and nothing else: it names no
+			// version to write, and counting it would have `ccu check` exit 1 over an
+			// image that may well be perfectly up to date — the run simply cannot
+			// tell. Unreadable is a fact about ccu's reading, not about the image.
+			if i.IsUnreadable() {
+				outcome.Unreadable++
+				out.Update(i, i.UpdateLevel(), report.Result{})
+				continue
+			}
+
 			outcome.Updates++
 
 			res := report.Result{

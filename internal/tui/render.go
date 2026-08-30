@@ -76,6 +76,9 @@ func (t Theme) RowLine(r Row, cursor bool, width int) string {
 	if r.NoTarget {
 		box = "[-]" // not selectable: no release at the current target
 	}
+	if r.Update.IsUnreadable() {
+		box = "[!]" // not selectable either, but for a reason the user can act on
+	}
 	switch r.State {
 	case RowApplied:
 		box = " ✓ "
@@ -107,6 +110,12 @@ func (t Theme) RowLine(r Row, cursor bool, width int) string {
 
 	nameStyle := lipgloss.NewStyle().Foreground(t.Text)
 	boxStyle := lipgloss.NewStyle().Foreground(t.Accent)
+	if r.Update.IsUnreadable() {
+		// Kept legible rather than dimmed away with the rows that merely have
+		// nothing at this target: this one is asking to be dealt with.
+		nameStyle = lipgloss.NewStyle().Foreground(t.Text)
+		boxStyle = lipgloss.NewStyle().Foreground(t.Unreadable)
+	}
 	if r.NoTarget {
 		// Nothing to apply at the current target, so the row reads as unavailable
 		// rather than as an update the user forgot to tick.
@@ -149,6 +158,11 @@ func (t Theme) RowLine(r Row, cursor bool, width int) string {
 // rowTailPlain is the unstyled right-hand column, used for width budgeting and
 // as the single definition of what that column says.
 func rowTailPlain(r Row) string {
+	// The reason rather than the sentence: this column is one line wide, and the
+	// sentence is what the detail pane and the sidebar are for.
+	if r.Update.IsUnreadable() {
+		return "unreadable · " + r.Update.UnreadableReason + pinMarker(r)
+	}
 	if r.NoTarget {
 		return "no " + r.Target.Label() + " update" + pinMarker(r)
 	}
@@ -175,6 +189,9 @@ func pinMarker(r Row) string {
 func (t Theme) rowTail(r Row, tailPlain string, budget int) string {
 	if r.State == RowFailed && r.Err != nil {
 		return lipgloss.NewStyle().Foreground(t.Error).Render(truncatePlain(tailPlain, budget))
+	}
+	if r.Update.IsUnreadable() {
+		return lipgloss.NewStyle().Foreground(t.Unreadable).Render(truncatePlain(tailPlain, budget))
 	}
 	if r.NoTarget {
 		return lipgloss.NewStyle().Foreground(t.Dim).Italic(true).Render(truncatePlain(tailPlain, budget))
@@ -243,6 +260,14 @@ func (t Theme) Detail(u internal.UpdateInfo, level string, width int) string {
 	}
 	if u.LatestDigest != "" {
 		fields = append(fields, field{"new digest", shortDigest(u.LatestDigest)})
+	}
+	// Both halves of it: the reason is what a bug report quotes, the sentence is
+	// what tells the user what to do next.
+	if u.IsUnreadable() {
+		fields = append(fields,
+			field{"unreadable", u.UnreadableReason},
+			field{"why", u.UnreadableMessage},
+		)
 	}
 	fields = append(fields,
 		field{"file", u.FilePath},

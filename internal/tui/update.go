@@ -459,6 +459,11 @@ func (m Model) handleApplyRow() (tea.Model, tea.Cmd) {
 	case r.State == RowApplied:
 		m.setStatus(StatusInfo, "this update has already been applied")
 		return m, nil
+	case r.Update.IsUnreadable():
+		// Update() would refuse this row anyway; saying so here keeps the reason
+		// in front of the user instead of turning it into a failed apply.
+		m.setStatus(StatusWarn, r.Update.UnreadableMessage)
+		return m, nil
 	case r.NoTarget:
 		m.setStatus(StatusWarn, fmt.Sprintf("no %s release for this image — press T to retarget it", r.Target.Label()))
 		return m, nil

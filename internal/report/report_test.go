@@ -233,3 +233,33 @@ func TestJSONLDockerfileUpdate(t *testing.T) {
 	assert.Equal(t, "stacks/keycloak/compose.yaml", recs[0]["compose_file"])
 	assert.NotContains(t, recs[1], "compose_file")
 }
+
+// An image ccu could not read gets a kind of its own: a consumer counting
+// "update" lines is being told what to change, and this line changes nothing.
+func TestJSONLUnreadable(t *testing.T) {
+	var buf bytes.Buffer
+	w := New(FormatJSONL, &buf)
+
+	u := internal.UpdateInfo{
+		ImageName:     "library/myimage",
+		FullImageName: "library/myimage:sha-e1c83ba",
+		FilePath:      "/tmp/compose.yaml",
+		CurrentTag:    "sha-e1c83ba",
+	}
+	u.MarkUnreadable(internal.ReasonNoTagForDigest, "none of this image's tags matches its newest digest")
+
+	w.Update(u, u.UpdateLevel(), Result{})
+	require.NoError(t, w.Close())
+
+	recs := decode(t, &buf)
+	require.Len(t, recs, 1)
+
+	assert.Equal(t, "unreadable", recs[0]["kind"])
+	assert.Equal(t, internal.ReasonNoTagForDigest, recs[0]["reason"])
+	assert.Equal(t, internal.LevelUnreadable, recs[0]["level"])
+	assert.Contains(t, recs[0]["message"], "newest digest")
+	// There is no target and no new digest, so neither key may be there to be
+	// mistaken for one.
+	assert.NotContains(t, recs[0], "latest")
+	assert.NotContains(t, recs[0], "targets")
+}

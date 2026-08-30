@@ -57,7 +57,7 @@ type EventKind int
 const (
 	EventDiscovered EventKind = iota // emitted once, first, carrying Total
 	EventFileStart                   // a compose file's check began
-	EventUpdate                      // an image with an available update
+	EventUpdate                      // an image with an available update, or one ccu could not read
 	EventFileDone                    // a compose file's check finished
 	EventError                       // a non-fatal error; scan continues
 )
@@ -67,8 +67,11 @@ type Event struct {
 	Path   string              // compose file involved (empty for EventDiscovered)
 	Total  int                 // number of compose files found; only set on EventDiscovered
 	Update internal.UpdateInfo // only set on EventUpdate
-	Level  string              // update level of Update ("major"/"minor"/"patch"/"digest"/"pin"); only on EventUpdate
-	Err    error               // only set on EventError
+	// Level is the update level of Update ("major"/"minor"/"patch"/"digest"/"pin",
+	// or "unreadable" for an image that resolved to nothing at all); only on
+	// EventUpdate.
+	Level string
+	Err   error // only set on EventError
 }
 
 // Scan walks opts.Root and checks every compose file it finds, emitting events
@@ -181,7 +184,11 @@ func checkFile(ctx context.Context, events chan<- Event, opts Options, path stri
 		// an image capped at minor still has its minor update offered.
 		applyCap(&info, opts.Caps[info.ImageName], registry)
 
-		if !info.HasNewVersion(opts.Major, opts.Minor, opts.Patch) {
+		// An image ccu could not read is reported rather than dropped. Dropping it
+		// left a warning on stderr as its only trace, which no row, no report line
+		// and no key in the TUI could be hung off — so the one thing the user could
+		// do about it was the one thing nothing told them how to do.
+		if !info.HasNewVersion(opts.Major, opts.Minor, opts.Patch) && !info.IsUnreadable() {
 			continue
 		}
 		if !send(ctx, events, Event{Kind: EventUpdate, Path: path, Update: info, Level: info.UpdateLevel()}) {
