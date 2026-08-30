@@ -9,9 +9,8 @@ import (
 )
 
 // The sidebar is where a single image is decided: which release it moves to, and
-// whether that choice is remembered past this run. Three visible fields and a
-// cursor replace the three keys those questions used to need. It follows the
-// list rather than being opened, so which image is meant is never in question.
+// whether that choice is remembered past this run. It follows the list rather
+// than being opened, so which image is meant is never in question.
 
 // sidebarMinTotal is the terminal width below which the two columns stop fitting
 // side by side, leaving the list too cramped to read a path in.
@@ -126,12 +125,10 @@ const (
 )
 
 // capChoicesFor are the values the cap field steps through for one image. The cap
-// names a level of its own rather than borrowing the target's: the target is what
-// this run does, the cap is what every future run may not exceed.
-//
-// Levels the image has no release for are still offered — a cap is a policy about
-// the future. Major is the exception: it means nothing on its own, and appears
-// only when a global cap exists, where it is how a project waives that ceiling.
+// names a level of its own: the target is what this run does, the cap is what
+// every future run may not exceed, so levels the image has no release for are
+// still offered. Major is the exception — it appears only when a global cap
+// exists, where it is how a project waives that ceiling.
 func (m Model) capChoicesFor(image string) []policy.Level {
 	choices := []policy.Level{"", policy.LevelPatch, policy.LevelMinor}
 	if m.capInScope(pinGlobal, image) != "" {
@@ -150,9 +147,8 @@ var scopeChoices = []pinScope{pinProject, pinGlobal}
 var versioningChoices = []policy.Versioning{"", policy.VersioningSemver, policy.VersioningLoose}
 
 // sidebarLines renders the right column for the row under the cursor, within the
-// height it is given. Lines are added in priority order rather than top to
-// bottom: dropping a field would make a setting unreachable, whereas dropping the
-// file path only costs a fact the list already shows.
+// height it is given. Added in priority order, not top to bottom: dropping a
+// field hides a setting, dropping the path only repeats what the list shows.
 func (m Model) sidebarLines(width, height int) []string {
 	r := m.currentRow()
 	if r == nil {
@@ -251,9 +247,8 @@ func (m Model) capValue(r *Row) string {
 }
 
 // scopeValue names the file the cap is remembered in, with the path beside it:
-// "project" and "global" only mean something once the file is visible. The path
-// is dropped rather than truncated when the column is too narrow, since a cut
-// line would eat the closing chevron and make the field look broken.
+// "project" and "global" only mean something once the file is visible. Dropped
+// rather than truncated when too narrow: a cut line eats the closing chevron.
 func (m Model) scopeValue(r *Row, width int) string {
 	focused := m.focused(fieldScope)
 

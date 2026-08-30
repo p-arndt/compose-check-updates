@@ -10,10 +10,9 @@ import (
 )
 
 // maxDigestCandidates bounds how many sibling tags are probed while looking for
-// the one matching the reference digest. Each probe is a request, so an image
-// with thousands of commit tags would otherwise exhaust rate limits. Registries
-// return tags in lexical order, which for commit tags is unrelated to age, so a
-// low cap would drop the very tag being looked for.
+// the one matching the reference digest. Each probe is a request, and registries
+// return tags lexically — unrelated to age for commit tags — so the cap has to
+// be high enough not to drop the tag being looked for.
 const maxDigestCandidates = 250
 
 // checkDigest fills in the update for an image whose tag is not a version, by
@@ -97,9 +96,8 @@ func (c *Checker) checkDigest(u *Update, p policy.Image) {
 }
 
 // pinFloatingTag records the digest a bare floating tag resolves to, so the
-// reference can be rewritten as "latest@sha256:…". Not an update — the image is
-// the one the tag already pointed at — but the one-off pin that gives every
-// later run something to compare against.
+// reference can be rewritten as "latest@sha256:…". Not an update but the one-off
+// pin that gives every later run something to compare against.
 func (c *Checker) pinFloatingTag(u *Update) {
 	digest, err := c.registry.Digest(u.ImageName + ":" + u.CurrentTag)
 	if err != nil {
@@ -116,12 +114,10 @@ func (c *Checker) pinFloatingTag(u *Update) {
 }
 
 // digestCandidates narrows a repository's tag list to the tags that could
-// plausibly be a newer spelling of currentTag, and reports how many were dropped
-// by maxDigestCandidates.
-//
-// The reference tag is dropped along with the floating ones: what is being
-// looked for is the tag that *carries* the newest digest, and rewriting a commit
-// tag to "stable" would trade a fixed reference for a moving one.
+// plausibly be a newer spelling of currentTag, and reports how many
+// maxDigestCandidates dropped. The reference tag goes with the floating ones:
+// rewriting a commit tag to "stable" would trade a fixed reference for a moving
+// one.
 func digestCandidates(tags []string, currentTag string, p policy.Image) (candidates []string, dropped int) {
 	family := tagFamily(currentTag)
 

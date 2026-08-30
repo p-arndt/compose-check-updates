@@ -6,18 +6,12 @@ import (
 )
 
 // ExcludeMatcher decides whether a walked path is excluded from the scan.
+// How an entry is written picks how it is read, all three accepting the
+// wildcards filepath.Match understands:
 //
-// An entry is read three ways, picked by how it is written, so one list can say
-// both "not this directory" and "never this kind of directory":
-//
-//   - a bare name ("node_modules") matches a directory of that name at any
-//     depth, which is what a config entry meant to hold across projects needs;
-//   - anything containing a separator ("services/legacy") is a path relative to
-//     the scan root, matched from the root down;
-//   - an absolute path ("/mnt/backups") is matched as such, so a global config
-//     can name a location that has nothing to do with the current root.
-//
-// All three accept the shell-style wildcards filepath.Match understands.
+//   - a bare name ("node_modules") matches at any depth;
+//   - one with a separator ("services/legacy") is relative to the scan root;
+//   - an absolute path ("/mnt/backups") is matched as such.
 type ExcludeMatcher struct {
 	names []string // match against a single path element, at any depth
 	paths []string // match against the path relative to the scan root
@@ -59,8 +53,7 @@ func NewExcludeMatcher(exclude []string) *ExcludeMatcher {
 
 // isAbsEntry reports whether an entry names an absolute location. A leading slash
 // counts on every platform, not just where filepath.IsAbs says so: config files
-// are written in slash form and shared between machines, and on Windows
-// "/mnt/backups" would otherwise be read as relative to the scan root.
+// are written in slash form and shared between machines.
 func isAbsEntry(e string) bool {
 	return strings.HasPrefix(e, "/") || filepath.IsAbs(filepath.FromSlash(e))
 }
@@ -72,9 +65,8 @@ func (m *ExcludeMatcher) Empty() bool {
 }
 
 // Match reports whether relPath — relative to the scan root, in the OS's own
-// separator form — or any directory above it is excluded. absPath may be empty
-// when the caller has no absolute path to offer; only the absolute entries need
-// it.
+// separator form — or any directory above it is excluded. Only the absolute
+// entries need absPath, which may be empty.
 func (m *ExcludeMatcher) Match(relPath, absPath string) bool {
 	if m.Empty() {
 		return false
@@ -121,9 +113,7 @@ func (m *ExcludeMatcher) Match(relPath, absPath string) bool {
 }
 
 // resolve follows symlinks in path, falling back to the path as given. A
-// pattern containing wildcards has nothing to resolve — EvalSymlinks would fail
-// on it — and an entry naming a directory that does not exist is not an error
-// either: it simply matches nothing.
+// wildcard pattern, or a directory that does not exist, simply matches nothing.
 func resolve(path string) string {
 	if resolved, err := filepath.EvalSymlinks(path); err == nil {
 		return resolved

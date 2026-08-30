@@ -16,12 +16,9 @@ type BuildTarget struct {
 }
 
 // BuildTargets reads composePath and returns the Dockerfiles its services build.
-// An unreadable file yields nothing rather than an error: the caller is already
-// checking this compose file for updates, and a second failure about the same
-// file would only be noise.
-//
-// Contexts that are not a local path — a git URL, say — are skipped, as is
-// `dockerfile_inline:`: neither has a file on disk whose FROM lines to rewrite.
+// An unreadable file yields nothing rather than an error, the caller already
+// reporting one for it. A remote context or `dockerfile_inline:` is skipped:
+// neither has a file on disk whose FROM lines could be rewritten.
 func BuildTargets(composePath string) []BuildTarget {
 	file, err := os.Open(composePath)
 	if err != nil {

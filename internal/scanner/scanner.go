@@ -60,28 +60,23 @@ type Event struct {
 }
 
 // Scan walks opts.Root and checks every compose file it finds, emitting events
-// as they resolve. The channel is closed when the scan finishes; cancelling ctx
-// stops it promptly and still closes the channel. The error return covers only
-// the initial walk failing — per-file failures arrive as EventError.
+// as they resolve. Cancelling ctx stops the scan and still closes the channel.
+// The error covers only the initial walk; per-file failures are EventError.
 func Scan(ctx context.Context, opts Options) (<-chan Event, error) {
 	return walk(ctx, opts, true, checkFile)
 }
 
 // ScanPins walks opts.Root like Scan but resolves nothing except the digests
-// bare floating tags point at. A full re-scan would re-fetch every tag list for
-// versions already on screen, while this costs one manifest head per floating
-// image.
-//
-// No progress events are emitted: the file counters belong to the scan that
-// filled the list, and a second run bumping them would report files twice.
+// bare floating tags point at: one manifest head per floating image, no tag
+// lists. No progress events — the file counters belong to the scan that filled
+// the list.
 func ScanPins(ctx context.Context, opts Options) (<-chan Event, error) {
 	return walk(ctx, opts, false, checkFilePins)
 }
 
 // CheckImage re-checks a single image and returns the event a scan would have
-// emitted for it, for the caller that changed one image's settings. The image is
-// named by the update an earlier scan reported, because that is what identifies
-// the line.
+// emitted for it, for the caller that changed one image's settings. The update
+// an earlier scan reported is what identifies the line.
 func CheckImage(opts Options, target check.Update) (Event, error) {
 	update, found, err := checkerFor(opts, target).CheckImage(target.FullImageName, opts.Major, opts.Minor, opts.Patch)
 	if err != nil {
@@ -104,8 +99,7 @@ func checkerFor(opts Options, target check.Update) *check.Checker {
 
 	// A Dockerfile is only ever reached through the service that builds it; a
 	// checker that did not know about the two would leave a restart with no
-	// compose file to act on. One service name, because that is all a checker
-	// records.
+	// compose file to act on.
 	service := ""
 	if len(target.Services) > 0 {
 		service = target.Services[0]

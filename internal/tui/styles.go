@@ -247,12 +247,9 @@ func (t Theme) sideField(label, value string, width int) string {
 const boxChrome = 4
 
 // Box frames a block of lines. The frame is the only thing saying which half the
-// keyboard is talking to, so the focused box changes colour *and* weight: colour
-// alone is invisible on a terminal told not to use any. Both borders are one cell
-// wide, so switching between them moves nothing.
-//
-// The returned lines are innerH+2 of them, each innerW+boxChrome wide, so a
-// caller can place two boxes side by side without measuring anything itself.
+// keyboard is talking to, so the focused box changes colour *and* weight —
+// colour alone is invisible on a terminal told not to use any. Returns innerH+2
+// lines of innerW+boxChrome, so two boxes sit side by side unmeasured.
 func (t Theme) Box(content []string, innerW, innerH int, focused bool) []string {
 	colour, border := t.Dim, lipgloss.RoundedBorder()
 	if focused {
@@ -278,9 +275,9 @@ func (t Theme) Box(content []string, innerW, innerH int, focused bool) []string 
 }
 
 // sideValue is one editable field: a label, and its value between chevrons. The
-// chevrons say the value steps sideways, and only light up on the field the arrow
-// keys would change. The value arrives already styled so a field can put a level
-// badge where its value goes; restyling here would flatten it back into text.
+// chevrons say the value steps sideways, and light up only on the field the
+// arrow keys would change. The value arrives already styled, so a field can put
+// a badge where its value goes.
 func (t Theme) sideValue(label, value string, focused bool, width int) string {
 	name := t.dim().Render(padRight(label, 8))
 	chevron := t.dim()

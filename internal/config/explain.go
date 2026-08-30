@@ -10,15 +10,11 @@ import (
 )
 
 // Explain writes how one image's settings were resolved: the value in effect and
-// the layer that produced it. Show already prints the merged result, but a merged
-// result cannot answer "why is this image not updating" — an entry that lost to a
-// more specific one, an entry in the wrong file and an entry whose key never
-// matched all look identical once merged.
+// the layer that produced it — which is what Show's merged result cannot say.
 //
-// flagVersioning is -versioning as it was passed, empty when the command line
-// said nothing. It has to arrive separately: main folds it into effective before
-// anything here runs, and from the merged value alone the flag and a config file
-// are indistinguishable.
+// flagVersioning is -versioning as passed, and arrives separately because main
+// has already folded it into effective, where it is indistinguishable from a
+// config file.
 func Explain(w io.Writer, loaded Loaded, effective Config, image string, flagVersioning policy.Versioning) {
 	fmt.Fprintf(w, "Image: %s\n\n", image)
 
@@ -48,9 +44,8 @@ func Explain(w io.Writer, loaded Loaded, effective Config, image string, flagVer
 }
 
 // explainVersioning resolves the scheme and names the layer it came from. The
-// value itself comes from policy.Set.For, the one copy of the precedence rule,
-// so this can never report a scheme the checker would not use; the layers are
-// then walked in that same order to say which one decided.
+// value comes from policy.Set.For, the one copy of the precedence rule, so this
+// can never report a scheme the checker would not use.
 func explainVersioning(loaded Loaded, effective Config, image string, flagVersioning policy.Versioning) (scheme policy.Versioning, from string) {
 	scheme = effective.Policies().For(image).Versioning
 
@@ -88,9 +83,8 @@ func explainMax(loaded Loaded, effective Config, image string) (cap, from string
 }
 
 // entryOrigin names the images entry a value came from, file and all. The
-// project layer is checked first because mergeImages lets an entry there replace
-// the global one outright, key by key — so a project entry is what the run saw,
-// whatever the global file said about the same image.
+// project layer is checked first: mergeImages lets an entry there replace the
+// global one outright.
 func entryOrigin(loaded Loaded, image, field string) string {
 	key := "images." + image + field
 	if _, ok := loaded.Project.Images[image]; ok {
@@ -115,9 +109,8 @@ func keyOrigin(key, path string) string {
 }
 
 // explainMatch reports whether any entry named the image at all, and points at
-// the entries that nearly did. A key that silently fails to match is the failure
-// this command exists to catch: the config looks right, the setting is ignored,
-// and nothing anywhere says why.
+// the entries that nearly did — the config looks right, the setting is ignored,
+// and nothing else says why.
 func explainMatch(w io.Writer, loaded Loaded, effective Config, image string) {
 	if _, ok := effective.Images[image]; ok {
 		return
@@ -148,10 +141,9 @@ func nearMisses(images map[string]policy.Image, image string) []string {
 }
 
 // isNearMiss decides whether key is plausibly the entry the user meant. The two
-// mistakes worth catching are writing the reference instead of the name
-// ("traefik:1.2" for "library/traefik") and getting the namespace wrong in
-// either direction ("traefik" for "library/traefik"), so the comparison drops
-// the tag, the digest and everything before the last path segment.
+// mistakes are writing the reference instead of the name ("traefik:1.2") or the
+// wrong namespace ("traefik" for "library/traefik"), so the comparison drops the
+// tag, the digest and everything before the last path segment.
 func isNearMiss(image, key string) bool {
 	image, key = strings.ToLower(bareName(image)), strings.ToLower(key)
 	if image == key {

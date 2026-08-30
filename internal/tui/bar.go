@@ -10,10 +10,9 @@ import (
 )
 
 // The bar holds the decisions that are not about any one row: the filter, the
-// global target level, and the two run-wide buttons. It is always on screen so
-// those settings are discoverable, and every stop names its key so it teaches
-// the shortcut rather than replacing it. ←/→ walk the stops, ↑/↓ return to the
-// list, space and enter act. Unclaimed keys fall through to the list.
+// global target level, and the two run-wide buttons. Every stop names its key,
+// so it teaches the shortcut rather than replacing it. ←/→ walk the stops, ↑/↓
+// return to the list, space and enter act; unclaimed keys fall through.
 
 // barKind is what a stop does when it is acted on: a value steps, a button
 // fires.
@@ -100,9 +99,8 @@ func floatingLabel(show bool) string {
 func hintFor(b key.Binding) string { return b.Help().Key }
 
 // tab asks what the cursor is on, not where the focus is: an image opens the
-// detail column, anything else goes to the bar. Asking the focus instead left
-// tab stepping the bar while the cursor sat on a row with details to show.
-// Walking the bar is `m`'s job, which stays available from a row.
+// detail column, anything else goes to the bar. Walking the bar itself is `m`'s
+// job, which stays available from a row.
 
 // advanceFocus is what tab does, from wherever the keyboard currently is.
 func (m *Model) advanceFocus() {
@@ -160,9 +158,8 @@ func (m *Model) enterBar(stop int) {
 // --- keys ---------------------------------------------------------------
 
 // handleBarKey reads the keys the bar claims while it has the focus: ←/→ move
-// between stops, ↑/↓ go back down into the list. Letting the vertical ones fall
-// through scrolled the list while the keyboard said it was on the bar.
-// Everything unclaimed still reaches the list.
+// between stops, ↑/↓ go back down into the list. Everything unclaimed still
+// reaches the list.
 func (m Model) handleBarKey(msg tea.KeyMsg) (bool, tea.Model, tea.Cmd) {
 	switch {
 	case key.Matches(msg, m.keys.Focus), key.Matches(msg, m.keys.BarNext):
@@ -283,9 +280,8 @@ func (m Model) barLine(width int) string {
 }
 
 // barStopText renders one stop. Focus is carried by colour, weight and an
-// underline merged into each segment's own style: a background would be ended
-// by the reset every segment emits, and an underlined accent reads as selected
-// on light and dark terminals alike.
+// underline merged into each segment's own style: a background would be ended by
+// the reset every segment emits.
 func (m Model) barStopText(s barStop, focused bool) string {
 	edge := m.theme.dim()
 	label := m.theme.dim()

@@ -79,11 +79,9 @@ func (m *Model) setTargetAnnounced(t Target) {
 }
 
 // Nothing to browse is a no-op with an explanation rather than an empty pane.
-// toggleFloating lists or hides the floating-tag rows, fetching their digests the
-// first time they are asked for: the scan only resolved them when the setting was
-// already on, and a run that was told not to pin must not spend the requests
-// anyway. Returns the command that does the fetching, or nil when there is
-// nothing left to fetch.
+// toggleFloating lists or hides the floating-tag rows, fetching their digests
+// the first time they are asked for — a run that was told not to pin must not
+// spend those requests unasked. Returns nil when there is nothing to fetch.
 func (m *Model) toggleFloating() tea.Cmd {
 	m.showFloating = !m.showFloating
 

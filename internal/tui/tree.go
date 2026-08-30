@@ -23,9 +23,8 @@ type node struct {
 }
 
 // pathSegments splits a compose file path into its segments. On Windows one walk
-// can produce both separators, so normalising here keeps node keys — and thus
-// collapse state — stable. A leading separator is folded into the first segment
-// so an absolute path does not lose its root.
+// can produce both separators, so normalising here keeps node keys stable. A
+// leading separator joins the first segment, so an absolute path keeps its root.
 func pathSegments(path string) []string {
 	p := strings.ReplaceAll(path, "\\", "/")
 	abs := strings.HasPrefix(p, "/")
@@ -113,10 +112,9 @@ func buildTree(paths []string) (nodes []node, byKey map[string]int, byPath map[s
 }
 
 // compress collapses single-child chains into one row: a directory with exactly
-// one child and no rows of its own is a line to scroll past, not a fold worth
-// making. The merged row keeps the deeper node's key, so collapse state survives
-// that directory gaining a second child mid-scan, and the shallower node's depth,
-// so the tree does not indent for levels no longer drawn.
+// one child and no rows of its own is a line to scroll past. The merged node
+// keeps the deeper key, so collapse state survives a second child appearing
+// mid-scan, and the shallower depth, so nothing indents for a level not drawn.
 func compress(n *treeNode) *treeNode {
 	for i, c := range n.children {
 		n.children[i] = compress(c)

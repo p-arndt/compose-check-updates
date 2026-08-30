@@ -1,9 +1,7 @@
 // Package tui implements the interactive terminal UI shown by `ccu -i`.
 //
-// The UI is a Bubble Tea program that consumes the streaming scanner: rows
-// appear while registries are still being queried, and once the scan settles
-// the user selects which updates to apply and, optionally, which compose files
-// to restart afterwards.
+// It consumes the streaming scanner, so rows appear while registries are still
+// being queried.
 package tui
 
 import (

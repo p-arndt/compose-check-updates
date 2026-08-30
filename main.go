@@ -61,9 +61,8 @@ func run(flags cli.Flags) (int, error) {
 	}
 
 	// Read before anything is scanned, and before `ccu config` reports, so both
-	// see the same resolution. A broken config file stops the run rather than
-	// being skipped: silently scanning with settings the user thinks are in
-	// effect is the one outcome worth failing over.
+	// see the same resolution. A broken config file stops the run: scanning with
+	// settings the user only thinks are in effect is worth failing over.
 	cfg, err := config.Load(flags.Directory, flags.Config)
 	if err != nil {
 		return 0, fmt.Errorf("reading config: %w", err)
@@ -94,9 +93,8 @@ func run(flags cli.Flags) (int, error) {
 	}
 
 	// The TUI is what a bare `ccu` means; `ccu check` asks for the report
-	// instead. A piped or redirected stdout has no frame to draw on, so rather
-	// than fail at something the user never spelled out, the run falls back to
-	// the report — what `ccu | tee`, a CI job or a cron entry wants anyway.
+	// instead. A piped stdout has no frame to draw on, so the run falls back to
+	// the report — what `ccu | tee`, CI or a cron entry wants anyway.
 	onTerminal := isTerminal(os.Stdout)
 	if !flags.Check && !onTerminal {
 		slog.Warn("No terminal on stdout, running the non-interactive report instead of the TUI; use `ccu check` to select it explicitly")
@@ -202,13 +200,9 @@ func scanOptions(flags cli.Flags, effective config.Config) scanner.Options {
 	}
 
 	// The TUI narrows the list with its own level filter, so it needs every level
-	// resolved up front: re-scanning on every filter change would mean hitting
-	// the registries again for versions already looked up.
-	//
-	// The floating tags are deliberately not forced on in the same way. Their
-	// digests cost a request each and pin a reference the user left mutable on
-	// purpose, so the bar's "floating" stop fetches them if and when it is
-	// pressed.
+	// resolved up front, or every filter change would hit the registries again.
+	// Floating tags are not forced on the same way: their digests cost a request
+	// each, so the bar's "floating" stop fetches them if it is pressed.
 	if !flags.Check {
 		opts.Major, opts.Minor, opts.Patch = true, true, true
 	}

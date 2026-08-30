@@ -18,9 +18,8 @@ func applyCmd(r Row) tea.Cmd {
 	info := r.Update
 	return func() tea.Msg {
 		// Re-pointing a row clears its resolved digest, and Update() refuses a
-		// tag/digest pair that no longer belongs together. Resolving inside the
-		// command keeps the network call off the UI thread; a no-op for images
-		// that are not digest-pinned.
+		// tag/digest pair that no longer belongs together. Inside the command, so
+		// the network call stays off the UI thread.
 		if info.CurrentDigest != "" {
 			if err := info.ResolveDigest(registry.New("")); err != nil {
 				return applyResultMsg{key: key, err: err}
@@ -118,12 +117,10 @@ func (m *Model) finishApply() tea.Cmd {
 }
 
 // affectedFiles is the deduplicated set of compose files that actually changed,
-// in list order. The restart question is asked once for the set, since
-// `docker compose up -d` acts on the whole file anyway.
-// Keyed by the compose file each update restarts through rather than by the file
-// it was written to: a stack whose compose file *and* whose Dockerfile changed is
-// still one `up`. Of those two the Dockerfile update wins, because only it asks
-// for the rebuild that puts the new base image into the running container.
+// in list order, keyed by the compose file each update restarts through rather
+// than the file it was written to: a stack whose compose file *and* Dockerfile
+// changed is still one `up`. The Dockerfile update wins, because only it asks
+// for the rebuild that puts the new base image into the container.
 func (m Model) affectedFiles() []check.Update {
 	at := make(map[string]int)
 	var out []check.Update

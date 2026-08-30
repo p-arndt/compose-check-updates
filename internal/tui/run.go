@@ -19,11 +19,9 @@ import (
 )
 
 // logCapture is a slog.Handler that keeps records in memory instead of writing
-// them anywhere: while the TUI owns the screen, nothing may reach the terminal
-// except the rendered frame.
-//
-// Every field is guarded by mu — the scan logs from one goroutine per image
-// while the UI drains from the Bubble Tea loop.
+// them anywhere: while the TUI owns the screen, nothing else may reach the
+// terminal. mu guards every field — one goroutine logs per image while the
+// Bubble Tea loop drains.
 type logCapture struct {
 	mu      sync.Mutex
 	records []capturedLog
@@ -102,9 +100,7 @@ func captureSlog(min slog.Level) (*logCapture, func()) {
 
 // Run starts the interactive UI and blocks until the user is done. Any restarts
 // the user asked for happen after the program has returned, never during it.
-//
-// project and global are the two config layers as read from disk, kept apart
-// rather than merged: removing a pin needs to know which scope it came from.
+// project and global stay unmerged: removing a pin needs to know its scope.
 func Run(opts scanner.Options, project, global config.Config) error {
 	fd := os.Stdout.Fd()
 	if !isatty.IsTerminal(fd) && !isatty.IsCygwinTerminal(fd) {

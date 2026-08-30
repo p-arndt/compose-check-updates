@@ -17,11 +17,9 @@ func rowKey(r Row) string {
 
 func (m *Model) addRow(r Row) {
 	// One Dockerfile can be built by several compose files — a `compose.yaml`
-	// and its `compose.yml` override in the same directory, say — and each of
-	// them reports it. Two rows would then share a rowKey, so rowByKey would
-	// resolve both to the first: applying would write it twice and leave its
-	// twin pending forever. The services of the row dropped are kept, since it
-	// is the same update either way.
+	// and its `compose.yml` override, say. Two rows sharing a rowKey would both
+	// resolve to the first, so applying writes it twice and leaves the twin
+	// pending forever. The dropped row's services are kept.
 	if existing := m.rowByKey(rowKey(r)); existing != nil {
 		for _, s := range r.Update.Services {
 			existing.Update.Services = check.AppendService(existing.Update.Services, s)
@@ -85,10 +83,9 @@ func (m Model) cursorKey() string {
 }
 
 // rowEligible reports whether a row is part of what the list is about at all,
-// the level filter aside. A floating-tag pin is not: it is an offer to write down
-// what "latest" resolves to, and until the user asks for those it may not be
-// counted either — a header reading "1 of 2 updates" would send them to `f`,
-// which cannot reveal it.
+// the level filter aside. A floating-tag pin is not, until the user asks for
+// those: a header reading "1 of 2 updates" would send them to `f`, which cannot
+// reveal it.
 func (m Model) rowEligible(r Row) bool {
 	if r.Level == policy.LevelPin {
 		return m.showFloating
@@ -97,9 +94,8 @@ func (m Model) rowEligible(r Row) bool {
 }
 
 // rowVisible is rowEligible plus the level filter, and is the single definition
-// of what the list shows: every counter reads it, so a header can never disagree
-// with the lines under it. The filter — which only speaks about versions — has
-// nothing to say about a pin either way.
+// of what the list shows, so a header can never disagree with the lines under
+// it. The filter speaks about versions and has nothing to say about a pin.
 func (m Model) rowVisible(r Row) bool {
 	if !m.rowEligible(r) {
 		return false

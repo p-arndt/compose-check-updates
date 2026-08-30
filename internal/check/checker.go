@@ -17,9 +17,8 @@ type Checker struct {
 	policies policy.Set
 
 	// composePath is the compose file that builds path, set only when path is a
-	// Dockerfile reached through a service's `build:`. It tells the two kinds of
-	// file apart, and a restart has to act on it: `docker compose up` knows about
-	// the service, not about its Dockerfile.
+	// Dockerfile reached through a service's `build:`. A restart acts on it:
+	// `docker compose up` knows the service, not the Dockerfile behind it.
 	composePath string
 	service     string
 }
@@ -55,9 +54,8 @@ func (c *Checker) Check(major, minor, patch bool) ([]Update, error) {
 }
 
 // CheckImage re-checks the single image the file spells as reference, reporting
-// false when the file no longer names it. It is for the caller that changed one
-// image's settings: a second full Check would re-fetch every tag list for
-// versions already on screen.
+// false when the file no longer names it. For the caller that changed one
+// image's settings, where a full Check would re-fetch every other tag list too.
 func (c *Checker) CheckImage(reference string, major, minor, patch bool) (Update, bool, error) {
 	updates, err := c.updates()
 	if err != nil {
@@ -202,9 +200,8 @@ func hint(p policy.Image, message string) string {
 }
 
 // updates reads the file and collects its image references, folding repeated
-// ones into a single update: two services on the same image are one update to
-// make, and a multi-stage Dockerfile naming its base twice must move both lines
-// together.
+// ones into a single update: two services on the same image are one update, and
+// a multi-stage Dockerfile must move both of its FROM lines together.
 func (c *Checker) updates() ([]Update, error) {
 	occurrences, err := c.occurrences()
 	if err != nil {

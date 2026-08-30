@@ -48,9 +48,8 @@ type Flags struct {
 	// layer produced each of them. Empty means the whole configuration.
 	Image string
 	// Versioning overrides the default scheme image tags are read under for this
-	// run. Empty means the command line said nothing, which leaves the config —
-	// and, failing that, `semver` — to decide. Per-image entries still win over
-	// it: naming an image is the more specific statement.
+	// run. Empty leaves the config, and failing that `semver`, to decide.
+	// Per-image entries still win: naming an image is the more specific statement.
 	Versioning policy.Versioning
 }
 
@@ -62,9 +61,8 @@ var plainOnlyFlags = map[string]bool{
 }
 
 // splitSubcommand pulls a leading subcommand off the argument list. Each picks a
-// mode of its own and ignores the options the other modes read, so a subcommand
-// states the shape of an invocation better than a flag would. Anything else is
-// handed back untouched.
+// mode of its own and ignores the options the others read, which a flag cannot
+// say as plainly. Anything else is handed back untouched.
 func splitSubcommand(argv []string) (sub string, rest []string) {
 	if len(argv) == 0 || strings.HasPrefix(argv[0], "-") {
 		return "", argv
@@ -135,9 +133,8 @@ func Parse(version string) Flags {
 	}
 
 	// A report-only flag without `check` is what every pre-TUI-default script looks
-	// like, and `ccu -u` in a cron entry would hang on a terminal that is not
-	// there. So the implied mode is honoured and main names the new spelling once.
-	// Not for -i, which means the TUI and is the default anyway.
+	// like, and `ccu -u` in a cron entry would hang waiting for a terminal. The
+	// implied mode is honoured, and main names the new spelling once.
 	if !args.Check {
 		flag.Visit(func(f *flag.Flag) {
 			if plainOnlyFlags[f.Name] {
@@ -192,9 +189,8 @@ func Parse(version string) Flags {
 }
 
 // usage replaces flag.PrintDefaults so the subcommands are documented alongside
-// the flags, and so the deprecated -self-update / -check-update spellings are
-// left out: they still work, but a help text listing both forms would suggest
-// there is a difference between them.
+// the flags, and the deprecated -self-update / -check-update spellings are left
+// out: listing both forms would suggest there is a difference between them.
 func usage(w io.Writer) {
 	// The invocation name only, not the path it happened to be started from:
 	// help text that reads `/tmp/build/ccu check` teaches the wrong command.

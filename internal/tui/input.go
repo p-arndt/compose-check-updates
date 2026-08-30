@@ -148,14 +148,10 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 // setScopeSelected drives a/n, which pass the cursor's node, and ctrl+a/ctrl+n,
-// which pass -1 for the whole list. It is collapse-blind — folding is display
-// only, so both keys act on every row the filter keeps under the node — and the
-// status line names the scope, since rows may change off screen. An empty or
-// fully filtered list has no node to scope to and falls back to a full sweep.
-//
-// The two directions are deliberately asymmetric about the filter: selecting only
-// adds rows the filter shows, while deselecting sweeps the scope regardless, so
-// `n` can never leave a selected row that no header reports.
+// which pass -1 for the whole list. Collapse-blind, since folding is display
+// only, and asymmetric about the filter: selecting only adds rows the filter
+// shows, while deselecting sweeps the scope regardless — so `n` can never leave
+// a selected row that no header reports.
 func (m *Model) setScopeSelected(node int, v bool) {
 	verb := "deselected"
 	if v {
