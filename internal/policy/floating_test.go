@@ -87,3 +87,29 @@ func TestFloatingTagsCombine(t *testing.T) {
 		})
 	}
 }
+
+// The built-in list is handed out to callers that print it, so it has to agree
+// with Floats: a tag listed but not treated as floating would tell the user ccu
+// protects them from something it does not.
+func TestBuiltInFloatingTagsAgreesWithFloats(t *testing.T) {
+	tags := BuiltInFloatingTags()
+
+	assert.ElementsMatch(t,
+		[]string{"latest", "main", "master", "edge", "stable", "nightly", "dev", "develop"},
+		tags)
+	for _, tag := range tags {
+		assert.True(t, Image{}.Floats(tag), tag)
+	}
+}
+
+// Each call builds its own slice, so a caller sorting or appending to what it
+// got back cannot change what the next caller sees.
+func TestBuiltInFloatingTagsIsACopy(t *testing.T) {
+	tags := BuiltInFloatingTags()
+	for i := range tags {
+		tags[i] = "clobbered"
+	}
+
+	assert.NotContains(t, BuiltInFloatingTags(), "clobbered")
+	assert.True(t, Image{}.Floats("latest"))
+}
