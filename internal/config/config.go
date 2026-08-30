@@ -264,7 +264,7 @@ func Parse(r io.Reader) (Config, error) {
 		}
 	}
 
-	if err := ValidateVersioning(cfg.Versioning); err != nil {
+	if err := ValidateDefaultVersioning(cfg.Versioning); err != nil {
 		return Config{}, err
 	}
 

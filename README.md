@@ -230,6 +230,9 @@ versioning: semver
 images:
   nousresearch/hermes-agent:
     versioning: loose
+  acme/dated:
+    versioning: regex
+    versioning_pattern: '^(?P<major>\d{4})-(?P<minor>\d{2})-(?P<patch>\d{2})$'
 ```
 
 `~/.config/ccu/config.yaml` for preferences across every project, `.ccu.yaml` in
@@ -318,6 +321,7 @@ Rather than loosen the rule for every image, the rule is a setting:
 | --------------- | ---------------------------------------------------------------------- |
 | `semver`        | up to three segments, no leading zeros — the default, unchanged        |
 | `loose`         | up to six numeric segments, leading zeros, any suffix                  |
+| `regex`         | whatever a pattern you write next to it names — per image only         |
 
 Turn it on for the image that needs it:
 
@@ -361,6 +365,48 @@ which of the three decided it.
 > [!TIP]
 > If `ccu` says `no tag matches the newest digest` for an image whose tags look
 > like versions to you, `versioning: loose` is what it is asking for.
+
+### Tags no fixed rule can read: `regex`
+
+Some repositories tag by dashed date — `2024-01-01`. Both schemes above read that
+as release **2024** with `-01-01` mistaken for a prerelease, which orders
+`2024-12-31` before `2024-02-01`: the alphabet, not the calendar. For those, say
+what a tag looks like:
+
+```yaml
+# .ccu.yaml
+images:
+  acme/dated:
+    versioning: regex
+    versioning_pattern: '^(?P<major>\d{4})-(?P<minor>\d{2})-(?P<patch>\d{2})$'
+```
+
+The pattern is a Go regular expression with **named groups**, `(?P<name>…)`. Four
+of them carry numbers — `major`, `minor`, `patch` and `build` — plus `suffix` for
+whatever trails them, separator included. A group you leave out is `0`, so a
+pattern naming only `major` is enough; a group named anything else is ignored,
+which lets you name the parts you only need to match. The four order exactly as
+under `loose`: the first three are the levels, and `build` moving on its own is
+reported as a **patch**.
+
+The pattern has to describe the **whole** tag — it is anchored, so a date buried
+in `build-2024-01-01-x` is not one — and a tag it does not match is simply not a
+version, exactly as under the other schemes: `ccu` falls back to comparing
+digests for it.
+
+`regex` is a per-image scheme. There is no global `versioning: regex` and no
+`--versioning=regex`, because a pattern that fits one repository's tags is
+meaningless for the next one's. The pattern is checked when the config is read,
+so a typo fails the run and names the image rather than quietly reading no tags:
+
+```console
+$ ccu config
+ERROR  Error reading config  error=/repo/.ccu.yaml: image "acme/dated": versioning_pattern: "^(?P<major>\\d+$" is not a valid regular expression: error parsing regexp: missing closing ): `^(?P<major>\d+$`
+```
+
+A pattern set on an image that is not on `regex`, and `versioning: regex` with no
+pattern at all, fail the same way. `ccu config` lists the pattern beside the
+scheme for every image that has one.
 
 ## Images without semver tags
 

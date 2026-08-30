@@ -58,7 +58,11 @@ func showImages(w io.Writer, effective Config) {
 	schemes := effective.Versionings()
 	references := effective.ReferenceTags()
 	floating := effective.ImageFloatingTags()
-	if len(caps) == 0 && len(schemes) == 0 && len(references) == 0 && len(floating) == 0 {
+	// Shown rather than left implied: a `regex` image is only as good as its
+	// pattern, and "why does this tag not count as a version" is answered by the
+	// pattern itself far more often than by anything else on the line.
+	patterns := effective.VersioningPatterns()
+	if len(caps) == 0 && len(schemes) == 0 && len(references) == 0 && len(floating) == 0 && len(patterns) == 0 {
 		fmt.Fprintln(w, "  images: (nothing set)")
 		return
 	}
@@ -72,7 +76,7 @@ func showImages(w io.Writer, effective Config) {
 		seen[image] = struct{}{}
 		images = append(images, image)
 	}
-	for _, m := range []map[string]string{caps, schemes, references} {
+	for _, m := range []map[string]string{caps, schemes, references, patterns} {
 		for image := range m {
 			add(image)
 		}
@@ -90,6 +94,9 @@ func showImages(w io.Writer, effective Config) {
 		}
 		if scheme, ok := schemes[image]; ok {
 			settings = append(settings, "versioning "+scheme)
+		}
+		if pattern, ok := patterns[image]; ok {
+			settings = append(settings, "pattern "+pattern)
 		}
 		if reference, ok := references[image]; ok {
 			settings = append(settings, "reference_tag "+reference)

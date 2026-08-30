@@ -201,7 +201,7 @@ func TestVersioningFor(t *testing.T) {
 		WithVersioning(map[string]string{
 			"nousresearch/hermes-agent": VersioningLoose,
 			"redis":                     "",
-		}, VersioningSemver)
+		}, VersioningSemver, nil)
 
 	tests := []struct {
 		image string
@@ -223,7 +223,41 @@ func TestVersioningFor(t *testing.T) {
 	// reads as the default rather than as an error.
 	bare := NewUpdateChecker("compose.yaml", nil)
 	assert.Equal(t, "", bare.versioningFor("redis"))
-	scheme, ok := VersioningByName(bare.versioningFor("redis"))
+	scheme, ok := VersioningByName(bare.versioningFor("redis"), "")
 	assert.True(t, ok)
 	assert.Equal(t, VersioningSemver, scheme.Name())
+}
+
+// TestVersioningPatternReachesTheScheme is the seam the regex scheme lives or
+// dies on: the pattern is recorded per image and has to arrive at the scheme
+// that reads that one image's tags, and nowhere else.
+func TestVersioningPatternReachesTheScheme(t *testing.T) {
+	const calendar = `^(?P<major>\d{4})-(?P<minor>\d{2})-(?P<patch>\d{2})$`
+
+	checker := NewUpdateChecker("compose.yaml", nil).
+		WithVersioning(
+			map[string]string{"acme/dated": VersioningRegex},
+			VersioningSemver,
+			map[string]string{"acme/dated": calendar},
+		)
+
+	scheme, ok := VersioningByName(checker.versioningFor("acme/dated"), checker.versioningPatterns["acme/dated"])
+	assert.True(t, ok)
+	assert.Equal(t, VersioningRegex, scheme.Name())
+
+	v, ok := scheme.Parse("2024-01-01")
+	assert.True(t, ok)
+	assert.Equal(t, []int{2024, 1, 1}, v.Release)
+
+	// Every other image keeps the default and no pattern of its own — and the
+	// dashed date is exactly what it was before: release 2024 with the day and
+	// the month mistaken for a prerelease, which is what the entry above exists
+	// to correct for the one image that needed it.
+	other, ok := VersioningByName(checker.versioningFor("redis"), checker.versioningPatterns["redis"])
+	assert.True(t, ok)
+	assert.Equal(t, VersioningSemver, other.Name())
+	misread, ok := other.Parse("2024-01-01")
+	assert.True(t, ok)
+	assert.Equal(t, []int{2024}, misread.Release)
+	assert.Equal(t, "-01-01", misread.Suffix)
 }

@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 // Versioning is how a repository's tags are read as versions. Docker tags are
@@ -138,6 +139,7 @@ func newNumericVersioning(name, segment, suffix string, maxSegments int) numeric
 const (
 	VersioningSemver = "semver"
 	VersioningLoose  = "loose"
+	VersioningRegex  = "regex"
 )
 
 var (
@@ -170,15 +172,176 @@ var (
 	)
 )
 
+// regexSegmentGroups are the named groups a regex pattern may use for the
+// numeric segments, in the order they order the version. A group the pattern
+// does not name contributes 0, so a pattern naming only "major" reads a
+// one-segment version and one naming "major" and "patch" reads "x.0.y".
+//
+// Four rather than three, and named the way loose counts: anything past the
+// third orders the version but names no level of its own, so a "build" moving on
+// its own is reported as a patch — see Version.Major and sameTagFamily. Anything
+// a repository writes past that belongs in the suffix, which is where the
+// schemes ccu ships put it too.
+var regexSegmentGroups = []string{"major", "minor", "patch", "build"}
+
+// regexSuffixGroup is the named group carrying the prerelease or build metadata,
+// separator included. It is matched against Version.Suffix as written, which is
+// what makes an image on "-alpine" stay on "-alpine"; see isUpgradeCandidate.
+const regexSuffixGroup = "suffix"
+
+// regexVersioning reads tags with a pattern the user wrote. It is the way out
+// for repositories whose tags are versions in a shape no fixed rule can read —
+// dashed calendar tags like "2024-01-01" above all, which loose reads as release
+// 2024 with the rest as a suffix, ordering "2024-12-31" before "2024-01-01".
+//
+// Unlike the two schemes above this one is not a package-level singleton: the
+// pattern belongs to a single image, so a scheme is built per image from what
+// the config recorded for it.
+type regexVersioning struct {
+	pattern *regexp.Regexp
+	// segments is how many numeric segments a tag read by this pattern has: one
+	// past the highest group the pattern names. Derived from the pattern rather
+	// than from each match, so every tag of a repository reports the same count —
+	// sameTagFamily reads it, and a count that moved with the tag would make a
+	// tag drop in and out of its own family.
+	segments int
+}
+
+func (regexVersioning) Name() string { return VersioningRegex }
+
+func (r regexVersioning) Parse(tag string) (Version, bool) {
+	// No "v" is trimmed here, unlike the numeric schemes: the pattern is the
+	// user's own and says for itself what a tag may begin with.
+	match := r.pattern.FindStringSubmatch(tag)
+	if match == nil {
+		return Version{}, false
+	}
+
+	release := make([]int, r.segments)
+	suffix := ""
+
+	for i, name := range r.pattern.SubexpNames() {
+		// The whole match, and every group the user left unnamed.
+		if i == 0 || name == "" {
+			continue
+		}
+		value := match[i]
+
+		if name == regexSuffixGroup {
+			suffix = value
+			continue
+		}
+
+		index := segmentIndex(name)
+		if index < 0 {
+			// A group named something else entirely. Patterns are easier to read
+			// with a name on every group, so one ccu has no use for is ignored
+			// rather than rejected.
+			continue
+		}
+		// An optional group that did not take part names the .0 release, exactly
+		// as a tag writing fewer segments does under the numeric schemes.
+		if value == "" {
+			continue
+		}
+
+		n, err := strconv.Atoi(value)
+		if err != nil {
+			// The pattern let something through that is not a number ccu can
+			// order — letters, or a segment too large for an int. That is not a
+			// version, so the checker falls back to comparing digests for it.
+			return Version{}, false
+		}
+		release[index] = n
+	}
+
+	return Version{Tag: tag, Release: release, Suffix: suffix}, true
+}
+
+// segmentIndex returns the position name orders at, or -1 when it names no
+// segment.
+func segmentIndex(name string) int {
+	for i, group := range regexSegmentGroups {
+		if name == group {
+			return i
+		}
+	}
+	return -1
+}
+
+// newRegexVersioning builds a scheme from a pattern a user wrote. It returns an
+// error rather than panicking, because this is user input: regexp.MustCompile
+// here would turn a typo in a config file into a crash. The config layer rejects
+// the same patterns on load, so a run only ever reaches this with one it has
+// already accepted.
+//
+// The pattern is anchored, matching the whole tag the way semver and loose do.
+// Go matches anywhere in the string otherwise, so a pattern meant for dates would
+// read the 2024 out of "sha-2024ab12" as well and order a commit tag against real
+// releases. A pattern the user already anchored is unharmed by being anchored
+// again, which is why this needs no care about the difference.
+func newRegexVersioning(pattern string) (regexVersioning, error) {
+	if pattern == "" {
+		return regexVersioning{}, fmt.Errorf("versioning %q needs a pattern", VersioningRegex)
+	}
+
+	compiled, err := regexp.Compile(`^(?:` + pattern + `)$`)
+	if err != nil {
+		return regexVersioning{}, err
+	}
+
+	segments := 0
+	named := false
+	for _, name := range compiled.SubexpNames() {
+		if name == "" {
+			continue
+		}
+		named = true
+		if index := segmentIndex(name); index >= 0 {
+			segments = max(segments, index+1)
+		}
+	}
+	if !named {
+		return regexVersioning{}, fmt.Errorf("pattern %q names no group, so there is nothing to read a version out of", pattern)
+	}
+
+	return regexVersioning{pattern: compiled, segments: segments}, nil
+}
+
+// regexSchemes caches the schemes built from user patterns, keyed by the pattern
+// as written. VersioningByName is called once per image per check but also every
+// time an update is asked for its level, which the TUI does on every redraw;
+// compiling the same handful of patterns over and over for that is work nobody
+// asked for. Patterns come from a config file, so the set is small and bounded.
+var regexSchemes sync.Map
+
 // VersioningByName returns the scheme configured under name. An empty name is
 // the default rather than an error: it is what every image that was never given
 // a scheme has.
-func VersioningByName(name string) (Versioning, bool) {
+//
+// pattern is the regex an image on the `regex` scheme reads its tags with, and
+// is ignored by every other scheme. It is passed alongside the name rather than
+// looked up here because it belongs to one image, not to the scheme: the caller
+// is the only one that knows which image is being asked about.
+func VersioningByName(name, pattern string) (Versioning, bool) {
 	switch name {
 	case "", VersioningSemver:
 		return semverVersioning, true
 	case VersioningLoose:
 		return looseVersioning, true
+	case VersioningRegex:
+		if cached, ok := regexSchemes.Load(pattern); ok {
+			return cached.(regexVersioning), true
+		}
+		scheme, err := newRegexVersioning(pattern)
+		if err != nil {
+			// Not an error worth reporting from here: the config layer rejects
+			// these on load and names the file they came from, so the only way
+			// one arrives is a pattern that never went through it.
+			return nil, false
+		}
+		regexSchemes.Store(pattern, scheme)
+		return scheme, true
 	}
 	return nil, false
 }
