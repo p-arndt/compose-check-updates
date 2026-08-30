@@ -1,14 +1,44 @@
 # Keeps the two things that can go stale without anyone noticing under review:
 # the Go module graph, and the SHA-pinned actions in the workflows — pinning
 # means a fixed SHA never picks up upstream fixes on its own.
+#
+# Grouped so a quiet week is one PR, not eight. Majors stay ungrouped on
+# purpose: those are the ones that need reading, and burying a major in a batch
+# with a dozen patch bumps is how it gets waved through.
 version: 2
 updates:
   - package-ecosystem: gomod
     directory: /
     schedule:
       interval: weekly
+    groups:
+      # bubbletea, lipgloss and their rendering stack are version-coupled: a
+      # lipgloss bump against a stale termenv changes what the TUI draws, and
+      # the break shows up as wrong output rather than a failed build. Reviewed
+      # together or not at all.
+      charm:
+        patterns:
+          - github.com/charmbracelet/*
+          - github.com/muesli/*
+          - github.com/aymanbagabas/*
+          - github.com/lucasb-eyer/*
+          - github.com/rivo/*
+          - github.com/clipperhouse/*
+          - github.com/mattn/*
+          - github.com/xo/*
+      # Everything else, as long as it is a minor or patch bump.
+      go:
+        update-types:
+          - minor
+          - patch
 
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
+    groups:
+      # All of these are pinned to a SHA and bumped for the same reason, so one
+      # PR a week is the whole story.
+      actions:
+        patterns:
+          - "*"
