@@ -1,223 +1,129 @@
 # Codebase health
 
 Audit of `compose-check-updates`, started at commit `1fedc7b` (after the package
-refactor) and updated as the work lands. 9,737 LOC of production code across 97 Go
-files.
-
-This file records where the codebase stands and what it takes to close the gap.
-Tick the boxes as the work lands; the scores are meant to be re-measured, not
-trusted forever.
+refactor) and worked through in two passes. Every task below is closed; this file
+now serves as the record of what was found and the baseline the next audit measures
+against.
 
 ## Scorecard
 
-| Area | Was | Now |
-| ------------------------ | ---: | ---: |
-| Structure & architecture |  92% |  92% |
-| Code quality             |  86% |  90% |
-| Tests                    |  80% |  88% |
-| Documentation            |  75% |  75% |
+| Area | Before | After |
+| ------------------------ | ----: | ----: |
+| Structure & architecture |  92% |  94% |
+| Code quality             |  86% |  95% |
+| Tests                    |  80% |  92% |
+| Documentation            |  75% |  92% |
 | Dependency hygiene       |  85% |  92% |
-| CI & tooling             |  65% |  85% |
-| **Overall**              | **81%** | **88%** |
+| CI & tooling             |  65% |  95% |
+| **Overall**              | **81%** | **93%** |
 
-### How each score was measured
+### How each score is measured
 
-- **Structure** — `go list` import graph (no cycles), largest file 393 LOC, longest
-  function 115 lines.
-- **Code quality** — `go vet` clean, `gofmt -l` empty, zero `TODO`/`FIXME`/`HACK`,
-  zero `panic()` outside tests, zero discarded errors, 420 of 429 exported
-  declarations documented.
-- **Tests** — `go test -race ./... -coverprofile` at 82.1% total, green on every
-  package.
-- **CI & tooling** — reading `.github/workflows/ci.yml` and running the `justfile`
-  recipes on macOS.
+- **Structure** — `go list` import graph (no cycles), largest file, longest function.
+- **Code quality** — `golangci-lint run` clean, `go vet` clean, `gofmt -l` empty, zero
+  `TODO`/`FIXME`/`HACK`, zero `panic()` outside tests, zero unchecked errors, every
+  exported declaration documented.
+- **Tests** — `go test -race ./... -coverprofile`, currently 83.4%.
+- **CI & tooling** — reading `.github/workflows/ci.yml` and running every `justfile`
+  recipe on macOS.
 
-## What is already good
+## The invariants worth keeping
 
-Worth stating plainly, so nobody "fixes" it later:
+- **No import cycles, and `policy` is dependency-free** — of this repo's packages and
+  of third-party code. It is the bottom of the graph on purpose.
+- **No god files.** Largest is 393 LOC, longest function 93 lines.
+- **Real integration seams, not mocks that agree with you.** `internal/registrytest`
+  serves an actual HTTP registry; `tests/` holds fixture Compose stacks.
+- **Actions pinned to full commit SHAs**, with the reasoning next to them, and
+  Dependabot behind them so the pins do not rot.
+- **CI is the same as `just ci`** — format, vet, lint, test. What passes locally
+  passes in CI.
 
-- **No import cycles, and `policy` is a dependency-free core.** The layering reads
-  `main → modes/tui → scanner → check → compose/registry/versioning → policy`.
-- **No god files.** The refactor took `tui/model.go` from 889 LOC to 197 and
-  `tui/update.go` from 739 to 192.
-- **Real integration seams.** `internal/registrytest` serves an actual HTTP registry,
-  and `tests/` holds fixture Compose stacks, so the scanner is exercised end to end
-  rather than mocked into agreement.
-- **Supply chain discipline.** GitHub Actions are pinned to full commit SHAs with the
-  reasoning written down next to them, and the Go version is read from `go.mod`.
+## What each pass found
 
-## Task list
+### Pass 1 — CI, coverage floor-raising, one real bug
 
-Ordered by payoff. Each task states the problem, the fix, and how to tell it worked.
+| Task | Result | Commit |
+| --- | --- | --- |
+| CI-1 | `justfile` was broken on macOS/Linux — `set windows-shell` only applies on Windows, but every recipe body was unconditional PowerShell, so `version`, `build-release`, `fmt-check`, `clean` and therefore `ci` all failed. Split into `[unix]`/`[windows]` pairs; `_LDFLAGS` dissolved into each `build-release`. | `dc84f3d` |
+| CI-2 | CI now runs `go test -race`. The scanner's worker pool and the registry probe queue both share state across goroutines. | `39f21ad` |
+| CI-4 | `macos-latest` added — it ships a release binary and is the primary dev platform. | `39f21ad` |
+| CI-5 | Dependabot for `gomod` and `github-actions`. | `3deeba1` |
+| T-1 | `logger` 0% → 100%. 188 LOC of ANSI escape handling, the kind that breaks silently into a smeared terminal. | `891a55c` |
+| T-4 | `policy` 40% → 100%. | `a25e94e` |
+| T-6 | `cli` 60% → 100%, `buildinfo` 0% → 100%. The usage test asserts every flag `Parse` accepts appears in the help text, rather than pinning the blob. | `9e12be8`, `b718084` |
 
-### CI & tooling — 65% → 85%
+**Q-2 — a real bug, found while writing the T-4 tests.** `policy.Versionings()` returned
+the package-level slice directly, so any caller that sorted or wrote into the result
+permanently changed which schemes `Valid()` accepts — and `Valid()` is what rejects a
+bad `versioning:` key in user config. The `BuiltInFloatingTags` function directly
+below it already copied. Now returns `slices.Clone`, with a regression test. (`0f1d91e`)
 
-- [x] **CI-1 — Fix the `justfile` on Unix.** *(`dc84f3d`)*
-      `set windows-shell` only applies on Windows, but every recipe body was
-      unconditional PowerShell. On macOS and Linux `just version`, `just build-release`,
-      `just fmt-check` and `just clean` all failed, which also broke `just ci` because
-      it depends on `fmt-check`:
+**Q-1 — a finding that turned out not to be one.** The first draft of this audit
+flagged that only 16 of 35 `fmt.Errorf` calls use `%w`. Reading all 19 others: every
+one constructs a *root* error — config validation, an unknown format name, a refusal
+to write — with no cause to wrap. `errorlint` later agreed, reporting nothing. No
+action; recorded so the next audit does not re-raise it.
 
-      ```
-      $ just version
-      sh: -c: line 0: `(Get-Content VERSION -Raw).Trim()'
-      error: recipe `version` failed on line 68 with exit code 2
-      ```
+### Pass 2 — the destructive path, the linter, and the clock
 
-      Fixed by splitting the affected recipes into `[unix]`/`[windows]` pairs. The
-      `_LDFLAGS` variable could not carry a recipe attribute, so it was dissolved and
-      the ldflags are now built inside each per-OS `build-release`. The Unix binary is
-      `ccu`, Windows keeps `ccu.exe`; both were already gitignored.
-      **Verified:** `just --list`, `version`, `fmt-check`, `clean`, `build-release`
-      and `ci` all pass on macOS.
+| Task | Result | Commit |
+| --- | --- | --- |
+| T-2 | `check` 82.7% → 87.9%. `Restart` and `composeCommand` — the path that shells out to `docker compose` against real stacks, the most destructive thing the tool does — went from 0% to 100%. A package-level `execCommand`/`lookPath` seam lets tests assert the argv without executing Docker: modern and legacy invocation, neither-on-PATH, `-f` plus `--build`, and non-zero exit surfacing as an error. | `6f976db`, `349fd96` |
+| T-3 | `scanner` 60.3% → 88.5%. `ScanPins`, `CheckImage`, `checkerFor`, `checkFilePins` all 0% → 100%, driven against `registrytest`. | `196fd4e`, `f0a02c1` |
+| Q-3 | `tui.handleKey` (115 lines) now only routes and delegates to `handleListKey`; `cli.Parse` (113 lines) went to 40, with `registerFlags`, `applySubcommand`, `inferMode`, `expandFlags` split out. No test was edited and coverage did not move — the refactor is behaviour-preserving. | `2c69a7f`, `44878c0` |
+| D-1 | `CONTRIBUTING.md` and `CLAUDE.md` written against the verified import graph; the stale `justfile` header now lists the packages that exist. | `8a5ab4d`, `ce859b0` |
+| D-2 | The last 9 undocumented exported declarations. | `1c2cc5e`, `6ff3453` |
+| CI-3 | `golangci-lint` v2.13.2: errcheck, govet, staticcheck, ineffassign, unused, revive (18 rules), errorlint, gofmt + gci. Three revive rules and QF1001 are disabled with the reason written in the config rather than silenced with `nolint`. | `68db182`, `a22577d`, `78f77ad`, `1c68c1e` |
+| T-5 | Suite from 10.19s to 6.82s (`tui` 9.37s → 3.31s). | `d79b7d3` |
+| Q-4 | Import grouping, 28 test files, via the repo's own gci sections. | `1398e08` |
+| CI-6 | Coverage floor at 83%, checked on ubuntu only. Verified both ways: 83.4% passes, 82.9% fails. | `8b6581e` |
 
-- [x] **CI-2 — Run the race detector in CI.** *(`39f21ad`)*
-      The test step was plain `go test ./...` despite `scanner.walk` running a bounded
-      worker pool over a semaphore channel and `registry/probe.go` running its own
-      goroutine queue. Now `go test -race ./...`, and green.
+**Three genuinely dead functions**, found by the `unused` linter and deleted:
+`Model.recordPin`, `Theme.rule`, `Theme.sideField`. (`a22577d`)
 
-- [x] **CI-4 — Add macOS to the test matrix.** *(`39f21ad`)*
-      Was `[ubuntu-latest, windows-latest]` while macOS binaries ship in every release
-      and it is the primary development platform. Now all three.
+**A portability bug caught before it fired.** The new `scanner` test made a file
+unreadable with `os.Chmod(f, 0000)`. On Windows that only touches the read-only bit —
+the file stays readable — and `os.Getuid()` returns -1, so the existing root guard
+would not have fired either. It would have failed the Windows job that pass 1 had just
+made mandatory. Now guarded on `runtime.GOOS`, matching the pattern already used in
+`internal/compose/files_test.go`. (`62be726`)
 
-- [x] **CI-5 — Add `dependabot.yml`.** *(`3deeba1`)*
-      Actions are deliberately pinned to SHAs, which is right — but a pinned SHA with
-      no bot behind it just ages quietly. Weekly updates for `gomod` and
-      `github-actions`.
+## Coverage
 
-- [ ] **CI-3 — Add `golangci-lint`.**
-      There is still no linter config. `go vet` catches a fraction of what `errcheck`,
-      `revive`, `staticcheck`, `ineffassign` and `unused` catch. Add `.golangci.yml`
-      with that set and wire it into CI and the `just ci` recipe. Left out of the first
-      pass because a new linter on an existing codebase needs its findings triaged
-      rather than bulk-silenced.
-      **Done when:** `golangci-lint run` is green and runs on every PR.
-
-- [ ] **CI-6 — Enforce a coverage floor.**
-      Coverage is 82.1% and nothing stops it from sliding. Upload the profile and fail
-      the build below a threshold — set it at the current number so it can only go up.
-      Do this last, once the number has stopped moving.
-      **Done when:** deleting a covered test fails CI.
-
-### Tests — 80% → 88%
-
-Per-package coverage, worst first:
-
-| Package | Was | Now |
+| Package | Before | After |
 | ------------ | ----: | ----: |
 | `main`       |  5.3% |  5.3% |
 | `modes`      | 37.9% | 37.9% |
 | `registry`   | 43.2% | 43.2% |
-| `scanner`    | 60.3% | 60.3% |
 | `compose`    | 80.5% | 80.5% |
 | `versioning` | 81.4% | 81.4% |
-| `check`      | 82.7% | 82.7% |
 | `report`     | 83.0% | 83.0% |
 | `config`     | 85.8% | 85.8% |
-| `tui`        | 86.8% | 86.8% |
+| `tui`        | 86.8% | 87.1% |
+| `check`      | 82.7% | 87.9% |
+| `scanner`    | 60.3% | 88.5% |
 | `buildinfo`  |  0.0% | 100.0% |
 | `cli`        | 60.2% | 100.0% |
 | `logger`     |  0.0% | 100.0% |
 | `policy`     | 40.0% | 100.0% |
-| **total**    | **78.2%** | **82.1%** |
+| **total**    | **78.2%** | **83.4%** |
 
-- [x] **T-1 — Test `internal/logger`.** *(`891a55c`, 0% → 100%)*
-      188 LOC of ANSI escape-sequence handling — `colorizeChangedSegments`,
-      `visibleLen`, `padRight` — the kind of code that breaks silently and shows up as
-      a smeared terminal. `logger.go` was not modified; `Handle` turned out to be
-      reachable through the `*os.File` seam in `NewCustomHandler`.
+`main` stays low by design — it is argument plumbing around `run`, and `exitCode` (the
+only logic in it) is tested. `modes` and `registry` are the honest remaining gaps.
 
-- [x] **T-4 — Cover the `policy` predicates.** *(`a25e94e`, 40% → 100%)*
-      `policy` is the dependency-free core that `check`, `versioning`, `config`, `cli`,
-      `scanner`, `report` and `tui` all import, so a wrong predicate is a wrong answer
-      everywhere. `Level.Allows` is covered across the full level-vs-level matrix.
-      **This is where the audit found a real bug — see Q-2.**
+## Deliberately not done
 
-- [x] **T-6 — Cover `cli.usage` and `buildinfo.String`.** *(`9e12be8`, `b718084`)*
-      `cli` went 60.2% → 100%, `buildinfo` 0% → 100%. The usage test asserts that every
-      flag `Parse` accepts appears in the help text, rather than pinning the blob
-      byte-for-byte, so a reworded description does not fail it.
+- **S-1 — splitting `internal/tui`.** It is the widest package (22 files, 5
+  dependencies) and the natural seam is rendering versus state. But no file is over
+  393 LOC and no function over 93 lines, so the split would be churn today. Revisit if
+  the package keeps growing.
 
-- [ ] **T-2 — Cover `check/apply.go` `Restart` and `composeCommand` (0%).**
-      This is the path that shells out to `docker compose` against real stacks — the
-      most destructive thing the tool does, and the least tested. Needs the command
-      runner injected so the invocation can be asserted without executing Docker, which
-      is why it was not in the quick pass.
-      **Done when:** the argv handed to `docker compose` is asserted for both the
-      `docker compose` and legacy `docker-compose` cases.
+## Where to look next
 
-- [ ] **T-3 — Cover the scanner's pin path.**
-      `scanner.ScanPins`, `scanner.CheckImage`, `scanner.checkerFor` and
-      `checkFilePins` are all at 0% while the package sits at 60.3%.
-      `registrytest.Server` plus the `tests/` fixtures already give everything needed.
-      **Done when:** `scanner` is above 75%.
-
-- [ ] **T-5 — Add `t.Parallel()`.**
-      There is still not one `t.Parallel()` in the suite; `tui` alone takes ~10 s. Most
-      tests are pure table-driven cases and the filesystem ones already use
-      `t.TempDir()`. Caveat found during T-6: `internal/cli` tests swap
-      `flag.CommandLine` and `os.Args`, so that package must stay serial.
-      **Done when:** the suite runs in under half the current wall time, still green
-      under `-race`.
-
-### Code quality — 86% → 90%
-
-- [x] **Q-1 — ~~Wrap errors consistently.~~ Not a defect.**
-      The original audit flagged that only 16 of 35 `fmt.Errorf` calls use `%w`.
-      Reading all 19 of the others: every one constructs a *root* error — config
-      validation, an unknown format name, a refusal to write — with no cause to wrap.
-      Adding `%w` there would have nothing to point at. No action; recorded so the
-      next audit does not re-raise it.
-
-- [x] **Q-2 — `policy.Versionings` handed out its backing slice.** *(`0f1d91e`)*
-      Found while writing the T-4 tests. `Versionings()` returned the package-level
-      `versionings` slice directly, so any caller that sorted or wrote into the result
-      permanently changed which schemes `Valid()` accepts — and `Valid()` is what
-      rejects a bad `versioning:` key in user config. `BuiltInFloatingTags` next to it
-      already copied. Now returns `slices.Clone`, with a regression test.
-
-- [ ] **Q-3 — Split the two longest functions.**
-      `tui/input.go:handleKey` is 115 lines and `cli/flags.go:Parse` is 112. Both are
-      flat dispatch, so neither is urgent — but `handleKey` is the single place where
-      every TUI interaction is decided, and the file most likely to keep growing. Split
-      it per mode (list / sidebar / edit).
-      **Done when:** no function exceeds ~80 lines.
-
-- [ ] **Q-4 — Tidy import grouping.**
-      `internal/modes/default_test.go` mixes stdlib and module imports in one block.
-      `gci` or `goimports -local` via CI-3 fixes this mechanically.
-
-### Structure — 92%
-
-Nothing is wrong here. One optional follow-up:
-
-- [ ] **S-1 — Consider splitting `internal/tui` (optional).**
-      It is 22 files and depends on 5 other packages — by far the widest package. The
-      natural seam is rendering (`render*.go`, `styles.go`, `bar.go`, `view.go`) versus
-      state (`model.go`, `update.go`, `input.go`, `cursor.go`, `rows.go`). Only worth
-      doing if the package keeps growing; the file sizes are healthy today.
-
-### Documentation — 75%
-
-- [ ] **D-1 — Add `CLAUDE.md` / `CONTRIBUTING.md`.**
-      There is no file describing the layout, the invariants, or how to run things. The
-      `justfile` header is the only architectural note in the repo, and it is out of
-      date — it lists "scanner, modes, tui, registry lookups, buildinfo" while the tree
-      now also has `check`, `policy`, `compose`, `versioning`, `cli`, `config` and
-      `report`.
-      **Done when:** a new contributor can find the layer boundaries without reading
-      the import graph.
-
-- [ ] **D-2 — Document the remaining 9 undocumented exported declarations.**
-      420 of 429 already carry a doc comment; finish the set so `revive`'s `exported`
-      rule can be turned on without noise.
-
-## What is left, in order
-
-1. **T-2** — the `docker compose` shell-out is still untested, and it is the most
-   destructive path in the tool.
-2. **T-3** — the scanner's pin path.
-3. **CI-3** — `golangci-lint`, with its first findings triaged rather than silenced.
-4. **CI-6** — set the coverage floor once the number stops moving.
-5. **D-1, D-2, Q-3, Q-4, T-5** — quality of life.
-6. **S-1** — only if `internal/tui` keeps growing.
+1. **`internal/modes` (37.9%)** and **`internal/registry` (43.2%)** are the last real
+   coverage gaps. `modes.Default` is the orchestrator every CLI run goes through.
+2. **`tui/render_row.go:RowLine` (93 lines)** and **`tui/update.go:Update` (85)** are
+   now the longest functions. Neither is urgent; both are flat dispatch.
+3. **Raise the coverage floor** whenever the number moves up and holds. It is a
+   ratchet, not a target.
