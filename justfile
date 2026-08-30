@@ -5,7 +5,17 @@
 #
 # Layout:
 #   .                  — the `ccu` CLI entry point lives at the repo root  (-> ccu / ccu.exe)
-#   internal/…         — scanner, modes, tui, registry lookups, buildinfo
+#   internal/policy    — what the user recorded about an image; imports nothing
+#   internal/versioning — reading a tag as a version (semver, loose, regex)
+#   internal/compose   — compose files, the images they declare, their Dockerfiles
+#   internal/registry  — tag lists and digests from OCI registries
+#   internal/check     — resolves one file's images, and writes the new tags back
+#   internal/scanner   — walks a directory and checks every file it finds
+#   internal/report    — the non-interactive output (pretty / JSON Lines)
+#   internal/tui       — the interactive interface
+#   internal/cli       — flag parsing and usage; internal/modes — the check run
+#   internal/config    — .ccu.yaml and the global config
+#   internal/logger, buildinfo, registrytest — logging, version stamp, test registry
 #   tests/             — fixture-driven tests (covered by `go test ./...`)
 #   VERSION            — single source of truth for the version (stamped into the binary)
 
