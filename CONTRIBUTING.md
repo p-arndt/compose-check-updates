@@ -21,14 +21,19 @@ own lists the recipes.
 | `just vet`         | `go vet ./...`                                         |
 | `just fmt`         | `gofmt -w .`                                           |
 | `just fmt-check`   | fails if anything is unformatted                       |
-| `just ci`          | `fmt-check` + `vet` + `test` — run this before a PR    |
+| `just lint`        | `golangci-lint run` (installs the pinned version once) |
+| `just cover`       | prints coverage per package and in total               |
+| `just ci`          | `fmt-check` + `vet` + `lint` + `test` — run before a PR|
 
 The recipes work on Unix and on Windows. `just` only applies
 `set windows-shell` on Windows, so the handful of recipes that need real shell
 syntax exist twice, once `[unix]` and once `[windows]`; if you add one that
 does more than call `go`, add both halves rather than assuming `sh`.
 
-There is no `golangci-lint` config. `go vet` plus `gofmt` is the whole gate.
+`golangci-lint` is configured in `.golangci.yml`. Where a rule is off, the
+reason is written next to it — turn one back on by arguing with that comment,
+not by sprinkling `nolint`. Nothing gates on coverage; `just cover` prints the
+number when you want it.
 
 ## Package layout
 
