@@ -13,6 +13,13 @@ linters:
     - revive # style and clarity: naming, early returns, unused parameters
 
   settings:
+    staticcheck:
+      checks:
+        - all
+        # QF1001 rewrites `!(a < b && b < c)` into its De Morgan form. Reading
+        # "not in sorted order" off the negated comparison is the clearer of
+        # the two, so the rewrite would cost more than it buys.
+        - -QF1001
     revive:
       rules:
         - name: blank-imports
