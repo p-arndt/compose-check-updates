@@ -38,10 +38,12 @@ against.
   Dependabot behind them so the pins do not rot.
 - **CI is the same as `just ci`** — format, vet, lint, test. What passes locally
   passes in CI.
+- **No coverage gate.** `just cover` prints the number when you want it; nothing
+  fails a build over it. See "Deliberately not done".
 
 ## What each pass found
 
-### Pass 1 — CI, coverage floor-raising, one real bug
+### Pass 1 — CI, coverage, one real bug
 
 | Task | Result | Commit |
 | --- | --- | --- |
@@ -77,7 +79,6 @@ action; recorded so the next audit does not re-raise it.
 | CI-3 | `golangci-lint` v2.13.2: errcheck, govet, staticcheck, ineffassign, unused, revive (18 rules), errorlint, gofmt + gci. Three revive rules and QF1001 are disabled with the reason written in the config rather than silenced with `nolint`. | `68db182`, `a22577d`, `78f77ad`, `1c68c1e` |
 | T-5 | Suite from 10.19s to 6.82s (`tui` 9.37s → 3.31s). | `d79b7d3` |
 | Q-4 | Import grouping, 28 test files, via the repo's own gci sections. | `1398e08` |
-| CI-6 | Coverage floor at 83%, checked on ubuntu only. Verified both ways: 83.4% passes, 82.9% fails. | `8b6581e` |
 
 **Three genuinely dead functions**, found by the `unused` linter and deleted:
 `Model.recordPin`, `Theme.rule`, `Theme.sideField`. (`a22577d`)
@@ -114,6 +115,11 @@ only logic in it) is tested. `modes` and `registry` are the honest remaining gap
 
 ## Deliberately not done
 
+- **CI-6 — a coverage floor in CI.** Built, then removed on the maintainer's call
+  (`8b6581e`, reverted). A percentage gate fails builds over test-shaped code rather
+  than tested code, and the number here is already carried by a suite that covers the
+  paths that matter. `just cover` still prints it on demand.
+
 - **S-1 — splitting `internal/tui`.** It is the widest package (22 files, 5
   dependencies) and the natural seam is rendering versus state. But no file is over
   393 LOC and no function over 93 lines, so the split would be churn today. Revisit if
@@ -125,5 +131,5 @@ only logic in it) is tested. `modes` and `registry` are the honest remaining gap
    coverage gaps. `modes.Default` is the orchestrator every CLI run goes through.
 2. **`tui/render_row.go:RowLine` (93 lines)** and **`tui/update.go:Update` (85)** are
    now the longest functions. Neither is urgent; both are flat dispatch.
-3. **Raise the coverage floor** whenever the number moves up and holds. It is a
-   ratchet, not a target.
+3. **Coverage is a signal, not a target.** `just cover` when you want the number;
+   83.4% is the baseline this audit left behind.
