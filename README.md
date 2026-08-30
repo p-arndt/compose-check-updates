@@ -431,16 +431,29 @@ the tags `ccu` treats as floating. If your registry moves a differently spelled
 one — `release`, `prod`, `canary` — say so and it is pinned like the rest:
 
 ```yaml
+# .ccu.yaml or ~/.config/ccu/config.yaml — for every image
+floating_tags: [release, canary]
+
+# ...or for one image only
 images:
   internal/thing:
     floating_tags: [release, canary]
 ```
 
-The list **adds** to the built-in names rather than replacing them: a repository
-that publishes `release` almost certainly publishes `latest` beside it, and if
-naming one made `ccu` forget the others, that `latest` would turn back into an
-ordinary tag — pinnable, and offered as an update target — which is precisely
-what the built-in list prevents.
+A registry usually spells its moving tag the same way across all of its
+repositories, so the global list is the one to reach for; the per-image list is
+there for the odd repository that differs.
+
+Everything **adds up** rather than replacing: the built-in names, the global
+list, the two config files, and the per-image list. Nothing ever takes a name
+away. The reason is that the built-in names are a fact about how registries
+work rather than a preference of yours — a repository that publishes `release`
+almost certainly publishes `latest` beside it, and if naming one made `ccu`
+forget the others, that `latest` would turn back into an ordinary tag, pinnable
+and offered as an update target, which is precisely what the built-in list
+prevents. For the same reason the two config files union here the way `exclude`
+does, instead of the project file replacing the global one the way a per-image
+cap does.
 
 In the TUI they sit behind the bar's `floating` stop (`p`), which lists and hides
 them; `pin_floating` decides which way it starts. If the run was not asked to pin,

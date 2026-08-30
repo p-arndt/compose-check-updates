@@ -19,3 +19,6 @@ ccu
 dist/
 build/
 stage/
+
+# Worktrees created by background agents
+.claude/

@@ -59,11 +59,12 @@ func main() {
 	// written down once is meant to stay excluded, and -exclude is how a run adds
 	// one more on top.
 	effective := config.Config{
-		Exclude:     config.Union(cfg.Exclude, ccuFlags.Exclude),
-		Images:      cfg.Images,
-		PinFloating: cfg.PinFloating,
-		Dockerfiles: cfg.Dockerfiles,
-		Versioning:  cfg.Versioning,
+		Exclude:      config.Union(cfg.Exclude, ccuFlags.Exclude),
+		FloatingTags: cfg.FloatingTags,
+		Images:       cfg.Images,
+		PinFloating:  cfg.PinFloating,
+		Dockerfiles:  cfg.Dockerfiles,
+		Versioning:   cfg.Versioning,
 	}
 	// -versioning replaces the *default* scheme, not the per-image entries: a
 	// config line that names an image is the more specific statement, and a flag
@@ -112,10 +113,11 @@ func main() {
 		Minor:   ccuFlags.Minor,
 		Patch:   ccuFlags.Patch,
 
-		Versionings:       effective.Versionings(),
-		DefaultVersioning: effective.DefaultVersioning(),
-		ReferenceTags:     effective.ReferenceTags(),
-		FloatingTags:      effective.FloatingTags(),
+		Versionings:        effective.Versionings(),
+		DefaultVersioning:  effective.DefaultVersioning(),
+		ReferenceTags:      effective.ReferenceTags(),
+		FloatingTags:       effective.ImageFloatingTags(),
+		GlobalFloatingTags: effective.FloatingTags,
 
 		PinFloating: effective.PinFloatingEnabled(),
 		Dockerfiles: effective.DockerfilesEnabled(),

@@ -161,10 +161,10 @@ func (c Config) ReferenceTags() map[string]string {
 	return tags
 }
 
-// FloatingTags flattens the per-image floating tags into the map the scanner
+// ImageFloatingTags flattens the per-image floating tags into the map the scanner
 // reads, leaving out images that named none so a lookup miss and "only the
 // built-in floating tags" are the same thing.
-func (c Config) FloatingTags() map[string][]string {
+func (c Config) ImageFloatingTags() map[string][]string {
 	if len(c.Images) == 0 {
 		return nil
 	}

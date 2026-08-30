@@ -36,6 +36,17 @@ type Config struct {
 	// turned on.
 	PinFloating *bool `yaml:"pin_floating"`
 
+	// FloatingTags names further tags to treat as moving, on top of the built-in
+	// ones and for every image. A registry that spells its moving tag "release"
+	// usually does so across all of its repositories, so writing that down once
+	// beats repeating it under every image.
+	//
+	// Entries are unioned across the files and with the per-image lists rather
+	// than replacing them, the way Exclude is: the built-in names are a fact
+	// about how registries work rather than a preference, and nothing here ever
+	// takes one away.
+	FloatingTags []string `yaml:"floating_tags"`
+
 	// Versioning is the scheme every image's tags are read under unless the image
 	// names one of its own. Empty means `semver`. A plain string rather than a
 	// pointer because "" is already the "not set here" the merge below needs, and
@@ -246,6 +257,13 @@ func Parse(r io.Reader) (Config, error) {
 	}
 	cfg.Exclude = nonEmpty(cfg.Exclude)
 
+	cfg.FloatingTags = Union(cfg.FloatingTags)
+	for _, tag := range cfg.FloatingTags {
+		if !validTag(tag) {
+			return Config{}, fmt.Errorf("floating_tags: %q is not a valid tag", tag)
+		}
+	}
+
 	if err := ValidateVersioning(cfg.Versioning); err != nil {
 		return Config{}, err
 	}
@@ -262,6 +280,7 @@ func Parse(r io.Reader) (Config, error) {
 // user already excluded globally.
 func merge(base, over Config) Config {
 	base.Exclude = Union(base.Exclude, over.Exclude)
+	base.FloatingTags = Union(base.FloatingTags, over.FloatingTags)
 	base.Images = mergeImages(base.Images, over.Images)
 	// Only a file that actually names the key overrides it, which is what makes
 	// the project layer able to turn the global setting off as well as on.

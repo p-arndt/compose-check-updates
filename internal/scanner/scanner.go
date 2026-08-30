@@ -44,6 +44,11 @@ type Options struct {
 	// repository whose moving tag is spelled "release" or "canary".
 	FloatingTags map[string][]string
 
+	// GlobalFloatingTags names further moving tags, applying to every image and
+	// added to whatever an image named for itself. A registry usually spells its
+	// moving tag the same way across all of its repositories.
+	GlobalFloatingTags []string
+
 	// DefaultVersioning is the scheme for images Versionings says nothing about.
 	// Empty means "semver", which is what every image gets until a config file or
 	// -versioning says otherwise.
@@ -164,7 +169,7 @@ func checkFile(ctx context.Context, events chan<- Event, opts Options, path stri
 		WithPinFloating(opts.PinFloating).
 		WithVersioning(opts.Versionings, opts.DefaultVersioning).
 		WithReferenceTags(opts.ReferenceTags).
-		WithFloatingTags(opts.FloatingTags)
+		WithFloatingTags(opts.FloatingTags, opts.GlobalFloatingTags)
 	infos, err := checker.Check(opts.Major, opts.Minor, opts.Patch)
 	if err != nil {
 		send(ctx, events, Event{Kind: EventError, Path: path, Err: err})
@@ -220,7 +225,7 @@ func dockerfileCheckers(opts Options, registry *internal.Registry, path string) 
 				WithPinFloating(opts.PinFloating).
 				WithVersioning(opts.Versionings, opts.DefaultVersioning).
 				WithReferenceTags(opts.ReferenceTags).
-				WithFloatingTags(opts.FloatingTags),
+				WithFloatingTags(opts.FloatingTags, opts.GlobalFloatingTags),
 		})
 	}
 	return checkers
@@ -244,7 +249,7 @@ func checkFilePins(ctx context.Context, events chan<- Event, opts Options, path 
 	// moving tag ccu does not know would silently have nothing to pin here even
 	// though the full scan pins it.
 	pins, err := internal.NewUpdateChecker(path, registry).
-		WithFloatingTags(opts.FloatingTags).
+		WithFloatingTags(opts.FloatingTags, opts.GlobalFloatingTags).
 		CheckPins()
 	if err != nil {
 		send(ctx, events, Event{Kind: EventError, Path: path, Err: err})

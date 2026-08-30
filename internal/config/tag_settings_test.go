@@ -2,6 +2,7 @@ package config
 
 import (
 	"bytes"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -145,7 +146,7 @@ func TestFloatingTagsFlattening(t *testing.T) {
 		"library/redis":  {Max: LevelMinor},
 	}}
 
-	tags := cfg.FloatingTags()
+	tags := cfg.ImageFloatingTags()
 	if len(tags) != 1 {
 		t.Fatalf("want only internal/thing listed, got %v", tags)
 	}
@@ -153,7 +154,7 @@ func TestFloatingTagsFlattening(t *testing.T) {
 		t.Errorf("want release,canary — trimmed and deduplicated — got %q", got)
 	}
 
-	if got := (Config{}).FloatingTags(); got != nil {
+	if got := (Config{}).ImageFloatingTags(); got != nil {
 		t.Errorf("want nil for a config naming no image, got %v", got)
 	}
 }
@@ -203,5 +204,66 @@ func TestShowListsTagSettingsPerImage(t *testing.T) {
 		if !strings.Contains(out.String(), line) {
 			t.Errorf("want a line %q, got:\n%s", line, out.String())
 		}
+	}
+}
+
+// TestGlobalFloatingTags covers the list that applies to every image. It unions
+// across the layers the way Exclude does rather than replacing, because a tag
+// name written down once is meant to stay written down: the built-in names are a
+// fact about how registries work, not a preference, and nothing here ever takes
+// one away.
+func TestGlobalFloatingTags(t *testing.T) {
+	tests := []struct {
+		name    string
+		global  string
+		project string
+		want    []string
+	}{
+		{name: "neither", want: nil},
+		{name: "global only", global: "floating_tags: [release]\n", want: []string{"release"}},
+		{name: "project only", project: "floating_tags: [canary]\n", want: []string{"canary"}},
+		{
+			name:    "both union rather than replace",
+			global:  "floating_tags: [release]\n",
+			project: "floating_tags: [canary]\n",
+			want:    []string{"release", "canary"},
+		},
+		{
+			name:    "a name in both is kept once",
+			global:  "floating_tags: [release, prod]\n",
+			project: "floating_tags: [release, canary]\n",
+			want:    []string{"release", "prod", "canary"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			globalDir := t.TempDir()
+			root := t.TempDir()
+			t.Setenv("CCU_CONFIG_DIR", globalDir)
+
+			if tt.global != "" {
+				write(t, filepath.Join(globalDir, "config.yaml"), tt.global)
+			}
+			if tt.project != "" {
+				write(t, filepath.Join(root, ".ccu.yaml"), tt.project)
+			}
+
+			loaded, err := Load(root, "")
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			assertEqual(t, "floating_tags", loaded.FloatingTags, tt.want)
+		})
+	}
+}
+
+func TestGlobalFloatingTagsRejectsBadName(t *testing.T) {
+	_, err := Parse(strings.NewReader("floating_tags: [\"not a tag!\"]\n"))
+	if err == nil {
+		t.Fatal("want an error naming the bad tag, got none")
+	}
+	if !strings.Contains(err.Error(), `floating_tags: "not a tag!" is not a valid tag`) {
+		t.Errorf("unexpected error: %v", err)
 	}
 }

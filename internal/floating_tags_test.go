@@ -21,7 +21,7 @@ func TestFloatingTagsPinsATagCcuDoesNotKnow(t *testing.T) {
 
 	checker := NewUpdateChecker(file, NewRegistry(serverURL.Host)).
 		WithPinFloating(true).
-		WithFloatingTags(map[string][]string{image: {"release", "canary"}})
+		WithFloatingTags(map[string][]string{image: {"release", "canary"}}, nil)
 	infos, err := checker.Check(true, true, true)
 	assert.NoError(t, err)
 	assert.Len(t, infos, 1)
@@ -66,7 +66,7 @@ func TestCheckPinsHonoursTheExtraFloatingTags(t *testing.T) {
 	file := writeComposeFile(t, "image: "+image+":release")
 
 	pins, err := NewUpdateChecker(file, NewRegistry(serverURL.Host)).
-		WithFloatingTags(map[string][]string{image: {"release"}}).
+		WithFloatingTags(map[string][]string{image: {"release"}}, nil).
 		CheckPins()
 	assert.NoError(t, err)
 	assert.Len(t, pins, 1)
@@ -93,7 +93,7 @@ func TestFloatingTagsAddToTheBuiltInSet(t *testing.T) {
 func TestFloatingTagsLookupIsExact(t *testing.T) {
 	checker := (&UpdateChecker{}).WithFloatingTags(map[string][]string{
 		"internal/thing": {"release"},
-	})
+	}, nil)
 
 	assert.Equal(t, []string{"release"}, checker.floatingTagsFor("internal/thing"))
 	assert.Empty(t, checker.floatingTagsFor("library/redis"))
@@ -112,4 +112,63 @@ func TestDigestCandidatesDropsTheExtraFloatingTags(t *testing.T) {
 
 	assert.Equal(t, []string{"20260830"}, candidates)
 	assert.Zero(t, dropped)
+}
+
+// TestFloatingTagsForCombines covers how the two sources add up. Neither
+// replaces the other, and neither replaces the built-in set: a registry that
+// spells its moving tag "release" across every repository is a global fact, and
+// a single repository adding "canary" on top must not lose it again.
+func TestFloatingTagsForCombines(t *testing.T) {
+	tests := []struct {
+		name     string
+		perImage map[string][]string
+		global   []string
+		image    string
+		want     []string
+	}{
+		{
+			name:  "neither, so only the built-in set applies",
+			image: "redis",
+			want:  nil,
+		},
+		{
+			name:   "global only, and it reaches every image",
+			global: []string{"release"},
+			image:  "redis",
+			want:   []string{"release"},
+		},
+		{
+			name:     "per-image only",
+			perImage: map[string][]string{"internal/thing": {"canary"}},
+			image:    "internal/thing",
+			want:     []string{"canary"},
+		},
+		{
+			name:     "both add up",
+			perImage: map[string][]string{"internal/thing": {"canary"}},
+			global:   []string{"release"},
+			image:    "internal/thing",
+			want:     []string{"release", "canary"},
+		},
+		{
+			name:     "another image's entry does not leak, the global one still applies",
+			perImage: map[string][]string{"internal/thing": {"canary"}},
+			global:   []string{"release"},
+			image:    "redis",
+			want:     []string{"release"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			checker := NewUpdateChecker("compose.yaml", nil).
+				WithFloatingTags(tt.perImage, tt.global)
+
+			assert.Equal(t, tt.want, checker.floatingTagsFor(tt.image))
+
+			// The global slice is shared by every image, so combining must never
+			// write an image's own tag into it.
+			assert.Equal(t, tt.global, checker.globalFloatingTags)
+		})
+	}
 }

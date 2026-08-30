@@ -38,6 +38,11 @@ func Show(w io.Writer, loaded Loaded, effective Config) {
 		}
 	}
 
+	if len(effective.FloatingTags) == 0 {
+		fmt.Fprintln(w, "  floating_tags: (built-in names only)")
+	} else {
+		fmt.Fprintf(w, "  floating_tags: %s (on top of the built-in names)\n", strings.Join(effective.FloatingTags, " "))
+	}
 	fmt.Fprintf(w, "  versioning: %s\n", effective.DefaultVersioning())
 	fmt.Fprintf(w, "  pin_floating: %t\n", effective.PinFloatingEnabled())
 	fmt.Fprintf(w, "  dockerfiles: %t\n", effective.DockerfilesEnabled())
@@ -52,7 +57,7 @@ func showImages(w io.Writer, effective Config) {
 	caps := effective.Caps()
 	schemes := effective.Versionings()
 	references := effective.ReferenceTags()
-	floating := effective.FloatingTags()
+	floating := effective.ImageFloatingTags()
 	if len(caps) == 0 && len(schemes) == 0 && len(references) == 0 && len(floating) == 0 {
 		fmt.Fprintln(w, "  images: (nothing set)")
 		return

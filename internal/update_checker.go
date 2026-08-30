@@ -40,6 +40,11 @@ type UpdateChecker struct {
 	// version of. See isFloatingTag.
 	floatingTags map[string][]string
 
+	// globalFloatingTags are the extra floating tags that apply to every image,
+	// added to whatever the image named for itself. A registry usually spells its
+	// moving tag the same way across all of its repositories.
+	globalFloatingTags []string
+
 	// composePath is the compose file that builds path, set only when path is a
 	// Dockerfile reached through a service's `build:`. It is what tells the two
 	// kinds of file apart here — and what a restart has to act on later, since
@@ -100,17 +105,36 @@ func (u *UpdateChecker) referenceTagFor(image string) string {
 	return defaultReferenceTag
 }
 
-// WithFloatingTags sets the per-image tags treated as floating on top of the
-// built-in ones. See UpdateChecker.floatingTags.
-func (u *UpdateChecker) WithFloatingTags(perImage map[string][]string) *UpdateChecker {
-	u.floatingTags = perImage
+// WithFloatingTags sets the tags treated as floating on top of the built-in
+// ones: global ones applying to every image, and further ones per image. See
+// UpdateChecker.floatingTags.
+func (u *UpdateChecker) WithFloatingTags(perImage map[string][]string, global []string) *UpdateChecker {
+	u.floatingTags, u.globalFloatingTags = perImage, global
 	return u
 }
 
-// floatingTagsFor returns the extra floating tags recorded for an image, nil for
-// one nobody named — which leaves it with exactly the built-in set.
+// floatingTagsFor returns the extra floating tags in effect for an image: the
+// global ones plus the image's own. They add up rather than one replacing the
+// other, for the same reason neither replaces the built-in set — see
+// isFloatingTag. Duplicates are left in; isFloatingTag scans the list either way
+// and both sides naming the same tag is not worth an allocation to notice.
+//
+// Returns nil for an image nobody named, which leaves it with exactly the
+// built-in set.
 func (u *UpdateChecker) floatingTagsFor(image string) []string {
-	return u.floatingTags[image]
+	perImage := u.floatingTags[image]
+	if len(u.globalFloatingTags) == 0 {
+		return perImage
+	}
+	if len(perImage) == 0 {
+		return u.globalFloatingTags
+	}
+
+	// A fresh slice rather than appending to the global one, which is shared by
+	// every image and must not grow a tag belonging to just one of them.
+	combined := make([]string, 0, len(u.globalFloatingTags)+len(perImage))
+	combined = append(combined, u.globalFloatingTags...)
+	return append(combined, perImage...)
 }
 
 func (u *UpdateChecker) versioningFor(image string) string {
