@@ -1,7 +1,6 @@
 package compose
 
 import (
-	"bufio"
 	"os"
 	"path/filepath"
 	"strings"
@@ -20,35 +19,28 @@ type BuildTarget struct {
 // reporting one for it. A remote context or `dockerfile_inline:` is skipped:
 // neither has a file on disk whose FROM lines could be rewritten.
 func BuildTargets(composePath string) []BuildTarget {
-	file, err := os.Open(composePath)
-	if err != nil {
-		return nil
-	}
-	defer file.Close()
-
 	b := builds{dir: filepath.Dir(composePath), seen: map[string]bool{}}
 	b.reset()
 
 	tracker := newServiceTracker()
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		line := scanner.Text()
+	// The read error is the unreadable file the caller already reports; a file
+	// that ends early keeps the targets read out of it, as it did when this
+	// scanned the lines itself.
+	_ = eachLine(composePath, func(line string) {
 		service := tracker.observe(line)
 
-		trimmed := strings.TrimSpace(line)
-		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
-			continue
-		}
+		// Blank and comment lines are already no key: keyPattern requires a
+		// non-"#" character where the key starts.
 		m := keyPattern.FindStringSubmatch(line)
 		if m == nil {
-			continue
+			return
 		}
 		indent, key := len(m[1]), strings.TrimSpace(m[2])
 
 		if b.indent >= 0 {
 			if indent > b.indent {
 				b.readKey(indent, key, line)
-				continue
+				return
 			}
 			b.flush()
 		}
@@ -58,7 +50,7 @@ func BuildTargets(composePath string) []BuildTarget {
 		if key == "build" && service != "" {
 			b.open(indent, service, scalarValue(line))
 		}
-	}
+	})
 	b.flush()
 
 	return b.targets

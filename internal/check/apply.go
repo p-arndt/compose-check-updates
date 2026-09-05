@@ -1,10 +1,13 @@
 package check
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 )
@@ -73,17 +76,17 @@ func sameImageLine(line, raw string) bool {
 	return strings.TrimRight(line, blanks) == strings.TrimRight(raw, blanks)
 }
 
+// coversLine reports whether line is one of the lines a reference was scanned
+// from: the one it was first seen on, or any of the further ones collected
+// beside it.
+func coversLine(line, raw string, extra []string) bool {
+	return sameImageLine(line, raw) ||
+		slices.ContainsFunc(extra, func(e string) bool { return sameImageLine(line, e) })
+}
+
 // rewrites reports whether line is one this update has to change.
 func (u *Update) rewrites(line string) bool {
-	if sameImageLine(line, u.RawLine) {
-		return true
-	}
-	for _, extra := range u.ExtraLines {
-		if sameImageLine(line, extra) {
-			return true
-		}
-	}
-	return false
+	return coversLine(line, u.RawLine, u.ExtraLines)
 }
 
 func (u *Update) Backup() error { return backupFile(u.FilePath) }
@@ -166,15 +169,17 @@ func (u *Update) applyEnv() error {
 // what makes an update reversible, and one per file per run: a second image of
 // the same file must not overwrite the copy taken before the first was written.
 func rewriteFile(path string, edit func(lines []string)) error {
-	if _, err := os.Stat(path + backupSuffix); os.IsNotExist(err) {
-		if err := backupFile(path); err != nil {
-			return err
-		}
-	}
-
 	input, err := os.ReadFile(path)
 	if err != nil {
 		return err
+	}
+
+	// The backup is written from the bytes just read rather than from a second
+	// read of the same file: one read is what the rewrite needs anyway.
+	if _, err := os.Stat(path + backupSuffix); errors.Is(err, fs.ErrNotExist) {
+		if err := os.WriteFile(path+backupSuffix, input, 0644); err != nil {
+			return err
+		}
 	}
 
 	lines := strings.Split(string(input), "\n")
@@ -229,7 +234,7 @@ func (u *Update) Restart() error {
 		return err
 	}
 
-	args := append(append([]string{}, compose[1:]...), "-f", u.RestartPath(), "up", "-d")
+	args := slices.Concat(compose[1:], []string{"-f", u.RestartPath(), "up", "-d"})
 	// A new base image only reaches the running container once the image is built
 	// again.
 	if u.IsDockerfile() {

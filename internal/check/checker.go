@@ -1,6 +1,7 @@
 package check
 
 import (
+	"cmp"
 	"fmt"
 	"log/slog"
 	"slices"
@@ -62,8 +63,7 @@ func (c *Checker) Check(major, minor, patch bool) ([]Update, error) {
 	}
 
 	for i := range updates {
-		c.resolve(&updates[i], major, minor, patch)
-		c.resolveSource(&updates[i])
+		c.resolveAll(&updates[i], major, minor, patch)
 	}
 	return updates, nil
 }
@@ -81,8 +81,7 @@ func (c *Checker) CheckImage(reference string, major, minor, patch bool) (Update
 		if updates[i].FullImageName != reference {
 			continue
 		}
-		c.resolve(&updates[i], major, minor, patch)
-		c.resolveSource(&updates[i])
+		c.resolveAll(&updates[i], major, minor, patch)
 		return updates[i], true, nil
 	}
 	return Update{}, false, nil
@@ -117,6 +116,14 @@ func (c *Checker) CheckPins() ([]Update, error) {
 
 func (c *Checker) policyFor(u *Update) policy.Image {
 	return c.policies.For(u.ImageName)
+}
+
+// resolveAll is everything a checked image gets: what it can move to, and where
+// it is built from. Both callers go through it so a full scan and a single
+// re-check can never resolve an update to different fields.
+func (c *Checker) resolveAll(u *Update, major, minor, patch bool) {
+	c.resolve(u, major, minor, patch)
+	c.resolveSource(u)
 }
 
 // resolve fills in one update, shared by the full scan and the single re-check
@@ -162,22 +169,20 @@ func (c *Checker) resolve(u *Update, major, minor, patch bool) {
 		return
 	}
 
-	// One filter for both calls below, so the two walks share its budget and its
-	// answers: they run over the same candidates, newest first.
 	oldEnough := c.oldEnoughFilter(u, p.MinAgeDuration())
 
 	// Every level is resolved so an interactive caller can offer a choice of
 	// target; LatestTag stays the highest tag the requested flags allow.
 	u.PatchTag, u.MinorTag, u.MajorTag = versioning.LatestPerLevelFunc(scheme, u.CurrentTag, tags, oldEnough)
 
-	latest := versioning.LatestFunc(scheme, u.CurrentTag, tags, major, minor, patch, oldEnough)
+	latest := latestFor(u, major, minor, patch)
 	if latest == "" {
 		// No tag to move to at any level, so a pinned reference that drifted where
 		// it stands is the only thing left worth saying about this image. Gated on
 		// there being no candidate at all rather than on the requested levels: with
 		// one available, that update is the stronger news and an interactive caller
 		// can still switch target to it.
-		if u.PatchTag == "" && u.MinorTag == "" && u.MajorTag == "" && c.checkPinDrift(u) {
+		if !u.hasLevelTag() && c.checkPinDrift(u) {
 			return
 		}
 
@@ -207,6 +212,24 @@ func (c *Checker) resolve(u *Update, major, minor, patch bool) {
 
 	c.clampToCap(u)
 	c.resolvePublished(u)
+}
+
+// latestFor is the highest tag the requested levels allow, read off the tags
+// already resolved per level rather than by walking the candidates a second
+// time. The two agree by construction: a major upgrade always orders above a
+// minor one and a minor above a patch, so the newest tag of the highest level
+// that has one is the newest tag overall. Asking for a level implies accepting
+// the smaller ones below it.
+func latestFor(u *Update, major, minor, patch bool) string {
+	switch {
+	case major:
+		return cmp.Or(u.MajorTag, u.MinorTag, u.PatchTag)
+	case minor:
+		return cmp.Or(u.MinorTag, u.PatchTag)
+	case patch:
+		return u.PatchTag
+	}
+	return ""
 }
 
 // maxAgeProbes caps how many candidate tags one image may have their build date
@@ -291,10 +314,7 @@ func (c *Checker) resolveSource(u *Update) {
 
 	// The tag being moved to is the one whose labels describe the new release; a
 	// drifted pin has none, and falls back to the tag the file names.
-	tag := u.LatestTag
-	if tag == "" {
-		tag = u.CurrentTag
-	}
+	tag := u.targetTag()
 	if tag == "" {
 		return
 	}
@@ -377,13 +397,20 @@ func soleRelease(p policy.Image, currentTag string, tags []string) bool {
 	}
 
 	for _, tag := range tags {
-		if tag == currentTag || tag == p.ReferenceTag || p.Floats(tag) {
-			continue
+		if standsInFor(p, tag, currentTag) {
+			return false
 		}
-		return false
 	}
 
 	return true
+}
+
+// standsInFor reports whether tag could be a different, fixed release of an
+// image the file names as currentTag. The tag itself is no alternative to
+// itself, and a floating or reference tag is no fixed release at all: moving on
+// to one would trade a pinned reference for a moving one.
+func standsInFor(p policy.Image, tag, currentTag string) bool {
+	return tag != currentTag && tag != p.ReferenceTag && !p.Floats(tag)
 }
 
 // hint appends the way out of an unreadable image, worth naming only when the
@@ -465,10 +492,7 @@ func (c *Checker) occurrences() ([]compose.Occurrence, error) {
 // AppendService adds name unless it is empty or already there. An image declared
 // outside any service contributes no name rather than an empty one.
 func AppendService(services []string, name string) []string {
-	if name == "" {
-		return services
-	}
-	if slices.Contains(services, name) {
+	if name == "" || slices.Contains(services, name) {
 		return services
 	}
 	return append(services, name)
@@ -477,13 +501,8 @@ func AppendService(services []string, name string) []string {
 // appendLine adds line unless it is already covered by the update's own RawLine
 // or by a line collected before it — Apply rewrites every matching line anyway.
 func appendLine(extra []string, raw, line string) []string {
-	if sameImageLine(line, raw) {
+	if coversLine(line, raw, extra) {
 		return extra
-	}
-	for _, e := range extra {
-		if sameImageLine(line, e) {
-			return extra
-		}
 	}
 	return append(extra, line)
 }

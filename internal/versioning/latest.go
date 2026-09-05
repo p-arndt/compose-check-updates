@@ -1,7 +1,7 @@
 package versioning
 
 import (
-	"sort"
+	"slices"
 
 	"github.com/p-arndt/compose-check-updates/internal/policy"
 )
@@ -19,7 +19,7 @@ func candidates(scheme Scheme, tags []string, current Version) []Version {
 		versions = append(versions, v)
 	}
 
-	sort.Slice(versions, func(i, j int) bool { return versions[i].GreaterThan(versions[j]) })
+	slices.SortFunc(versions, func(a, b Version) int { return b.Compare(a) })
 
 	return versions
 }
@@ -67,12 +67,13 @@ func LatestPerLevelFunc(scheme Scheme, currentTag string, tags []string, eligibl
 		if !isUpgrade(v, current) {
 			continue
 		}
-		if level := Diff(current, v); best[level] != "" || !eligible.allows(v.Tag) {
+		level := Diff(current, v)
+		if best[level] != "" || !eligible.allows(v.Tag) {
 			// Asked only for a level still open, so a rule that costs something to
 			// evaluate is never spent on a candidate that is already outranked.
 			continue
 		}
-		best[Diff(current, v)] = v.Tag
+		best[level] = v.Tag
 		if len(best) == 3 {
 			break
 		}
@@ -96,12 +97,8 @@ func LatestFunc(scheme Scheme, currentTag string, tags []string, major, minor, p
 	}
 
 	// Asking for a level implies accepting the smaller ones below it.
-	if major {
-		minor = true
-	}
-	if minor {
-		patch = true
-	}
+	minor = minor || major
+	patch = patch || minor
 	wanted := map[policy.Level]bool{
 		policy.LevelMajor: major,
 		policy.LevelMinor: minor,

@@ -1,5 +1,10 @@
 package policy
 
+import (
+	"maps"
+	"slices"
+)
+
 // floating are the tags ccu knows move to whatever is newest. They are never
 // proposed as an update target: moving from one floating tag to another says
 // nothing about the image having changed.
@@ -22,19 +27,12 @@ func (i Image) Floats(tag string) bool {
 	if _, ok := floating[tag]; ok {
 		return true
 	}
-	for _, e := range i.FloatingTags {
-		if e == tag {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(i.FloatingTags, tag)
 }
 
 // BuiltInFloatingTags lists the tags ccu knows float, in no particular order.
 func BuiltInFloatingTags() []string {
-	tags := make([]string, 0, len(floating))
-	for tag := range floating {
-		tags = append(tags, tag)
-	}
-	return tags
+	// A fresh slice every call: the built-in set is the one thing a caller must
+	// not be able to write into.
+	return slices.Collect(maps.Keys(floating))
 }

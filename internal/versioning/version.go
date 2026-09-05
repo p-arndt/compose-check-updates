@@ -4,6 +4,7 @@
 package versioning
 
 import (
+	"cmp"
 	"strings"
 
 	"github.com/p-arndt/compose-check-updates/internal/policy"
@@ -46,12 +47,8 @@ func (v Version) Segments() int { return len(v.Release) }
 // same number, so "1.0.0" is newer than "1.0.0-rc1".
 func (v Version) Compare(o Version) int {
 	for i := range max(len(v.Release), len(o.Release)) {
-		a, b := v.Segment(i), o.Segment(i)
-		if a != b {
-			if a < b {
-				return -1
-			}
-			return 1
+		if c := cmp.Compare(v.Segment(i), o.Segment(i)); c != 0 {
+			return c
 		}
 	}
 

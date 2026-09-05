@@ -126,23 +126,23 @@ func tagRange(reference string) (start, end int, ok bool) {
 // move — a tag family changing under it, which no rewrite of the variable alone
 // could produce.
 func (t *TagVar) valueFor(latestTag string) (string, bool) {
-	if len(latestTag) < len(t.Prefix)+len(t.Suffix) {
+	// Cut in this order, so a prefix and a suffix that would have to overlap to
+	// both fit — "1" around the tag "1" — is refused rather than counted twice.
+	rest, ok := strings.CutPrefix(latestTag, t.Prefix)
+	if !ok {
 		return "", false
 	}
-	if !strings.HasPrefix(latestTag, t.Prefix) || !strings.HasSuffix(latestTag, t.Suffix) {
-		return "", false
-	}
-	return latestTag[len(t.Prefix) : len(latestTag)-len(t.Suffix)], true
+	return strings.CutSuffix(rest, t.Suffix)
 }
 
 // rawWithValue respells the construct with a new default, for the reference that
 // carries its own: `${TAG:-1.2.3}` on 1.2.4 becomes `${TAG:-1.2.4}`.
 func (t *TagVar) rawWithValue(value string) (string, bool) {
-	tail := t.Value + "}"
-	if !strings.HasSuffix(t.Raw, tail) {
+	head, ok := strings.CutSuffix(t.Raw, t.Value+"}")
+	if !ok {
 		return "", false
 	}
-	return strings.TrimSuffix(t.Raw, tail) + value + "}", true
+	return head + value + "}", true
 }
 
 // envLineWithValue respells the .env assignment, leaving its quoting, spacing

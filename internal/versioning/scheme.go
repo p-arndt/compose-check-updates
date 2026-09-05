@@ -96,8 +96,10 @@ func Validate(v policy.Versioning) error {
 		return nil
 	}
 
-	known := make([]string, 0, len(policy.Versionings()))
-	for _, name := range policy.Versionings() {
+	// Once: every call clones the backing slice.
+	all := policy.Versionings()
+	known := make([]string, 0, len(all))
+	for _, name := range all {
 		known = append(known, name.String())
 	}
 	return fmt.Errorf("versioning: %q is not one of %s", v, strings.Join(known, ", "))

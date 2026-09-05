@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 )
 
 var fileNames = []string{"docker-compose.y*ml", "compose.y*ml"}
@@ -74,10 +75,8 @@ func Files(root string, exclude []string) ([]string, error) {
 }
 
 func isComposeFile(name string) bool {
-	for _, pattern := range fileNames {
-		if ok, err := filepath.Match(pattern, name); err == nil && ok {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(fileNames, func(pattern string) bool {
+		ok, err := filepath.Match(pattern, name)
+		return err == nil && ok
+	})
 }

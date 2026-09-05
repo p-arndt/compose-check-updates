@@ -19,14 +19,7 @@ const (
 
 var versionings = []Versioning{VersioningSemver, VersioningLoose, VersioningRegex}
 
-func (v Versioning) Valid() bool {
-	for _, known := range versionings {
-		if v == known {
-			return true
-		}
-	}
-	return false
-}
+func (v Versioning) Valid() bool { return slices.Contains(versionings, v) }
 
 func (v Versioning) String() string { return string(v) }
 
