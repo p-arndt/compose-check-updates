@@ -6,9 +6,9 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -96,8 +96,8 @@ func ServerWith(t *testing.T, opts Options) *httptest.Server {
 			return
 		}
 
-		if i := strings.Index(r.URL.Path, "/blobs/"); i >= 0 {
-			blob, ok := blobs[r.URL.Path[i+len("/blobs/"):]]
+		if _, digest, ok := strings.Cut(r.URL.Path, "/blobs/"); ok {
+			blob, ok := blobs[digest]
 			if !ok {
 				w.WriteHeader(http.StatusNotFound)
 				return
@@ -106,12 +106,11 @@ func ServerWith(t *testing.T, opts Options) *httptest.Server {
 			return
 		}
 
-		i := strings.Index(r.URL.Path, "/manifests/")
-		if i < 0 {
+		_, reference, ok := strings.Cut(r.URL.Path, "/manifests/")
+		if !ok {
 			w.WriteHeader(http.StatusNotFound)
 			return
 		}
-		reference := r.URL.Path[i+len("/manifests/"):]
 
 		// A digest reference only ever names one of the manifests built above:
 		// that is how an index is followed down to a platform.
@@ -240,7 +239,7 @@ func serveBody(w http.ResponseWriter, r *http.Request, body []byte, mediaType, d
 	}
 	w.Header().Set("Content-Type", mediaType)
 	w.Header().Set("Docker-Content-Digest", digest)
-	w.Header().Set("Content-Length", fmt.Sprint(len(body)))
+	w.Header().Set("Content-Length", strconv.Itoa(len(body)))
 	w.WriteHeader(http.StatusOK)
 	if r.Method != http.MethodHead {
 		_, _ = w.Write(body)
