@@ -221,6 +221,38 @@ func TestBarApplyButtonDoesNothingWithoutASelection(t *testing.T) {
 	assert.Nil(t, cmd)
 }
 
+// A row can lose its target after it was ticked — a recheck turns it unreadable,
+// or a target change leaves it with NoTarget — and Selected stays set. The bar
+// and the status line must count what the apply will actually take, or they
+// promise an apply that then does less.
+func TestCountsOnlyRowsTheApplyWillTake(t *testing.T) {
+	t.Parallel()
+
+	m := barModel(t)
+	m.currentRow().Selected = true
+	require.Equal(t, 1, m.selectedCount())
+
+	m.currentRow().NoTarget = true
+	require.False(t, m.currentRow().Actionable())
+	require.Empty(t, m.selectedRows())
+
+	assert.Equal(t, len(m.selectedRows()), m.selectedCount())
+	assert.Equal(t, "apply 0", barStopLabel(t, m, "apply"))
+	assert.Contains(t, m.statusLine(), "0 selected of")
+}
+
+// barStopLabel is the label of the named stop, without moving the focus onto it.
+func barStopLabel(t *testing.T, m Model, label string) string {
+	t.Helper()
+	for _, s := range m.barStops() {
+		if strings.HasPrefix(s.label, label) {
+			return s.label
+		}
+	}
+	require.Failf(t, "no such bar stop", "%q", label)
+	return ""
+}
+
 // The bar claims the arrows, tab and the acting keys, and nothing else: anything
 // else reaches the list, so tabbing across is never a mode you are stuck in.
 func TestBarPassesUnclaimedKeysToTheList(t *testing.T) {

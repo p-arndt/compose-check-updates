@@ -257,10 +257,14 @@ func (m Model) selectedRows() []Row {
 	return out
 }
 
+// selectedCount is len(selectedRows()) without the allocation, and must stay
+// that way: the bar's "apply N" and the status line both read it, and a row can
+// keep Selected after a recheck turned it unreadable or a target change left it
+// with NoTarget. Counting those would promise an apply that never takes them.
 func (m Model) selectedCount() int {
 	n := 0
 	for _, r := range m.rows {
-		if r.Selected {
+		if r.Selected && r.Actionable() {
 			n++
 		}
 	}
