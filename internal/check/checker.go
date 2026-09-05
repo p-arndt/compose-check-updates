@@ -1,6 +1,7 @@
 package check
 
 import (
+	"cmp"
 	"fmt"
 	"log/slog"
 	"slices"
@@ -162,15 +163,13 @@ func (c *Checker) resolve(u *Update, major, minor, patch bool) {
 		return
 	}
 
-	// One filter for both calls below, so the two walks share its budget and its
-	// answers: they run over the same candidates, newest first.
 	oldEnough := c.oldEnoughFilter(u, p.MinAgeDuration())
 
 	// Every level is resolved so an interactive caller can offer a choice of
 	// target; LatestTag stays the highest tag the requested flags allow.
 	u.PatchTag, u.MinorTag, u.MajorTag = versioning.LatestPerLevelFunc(scheme, u.CurrentTag, tags, oldEnough)
 
-	latest := versioning.LatestFunc(scheme, u.CurrentTag, tags, major, minor, patch, oldEnough)
+	latest := latestFor(u, major, minor, patch)
 	if latest == "" {
 		// No tag to move to at any level, so a pinned reference that drifted where
 		// it stands is the only thing left worth saying about this image. Gated on
@@ -207,6 +206,24 @@ func (c *Checker) resolve(u *Update, major, minor, patch bool) {
 
 	c.clampToCap(u)
 	c.resolvePublished(u)
+}
+
+// latestFor is the highest tag the requested levels allow, read off the tags
+// already resolved per level rather than by walking the candidates a second
+// time. The two agree by construction: a major upgrade always orders above a
+// minor one and a minor above a patch, so the newest tag of the highest level
+// that has one is the newest tag overall. Asking for a level implies accepting
+// the smaller ones below it.
+func latestFor(u *Update, major, minor, patch bool) string {
+	switch {
+	case major:
+		return cmp.Or(u.MajorTag, u.MinorTag, u.PatchTag)
+	case minor:
+		return cmp.Or(u.MinorTag, u.PatchTag)
+	case patch:
+		return u.PatchTag
+	}
+	return ""
 }
 
 // maxAgeProbes caps how many candidate tags one image may have their build date

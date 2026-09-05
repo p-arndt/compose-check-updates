@@ -1,7 +1,9 @@
 package check
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"regexp"
@@ -166,15 +168,17 @@ func (u *Update) applyEnv() error {
 // what makes an update reversible, and one per file per run: a second image of
 // the same file must not overwrite the copy taken before the first was written.
 func rewriteFile(path string, edit func(lines []string)) error {
-	if _, err := os.Stat(path + backupSuffix); os.IsNotExist(err) {
-		if err := backupFile(path); err != nil {
-			return err
-		}
-	}
-
 	input, err := os.ReadFile(path)
 	if err != nil {
 		return err
+	}
+
+	// The backup is written from the bytes just read rather than from a second
+	// read of the same file: one read is what the rewrite needs anyway.
+	if _, err := os.Stat(path + backupSuffix); errors.Is(err, fs.ErrNotExist) {
+		if err := os.WriteFile(path+backupSuffix, input, 0644); err != nil {
+			return err
+		}
 	}
 
 	lines := strings.Split(string(input), "\n")
