@@ -11,6 +11,28 @@ import (
 // None of the renderers below append a trailing newline: the model joins the
 // panes, so emitting one here would silently double-space the view.
 
+// issueMarkerWidth is the width of the cursor marker column. Both markers are
+// two runes wide, so an entry's height does not depend on the cursor — which is
+// what lets syncIssueScroll size the pane without rendering it.
+const issueMarkerWidth = 2
+
+// issueAttrIndent indents an issue's attribute lines under its message.
+const issueAttrIndent = "    "
+
+// issuePlainLines wraps one issue exactly as IssueEntry lays it out, before any
+// styling: the numbered message, then one line per attribute. IssueEntry styles
+// these very lines and the scroll sync merely counts them, so the two cannot
+// disagree about how tall an entry is.
+func issuePlainLines(index int, msg string, attrs []string, width int) (msgLines, attrLines []string) {
+	w := clampWidth(width)
+
+	msgLines = wrapPlain(fmt.Sprintf("%d. %s", index, msg), w-issueMarkerWidth)
+	for _, a := range attrs {
+		attrLines = append(attrLines, wrapPlain(a, w-len(issueAttrIndent))...)
+	}
+	return msgLines, attrLines
+}
+
 // IssueEntry renders one captured scan issue: the message, then one line per
 // attribute, so an ellipsis never eats the image and file it is about. Returns a
 // slice rather than a joined string because the pane scrolls by line.
@@ -21,7 +43,6 @@ func (t Theme) IssueEntry(index int, msg string, attrs []string, cursor bool, wi
 	if cursor {
 		marker = "▸ "
 	}
-	const attrIndent = "    "
 
 	msgStyle := lipgloss.NewStyle().Foreground(t.Error)
 	if cursor {
@@ -30,18 +51,18 @@ func (t Theme) IssueEntry(index int, msg string, attrs []string, cursor bool, wi
 	markStyle := t.accent()
 	attrStyle := t.dim()
 
-	var out []string
-	for i, l := range wrapPlain(fmt.Sprintf("%d. %s", index, msg), w-utf8.RuneCountInString(marker)) {
+	msgLines, attrLines := issuePlainLines(index, msg, attrs, width)
+
+	out := make([]string, 0, len(msgLines)+len(attrLines))
+	for i, l := range msgLines {
 		prefix := marker
 		if i > 0 {
 			prefix = "  "
 		}
 		out = append(out, fit(markStyle.Render(prefix)+msgStyle.Render(l), w))
 	}
-	for _, a := range attrs {
-		for _, l := range wrapPlain(a, w-len(attrIndent)) {
-			out = append(out, fit(attrIndent+attrStyle.Render(l), w))
-		}
+	for _, l := range attrLines {
+		out = append(out, fit(issueAttrIndent+attrStyle.Render(l), w))
 	}
 
 	if cursor {

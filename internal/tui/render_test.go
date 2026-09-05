@@ -15,6 +15,30 @@ import (
 	"github.com/p-arndt/compose-check-updates/internal/policy"
 )
 
+// syncIssueScroll sizes the issues pane from issuePlainLines instead of
+// rendering every entry a second time; if the two ever disagreed the cursor
+// would scroll to the wrong line. Narrow width with attributes, so both parts
+// actually wrap.
+func TestIssuePlainLinesMatchTheRenderedHeight(t *testing.T) {
+	t.Parallel()
+
+	const (
+		msg   = "failed fetching tags for registry-1.docker.io/library/traefik: unexpected status 429"
+		width = 32
+	)
+	attrs := []string{"image: library/traefik:v2.10", "file: deploy/stacks/edge/compose.yaml"}
+
+	theme := DefaultTheme()
+	for _, cursor := range []bool{false, true} {
+		msgLines, attrLines := issuePlainLines(3, msg, attrs, width)
+		require.Greater(t, len(msgLines), 1, "the message must wrap for this to test anything")
+		require.Greater(t, len(attrLines), len(attrs), "the attributes must wrap too")
+
+		assert.Equal(t, len(theme.IssueEntry(3, msg, attrs, cursor, width)),
+			len(msgLines)+len(attrLines), "cursor=%v", cursor)
+	}
+}
+
 // ansiEscape strips styling so assertions can talk about what the user sees.
 var ansiEscape = regexp.MustCompile("\x1b\\[[0-9;]*m")
 

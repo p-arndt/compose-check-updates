@@ -137,15 +137,15 @@ func (m *Model) syncIssueScroll() {
 	}
 	m.issueCursor = min(max(m.issueCursor, 0), len(m.scanErrs)-1)
 
-	lines, starts := m.issueLines()
+	starts, total := m.issueOffsets()
 	h := m.listHeight()
-	if len(lines) <= h {
+	if total <= h {
 		m.issueOffset = 0
 		return
 	}
 
 	top := starts[m.issueCursor]
-	bottom := len(lines)
+	bottom := total
 	if m.issueCursor+1 < len(starts) {
 		bottom = starts[m.issueCursor+1]
 	}
@@ -156,5 +156,5 @@ func (m *Model) syncIssueScroll() {
 	if bottom > m.issueOffset+h {
 		m.issueOffset = bottom - h
 	}
-	m.issueOffset = max(min(m.issueOffset, top, len(lines)-h), 0)
+	m.issueOffset = max(min(m.issueOffset, top, total-h), 0)
 }

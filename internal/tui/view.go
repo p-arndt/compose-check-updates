@@ -331,6 +331,20 @@ func (m Model) issueLines() (lines []string, starts []int) {
 	return lines, starts
 }
 
+// issueOffsets reports the line each issue starts on and the pane's total
+// height, wrapping the entries but styling nothing. The scroll sync only ever
+// needed these counts, and taking them from issueLines rendered every issue a
+// second time on each keypress.
+func (m Model) issueOffsets() (starts []int, total int) {
+	for i, e := range m.scanErrs {
+		starts = append(starts, total)
+		msg, attrs := issueParts(e)
+		msgLines, attrLines := issuePlainLines(i+1, msg, attrs, m.width)
+		total += len(msgLines) + len(attrLines)
+	}
+	return starts, total
+}
+
 func (m Model) issuesView() string {
 	if len(m.scanErrs) == 0 {
 		return m.theme.Empty("No issues were logged during the scan", m.width)
