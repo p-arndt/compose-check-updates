@@ -77,11 +77,10 @@ func (m *ExcludeMatcher) Match(relPath, absPath string) bool {
 		return false
 	}
 
-	segments := strings.Split(rel, "/")
-
 	// A name matches wherever it appears, which is what makes an entry like
-	// "node_modules" worth writing down once.
-	for _, seg := range segments {
+	// "node_modules" worth writing down once. Iterated rather than split: this
+	// runs for every path the walk touches, and the segments outlive nothing.
+	for seg := range strings.SplitSeq(rel, "/") {
 		for _, pattern := range m.names {
 			if matches(pattern, seg) {
 				return true
@@ -90,14 +89,19 @@ func (m *ExcludeMatcher) Match(relPath, absPath string) bool {
 	}
 
 	// A rooted entry excludes the directory it names and everything below it, so
-	// every prefix of the path is offered to it, not just the path itself.
-	for i := range segments {
-		prefix := strings.Join(segments[:i+1], "/")
+	// every prefix of the path is offered to it, not just the path itself. Walked
+	// from the longest down, which is the same set without joining anything.
+	for prefix := rel; prefix != ""; {
 		for _, pattern := range m.paths {
 			if matches(pattern, prefix) {
 				return true
 			}
 		}
+		slash := strings.LastIndex(prefix, "/")
+		if slash < 0 {
+			break
+		}
+		prefix = prefix[:slash]
 	}
 
 	if absPath != "" && len(m.abs) > 0 {
