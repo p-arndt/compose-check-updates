@@ -8,7 +8,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"time"
 
@@ -140,26 +139,28 @@ func Load(root, explicit string) (Loaded, error) {
 
 	var loaded Loaded
 
-	if path := globalFile(); path != "" {
+	// The two layers are read the same way and differ only in where they are
+	// kept; the order of the calls below is the merge order, and the only thing
+	// that decides which file wins.
+	addLayer := func(path string, layer *Config, layerPath *string) error {
+		if path == "" {
+			return nil
+		}
 		cfg, err := readFile(path)
 		if err != nil {
-			return Loaded{}, err
+			return err
 		}
-		loaded.Global = cfg
-		loaded.GlobalPath = path
+		*layer, *layerPath = cfg, path
 		loaded.Config = merge(loaded.Config, cfg)
 		loaded.Sources = append(loaded.Sources, path)
+		return nil
 	}
 
-	if path := findProjectFile(root); path != "" {
-		cfg, err := readFile(path)
-		if err != nil {
-			return Loaded{}, err
-		}
-		loaded.Project = cfg
-		loaded.ProjectPath = path
-		loaded.Config = merge(loaded.Config, cfg)
-		loaded.Sources = append(loaded.Sources, path)
+	if err := addLayer(globalFile(), &loaded.Global, &loaded.GlobalPath); err != nil {
+		return Loaded{}, err
+	}
+	if err := addLayer(findProjectFile(root), &loaded.Project, &loaded.ProjectPath); err != nil {
+		return Loaded{}, err
 	}
 
 	return loaded, nil
@@ -188,7 +189,7 @@ func globalDirs() []string {
 		dirs = append(dirs, filepath.Join(dir, "ccu"))
 	}
 
-	return dedupe(dirs)
+	return Union(dirs)
 }
 
 // globalFile returns the global config to read, or "" when there is none. Only
@@ -267,12 +268,9 @@ func Parse(r io.Reader) (Config, error) {
 		return Config{}, err
 	}
 
-	for i, e := range cfg.Exclude {
-		cfg.Exclude[i] = strings.TrimSpace(e)
-	}
-	// Filtered in place: cfg was decoded a few lines up, so the slice is this
-	// function's own and no caller can see it shrink.
-	cfg.Exclude = slices.DeleteFunc(cfg.Exclude, func(e string) bool { return e == "" })
+	// Union trims and drops the empty entries, the same way the merged list is
+	// built later, so a file's exclude reads as it will once it is layered.
+	cfg.Exclude = Union(cfg.Exclude)
 
 	cfg.FloatingTags = Union(cfg.FloatingTags)
 	for _, tag := range cfg.FloatingTags {
@@ -348,18 +346,5 @@ func Union(lists ...[]string) []string {
 		}
 	}
 
-	return out
-}
-
-func dedupe(list []string) []string {
-	var out []string
-	seen := make(map[string]struct{})
-	for _, e := range list {
-		if _, dup := seen[e]; dup {
-			continue
-		}
-		seen[e] = struct{}{}
-		out = append(out, e)
-	}
 	return out
 }
