@@ -7,6 +7,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 )
 
 // CustomHandler is a slog.Handler that adds colorization based on log levels.
@@ -28,6 +29,9 @@ func (h *CustomHandler) Enabled(_ context.Context, level slog.Level) bool {
 	return level >= h.level.Level()
 }
 
+// reset ends every colored run written by this handler.
+const reset = "\033[0m"
+
 // Column widths for fixed-layout output.
 const (
 	levelWidth = 7  // [ERROR] is widest
@@ -43,9 +47,18 @@ const (
 func (h *CustomHandler) Handle(_ context.Context, r slog.Record) error {
 	levelStr, levelColor := getLevelStringAndColor(r.Level)
 
+	// One pass over the record: the named attrs go into the map the columns read,
+	// everything else is appended in the order it was logged. Collecting the
+	// extras from a map instead would reorder them between runs.
 	attrs := map[string]string{}
+	var extra []string
 	r.Attrs(func(a slog.Attr) bool {
-		attrs[a.Key] = fmt.Sprint(a.Value)
+		switch a.Key {
+		case "image", "path", "file", "current", "latest", "update_level", "age":
+			attrs[a.Key] = a.Value.String()
+		default:
+			extra = append(extra, a.Key+"="+a.Value.String())
+		}
 		return true
 	})
 
@@ -59,8 +72,6 @@ func (h *CustomHandler) Handle(_ context.Context, r slog.Record) error {
 	latest := attrs["latest"]
 	updateLevel := attrs["update_level"]
 
-	const reset = "\033[0m"
-
 	if updateLevel != "" {
 		message += " (" + updateLevel + ")"
 	}
@@ -71,10 +82,12 @@ func (h *CustomHandler) Handle(_ context.Context, r slog.Record) error {
 	if image != "" {
 		sb.WriteString("Image: " + padRight(image, imageWidth) + "  ")
 	}
+	ageShown := false
 	if current != "" && latest != "" {
 		versionStr := current + " -> " + colorizeChangedSegments(current, latest, updateLevel)
 		if age := attrs["age"]; age != "" {
 			versionStr += " (" + age + ")"
+			ageShown = true
 		}
 		sb.WriteString(padRight(versionStr, versionWidth) + "  ")
 	}
@@ -82,13 +95,11 @@ func (h *CustomHandler) Handle(_ context.Context, r slog.Record) error {
 		sb.WriteString("Path: " + path)
 	}
 
-	var extra []string
-	for k, v := range attrs {
-		switch k {
-		case "image", "path", "file", "current", "latest", "update_level", "age":
-		default:
-			extra = append(extra, k+"="+v)
-		}
+	// The age rides inside the version column when there is one. Without it — the
+	// stale-cache warning is the case — it would otherwise be swallowed, and how
+	// old the served answer is is the whole point of that warning.
+	if age := attrs["age"]; age != "" && !ageShown {
+		extra = append(extra, "age="+age)
 	}
 	if len(extra) > 0 {
 		sb.WriteString("  " + strings.Join(extra, " "))
@@ -118,7 +129,6 @@ func colorizeChangedSegments(current, latest, updateLevel string) string {
 	if color == "" {
 		return latest
 	}
-	reset := "\033[0m"
 
 	prefix := ""
 	if strings.HasPrefix(latest, "v") {
@@ -148,14 +158,18 @@ func colorizeChangedSegments(current, latest, updateLevel string) string {
 	return unchanged + color + changed + reset
 }
 
-// WithAttrs returns a new handler with the given attributes.
-func (h *CustomHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+// WithAttrs returns a copy of the handler. The attrs are deliberately dropped:
+// the layout is a fixed set of columns read off each record, so an attr carried
+// by the logger has no column to land in. ccu never uses slog.With, so nothing
+// is lost today; honouring them would mean merging them into every record.
+func (h *CustomHandler) WithAttrs(_ []slog.Attr) slog.Handler {
 	newHandler := *h
 	return &newHandler
 }
 
-// WithGroup returns a new handler with the given group.
-func (h *CustomHandler) WithGroup(name string) slog.Handler {
+// WithGroup returns a copy of the handler. Groups are dropped for the same
+// reason as the attrs above: this handler has no nesting to render them in.
+func (h *CustomHandler) WithGroup(_ string) slog.Handler {
 	newHandler := *h
 	return &newHandler
 }
@@ -181,7 +195,7 @@ var ansiEscape = regexp.MustCompile(`\x1b\[[0-9;]*m`)
 
 // visibleLen returns the number of visible runes in s, ignoring ANSI escape codes.
 func visibleLen(s string) int {
-	return len([]rune(ansiEscape.ReplaceAllString(s, "")))
+	return utf8.RuneCountInString(ansiEscape.ReplaceAllString(s, ""))
 }
 
 // padRight pads s with spaces on the right until its visible length equals width.

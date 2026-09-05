@@ -13,8 +13,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// reset is the handler's own constant; the colors are spelled out here so a
+// test fails when one changes.
 const (
-	reset = "\033[0m"
 	red   = "\033[31m"
 	blue  = "\033[34m"
 	green = "\033[32m"
@@ -376,6 +377,38 @@ func TestHandle(t *testing.T) {
 		line := handle(t, slog.LevelDebug, "Fetching", slog.String("registry", "docker.io"))
 
 		assert.Contains(t, line, "registry=docker.io")
+	})
+
+	t.Run("unknown attributes keep the order they were logged in", func(t *testing.T) {
+		t.Parallel()
+
+		// Collecting them from a map used to shuffle them between runs, which made
+		// a warning with two extras unreadable next to the same warning above it.
+		for range 20 {
+			line := handle(t, slog.LevelWarn, "Skipping",
+				slog.String("reason", "unreadable"),
+				slog.String("detail", "timeout"),
+				slog.String("registry", "docker.io"),
+			)
+
+			assert.Contains(t, line, "reason=unreadable detail=timeout registry=docker.io")
+		}
+	})
+
+	t.Run("the age is printed when there is no version column", func(t *testing.T) {
+		t.Parallel()
+
+		// The stale-cache warning has no current/latest pair, so the age has to
+		// fall through to the trailing attrs — how old the served answer is is
+		// what that warning is about.
+		line := handle(t, slog.LevelWarn, "Registry lookup failed, using cached data",
+			slog.String("image", "nginx"),
+			slog.String("age", "2m30s"),
+			slog.String("error", "connection refused"),
+		)
+
+		assert.Contains(t, line, "age=2m30s")
+		assert.Contains(t, line, "error=connection refused")
 	})
 
 	t.Run("a lone version attribute is not rendered", func(t *testing.T) {
