@@ -189,21 +189,13 @@ func (m *Model) writeCapValue(scope pinScope, image string, level policy.Level) 
 // applyPin records the new cap in the in-memory layers and restamps the rows, so
 // marker and field agree with the file without re-reading it.
 func (m *Model) applyPin(image string, level policy.Level, scope pinScope) {
+	// Edited field by field rather than replaced, so a versioning recorded next
+	// to the cap survives: the file keeps it, and the sidebar must not disagree.
 	for s := range m.pins {
-		cfg := m.pins[s]
-		if cfg.Images != nil {
-			delete(cfg.Images, image)
-		}
-		m.pins[s] = cfg
+		m.updateImage(s, image, func(p *policy.Image) { p.Max = "" })
 	}
-
 	if level != "" {
-		cfg := m.pins[scope]
-		if cfg.Images == nil {
-			cfg.Images = map[string]policy.Image{}
-		}
-		cfg.Images[image] = policy.Image{Max: level}
-		m.pins[scope] = cfg
+		m.updateImage(scope, image, func(p *policy.Image) { p.Max = level })
 	}
 
 	m.refreshPins()

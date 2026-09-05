@@ -203,3 +203,20 @@ func TestFailedRecheckKeepsTheRow(t *testing.T) {
 	assert.True(t, rowFor(t, m, "vert").Update.IsUnreadable())
 	assert.Equal(t, StatusError, m.statusKind)
 }
+
+// A cap written next to a recorded scheme leaves the scheme alone: the file
+// keeps both keys, so the sidebar has to keep showing both as well.
+func TestCappingKeepsTheRecordedVersioning(t *testing.T) {
+	t.Parallel()
+
+	m := newTestModel()
+	m.recordVersioning(pinProject, "vert", policy.VersioningLoose)
+
+	m.applyPin("vert", policy.LevelMinor, pinProject)
+	assert.Equal(t, policy.LevelMinor, m.capFor("vert"))
+	assert.Equal(t, policy.VersioningLoose, m.versioningFor("vert"))
+
+	m.applyPin("vert", "", pinProject)
+	assert.Empty(t, m.capFor("vert"))
+	assert.Equal(t, policy.VersioningLoose, m.versioningFor("vert"))
+}
