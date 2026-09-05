@@ -111,6 +111,14 @@ type record struct {
 	Targets map[string]string `json:"targets,omitempty"`
 	Cap     string            `json:"cap,omitempty"`
 
+	// ReleaseURL is where the notes for the tag this line reports would be, and
+	// SourceURL the repository it was derived from. Both are left out when the
+	// image records no source; the release link is also left out for a forge
+	// whose release pages ccu cannot name, so a consumer never has to tell a
+	// constructed link from a real one.
+	ReleaseURL string `json:"release_url,omitempty"`
+	SourceURL  string `json:"source_url,omitempty"`
+
 	// Applied and Restarted are only meaningful with -u / -r, and are left out
 	// entirely otherwise rather than reporting a false for something the run was
 	// never asked to do.
@@ -164,6 +172,8 @@ func (w *jsonlWriter) Update(u check.Update, level policy.Level, res Result) {
 		Level:         level.String(),
 		CurrentDigest: u.CurrentDigest,
 		Cap:           u.Cap.String(),
+		ReleaseURL:    u.ReleaseURL(),
+		SourceURL:     u.SourceURL,
 	}
 	// Only a digest that actually differs describes the update; repeating the
 	// current one under a "latest" key would claim a change that is not there.

@@ -24,6 +24,7 @@ type Fetcher interface {
 // network. Tests use a stand-in rather than this.
 type Client struct {
 	rc *regclient.RegClient
+	sourceCache
 }
 
 // New returns a client for the public registries. A non-empty registryURL points

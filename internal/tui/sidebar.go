@@ -5,6 +5,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/p-arndt/compose-check-updates/internal/check"
 	"github.com/p-arndt/compose-check-updates/internal/policy"
 )
 
@@ -190,6 +191,13 @@ func (m Model) sidebarLines(width, height int) []string {
 	}
 	out = append(out, rest...)
 
+	// Last of the extras, and only when there is a line to spare: it is the one
+	// thing here that changes nothing about the run, it only says where to read
+	// what this release changed.
+	if link := notesLink(u); link != "" && height >= len(out)+2 {
+		out = append(out, "", m.theme.dim().Render(fitLink(link, width)))
+	}
+
 	// Only while the list still holds the keyboard; once the sidebar has it, the
 	// footer names the same keys.
 	if m.focus == focusList && height >= len(out)+2 {
@@ -197,6 +205,43 @@ func (m Model) sidebarLines(width, height int) []string {
 	}
 
 	return out
+}
+
+// notesLink is where the user can read what this release changed: the release
+// page when the image's forge has one, the repository itself otherwise. Nothing
+// opens it — the sidebar only names it, so it can be copied out.
+func notesLink(u check.Update) string {
+	if release := u.ReleaseURL(); release != "" {
+		return release
+	}
+	return u.SourceURL
+}
+
+// fitLink renders a link into the width the panel has. The scheme goes first —
+// it is the same on every link ccu reports and costs eight of under forty
+// columns. What will still not fit falls back to the repository itself: a cut
+// URL is no URL at all, while the repository is one, and its releases are a
+// click away from there.
+func fitLink(link string, width int) string {
+	short := strings.TrimPrefix(strings.TrimPrefix(link, "https://"), "http://")
+	if lipgloss.Width(short) <= width {
+		return short
+	}
+
+	if repo := repoOnly(short); lipgloss.Width(repo) < lipgloss.Width(short) && lipgloss.Width(repo) <= width {
+		return repo
+	}
+	return fit(short, width)
+}
+
+// repoOnly keeps host, owner and repository and drops the path a release link
+// adds to them.
+func repoOnly(link string) string {
+	parts := strings.Split(link, "/")
+	if len(parts) <= 3 {
+		return link
+	}
+	return strings.Join(parts[:3], "/")
 }
 
 // focused reports whether f is the field the arrow keys would change.
