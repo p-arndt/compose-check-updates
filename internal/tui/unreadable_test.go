@@ -106,9 +106,8 @@ func TestUnreadableRowRendersAsItsOwnState(t *testing.T) {
 	assert.Equal(t, theme.Unreadable, theme.LevelColor(policy.LevelUnreadable))
 	assert.NotEqual(t, theme.Digest, theme.LevelColor(policy.LevelUnreadable))
 
-	// Wide enough for the sentence: the field truncates like any other, and what
-	// is being asserted here is that it is in the pane at all.
-	detail := m.theme.Detail(r.Update, r.Level, 200)
-	assert.Contains(t, detail, check.ReasonNoTagForDigest)
-	assert.True(t, strings.Contains(detail, "versioning: loose"), "the detail pane names the way out")
+	// The sidebar is where the way out lives: on a row ccu could not read, the
+	// versioning field is the only setting that can change anything about it.
+	m = feed(t, m, keyMsg("down")) // off the file header, onto the row itself
+	assert.Contains(t, strings.Join(m.sidebarLines(38, 20), "\n"), "versioning")
 }

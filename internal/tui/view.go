@@ -69,20 +69,13 @@ func (m Model) frame(top, bottom []string) []string {
 	return out
 }
 
-// bottomBlock is the chrome pinned to the last rows: a blank separator, the
-// detail pane and the key hints. The filter and target are named by the bar at
-// the top instead, so no row of list is spent saying it twice.
+// bottomBlock is the chrome pinned to the last rows: a blank separator and the
+// key hints. The filter and target are named by the bar at the top instead, so
+// no row of list is spent saying it twice.
 func (m Model) bottomBlock() []string {
-	lines := []string{""}
-	if m.showDetail && !m.showIssues {
-		if d := m.detailView(); d != "" {
-			lines = append(lines, strings.Split(d, "\n")...)
-		}
-	}
 	// The hint line is unconditional: keys nobody can see are keys nobody uses.
 	// `?` opens the full listing as a dialog rather than growing the footer.
-	lines = append(lines, m.theme.Help(m.hintBindings(), m.width))
-	return lines
+	return []string{"", m.theme.Help(m.hintBindings(), m.width)}
 }
 
 // paneView is the middle of the frame: the list, and beside it the sidebar for
@@ -266,14 +259,6 @@ func (m Model) listHeight() int {
 		return 1
 	}
 	return h
-}
-
-func (m Model) detailView() string {
-	r := m.currentRow()
-	if r == nil {
-		return ""
-	}
-	return m.theme.Detail(r.Update, r.Level, m.width)
 }
 
 func (m Model) blockHeight(s string) int {

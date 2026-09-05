@@ -7,7 +7,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/p-arndt/compose-check-updates/internal/check"
 	"github.com/p-arndt/compose-check-updates/internal/policy"
 	"github.com/p-arndt/compose-check-updates/internal/scanner"
 )
@@ -198,30 +197,4 @@ func TestPinRowsIgnoreTheLevelFilter(t *testing.T) {
 		}
 		assert.True(t, listed, "filter %s hid a pin", f.Label())
 	}
-}
-
-// The detail column says what changes. For a pin that is the digest, so the tag
-// is stated once rather than as a "latest → latest" delta that reads as a no-op.
-func TestDetailPaneNamesThePinsTagInsteadOfADelta(t *testing.T) {
-	t.Parallel()
-
-	u := check.Update{
-		FullImageName: "nginx:latest",
-		ImageName:     "library/nginx",
-		CurrentTag:    "latest",
-		LatestTag:     "latest",
-		LatestDigest:  testDigest,
-		RawLine:       "    image: nginx:latest",
-		FilePath:      "a/compose.yml",
-	}
-
-	out := DefaultTheme().Detail(u, policy.LevelPin, 80)
-	assert.Contains(t, out, "tag")
-	assert.NotContains(t, out, "latest → latest")
-	assert.Contains(t, out, shortDigest(testDigest))
-	assert.NotContains(t, out, "version")
-
-	// The same image without the pin still gets the ordinary version line.
-	u.LatestTag = "1.29.4"
-	assert.Contains(t, DefaultTheme().Detail(u, "minor", 80), "latest → 1.29.4")
 }
