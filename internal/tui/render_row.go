@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/charmbracelet/lipgloss"
 
@@ -27,13 +28,8 @@ func (t Theme) FileHeader(path string, shown, total, width int) string {
 	w := clampWidth(width)
 	count := fmt.Sprintf(" (%d of %d)", shown, total)
 
-	budget := w - len([]rune(count))
-	if budget < 4 {
-		budget = 4
-	}
-	line := lipgloss.NewStyle().Foreground(t.Accent).Bold(true).Render(truncateLeft(path, budget)) +
-		lipgloss.NewStyle().Foreground(t.Dim).Render(count)
-	return fit(line, w)
+	budget := max(w-utf8.RuneCountInString(count), 4)
+	return fit(t.accent().Render(truncateLeft(path, budget))+t.dim().Render(count), w)
 }
 
 // truncateLeft drops leading runes, keeping the informative end of a path.
@@ -41,13 +37,13 @@ func truncateLeft(s string, w int) string {
 	if w <= 0 {
 		return ""
 	}
-	r := []rune(s)
-	if len(r) <= w {
+	if utf8.RuneCountInString(s) <= w {
 		return s
 	}
 	if w == 1 {
 		return "…"
 	}
+	r := []rune(s)
 	return "…" + string(r[len(r)-(w-1):])
 }
 
@@ -83,8 +79,10 @@ func (t Theme) RowLine(r Row, cursor bool, width int) string {
 	}
 
 	// Failed rows replace the version delta with the reason: the only place the
-	// user can see why an apply did not take.
-	tailPlain := rowTailPlain(r)
+	// user can see why an apply did not take. The alternative-level count is
+	// taken once here: both halves of the tail need it and it walks the tags.
+	other := r.otherTargets()
+	tailPlain := rowTailPlain(r, other)
 	if r.State == RowFailed && r.Err != nil {
 		tailPlain = r.Err.Error()
 	}
@@ -94,13 +92,10 @@ func (t Theme) RowLine(r Row, cursor bool, width int) string {
 		namePlain = r.Update.ImageName
 	}
 
-	remaining := w - rowFixed
-	if remaining < 1 {
-		remaining = 1
-	}
+	remaining := max(w-rowFixed, 1)
 	nameBudget, tailBudget := remaining, 0
 	if remaining >= 12 && tailPlain != "" {
-		tailBudget = min(len([]rune(tailPlain)), remaining-8)
+		tailBudget = min(utf8.RuneCountInString(tailPlain), remaining-8)
 		nameBudget = remaining - tailBudget - 1
 	}
 
@@ -115,21 +110,21 @@ func (t Theme) RowLine(r Row, cursor bool, width int) string {
 	if r.NoTarget {
 		// Nothing to apply at the current target, so the row reads as unavailable
 		// rather than as an update the user forgot to tick.
-		nameStyle = lipgloss.NewStyle().Foreground(t.Dim)
-		boxStyle = lipgloss.NewStyle().Foreground(t.Dim)
+		nameStyle = t.dim()
+		boxStyle = t.dim()
 	}
 	switch r.State {
 	case RowApplied:
-		nameStyle = lipgloss.NewStyle().Foreground(t.Dim).Strikethrough(true)
+		nameStyle = t.dim().Strikethrough(true)
 		boxStyle = lipgloss.NewStyle().Foreground(t.Success)
 	case RowFailed:
-		nameStyle = lipgloss.NewStyle().Foreground(t.Dim)
+		nameStyle = t.dim()
 		boxStyle = lipgloss.NewStyle().Foreground(t.Error)
 	}
 
 	name := truncatePlain(namePlain, nameBudget)
 	var b strings.Builder
-	b.WriteString(lipgloss.NewStyle().Foreground(t.Accent).Bold(true).Render(marker))
+	b.WriteString(t.accent().Render(marker))
 	b.WriteString(boxStyle.Render(box))
 	b.WriteByte(' ')
 	b.WriteString(t.Badge(r.Level))
@@ -137,7 +132,7 @@ func (t Theme) RowLine(r Row, cursor bool, width int) string {
 	if tailBudget > 0 {
 		b.WriteString(nameStyle.Render(padRight(name, nameBudget)))
 		b.WriteByte(' ')
-		b.WriteString(t.rowTail(r, tailPlain, tailBudget))
+		b.WriteString(t.rowTail(r, tailPlain, other, tailBudget))
 	} else {
 		b.WriteString(nameStyle.Render(name))
 	}
@@ -146,14 +141,14 @@ func (t Theme) RowLine(r Row, cursor bool, width int) string {
 	if cursor {
 		// Background only — padding to the full width would emit trailing
 		// spaces that show up as stray blanks when colour is unavailable.
-		line = lipgloss.NewStyle().Background(t.Highlight).Render(line)
+		line = t.highlight().Render(line)
 	}
 	return line
 }
 
 // rowTailPlain is the unstyled right-hand column, used for width budgeting and
 // as the single definition of what that column says.
-func rowTailPlain(r Row) string {
+func rowTailPlain(r Row, other int) string {
 	// The reason rather than the sentence: this column is one line wide, and the
 	// sentence is what the detail pane and the sidebar are for.
 	if r.Update.IsUnreadable() {
@@ -163,10 +158,10 @@ func rowTailPlain(r Row) string {
 		return "no " + targetLabel(r.Target) + " update" + pinMarker(r)
 	}
 	s := plainDelta(rowDelta(r))
-	if n := r.otherTargets(); n > 0 {
+	if other > 0 {
 		// Without this, a row pointing at 2.9.4 looks like the only version `T`
 		// could offer.
-		s += fmt.Sprintf(" (+%d)", n)
+		s += fmt.Sprintf(" (+%d)", other)
 	}
 	return s + pinMarker(r)
 }
@@ -182,7 +177,7 @@ func pinMarker(r Row) string {
 
 // rowTail is the right-hand column: the version delta, or the error on a row
 // whose apply failed.
-func (t Theme) rowTail(r Row, tailPlain string, budget int) string {
+func (t Theme) rowTail(r Row, tailPlain string, other, budget int) string {
 	if r.State == RowFailed && r.Err != nil {
 		return lipgloss.NewStyle().Foreground(t.Error).Render(truncatePlain(tailPlain, budget))
 	}
@@ -190,13 +185,13 @@ func (t Theme) rowTail(r Row, tailPlain string, budget int) string {
 		return lipgloss.NewStyle().Foreground(t.Unreadable).Render(truncatePlain(tailPlain, budget))
 	}
 	if r.NoTarget {
-		return lipgloss.NewStyle().Foreground(t.Dim).Italic(true).Render(truncatePlain(tailPlain, budget))
+		return t.dim().Italic(true).Render(truncatePlain(tailPlain, budget))
 	}
 
 	current, latest := rowDelta(r)
 	full := t.VersionDelta(current, latest, r.Level)
-	if n := r.otherTargets(); n > 0 {
-		full += lipgloss.NewStyle().Foreground(t.Dim).Render(fmt.Sprintf(" (+%d)", n))
+	if other > 0 {
+		full += t.dim().Render(fmt.Sprintf(" (+%d)", other))
 	}
 	if p := pinMarker(r); p != "" {
 		full += lipgloss.NewStyle().Foreground(t.Accent).Render(p)

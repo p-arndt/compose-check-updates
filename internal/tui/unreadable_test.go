@@ -93,7 +93,7 @@ func TestUnreadableRowRendersAsItsOwnState(t *testing.T) {
 	m = feed(t, m, unreadableEvent("a/compose.yml", "vert", "sha-e1c83ba", check.ReasonNoTagForDigest))
 
 	r := *rowFor(t, m, "vert")
-	assert.Equal(t, "unreadable · "+check.ReasonNoTagForDigest, rowTailPlain(r))
+	assert.Equal(t, "unreadable · "+check.ReasonNoTagForDigest, rowTailPlain(r, r.otherTargets()))
 	assert.Contains(t, m.theme.RowLine(r, false, 100), "[!]")
 
 	// The badge has to name the state within the width a chip has.

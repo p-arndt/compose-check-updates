@@ -2,6 +2,7 @@ package tui
 
 import (
 	"strings"
+	"unicode/utf8"
 
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/lipgloss"
@@ -18,7 +19,7 @@ const helpMinColumn = 28
 // helpSection draws one group: a heading with a rule running out to the column
 // edge, so the groups read as groups, then its entries in two aligned columns.
 func (t Theme) helpSection(s HelpSection, keyW, width int) []string {
-	head := lipgloss.NewStyle().Foreground(t.Accent).Bold(true).Render(s.Title)
+	head := t.accent().Render(s.Title)
 	if n := width - len([]rune(s.Title)) - 1; n > 0 {
 		head += " " + t.dim().Render(strings.Repeat("─", n))
 	}
@@ -195,11 +196,11 @@ func (t Theme) Help(bindings []key.Binding, width int) string {
 		hints = append(hints, [2]string{h.Key, h.Desc})
 	}
 
-	keyStyle := lipgloss.NewStyle().Foreground(t.Accent).Bold(true)
-	descStyle := lipgloss.NewStyle().Foreground(t.Dim)
+	keyStyle := t.accent()
+	descStyle := t.dim()
 	sep := descStyle.Render("  ")
 	render := func(h [2]string) string { return keyStyle.Render(h[0]) + descStyle.Render(" "+h[1]) }
-	cost := func(h [2]string) int { return len([]rune(h[0])) + 1 + len([]rune(h[1])) }
+	cost := func(h [2]string) int { return utf8.RuneCountInString(h[0]) + 1 + utf8.RuneCountInString(h[1]) }
 
 	if len(hints) == 0 {
 		return ""

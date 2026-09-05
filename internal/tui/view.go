@@ -21,12 +21,7 @@ const minViewHeight = 8
 // viewHeight is the number of terminal rows the frame occupies — always all of
 // them, so the footer sits on the last row instead of floating in the middle of
 // a tall terminal.
-func (m Model) viewHeight() int {
-	if m.height < minViewHeight {
-		return minViewHeight
-	}
-	return m.height
-}
+func (m Model) viewHeight() int { return max(m.height, minViewHeight) }
 
 func (m Model) View() string {
 	if m.phase == phaseDone && m.err != nil {
@@ -55,16 +50,19 @@ func (m Model) frame(top, bottom []string) []string {
 		top = top[:room]
 	}
 
+	// One style for the whole frame: fit builds a fresh one per call, and this
+	// runs for every line on every keypress.
+	trim := lipgloss.NewStyle().MaxWidth(clampWidth(m.width))
 	out := make([]string, 0, h)
 	for _, l := range top {
-		out = append(out, fit(l, m.width))
+		out = append(out, trim.Render(l))
 	}
 	// Padding, never negative: room is >= len(top) by the clamp above.
 	for len(out) < room {
 		out = append(out, "")
 	}
 	for _, l := range bottom {
-		out = append(out, fit(l, m.width))
+		out = append(out, trim.Render(l))
 	}
 	return out
 }
@@ -83,6 +81,18 @@ func (m Model) bottomBlock() []string {
 	// `?` opens the full listing as a dialog rather than growing the footer.
 	lines = append(lines, m.theme.Help(m.hintBindings(), m.width))
 	return lines
+}
+
+// bottomHeight is len(bottomBlock()) without rendering the hint line, which
+// listHeight asks for several times per frame and on every scroll.
+func (m Model) bottomHeight() int {
+	h := 2 // the separator and the hint line
+	if m.showDetail && !m.showIssues {
+		if d := m.detailView(); d != "" {
+			h += strings.Count(d, "\n") + 1
+		}
+	}
+	return h
 }
 
 // paneView is the middle of the frame: the list, and beside it the sidebar for
@@ -255,17 +265,14 @@ func (m Model) statusLine() string {
 // which keeps the frame exactly as tall as the terminal. A boxed frame's two
 // border rows come out here, so scrolling and drawing agree about them.
 func (m Model) listHeight() int {
-	h := m.viewHeight() - topChrome - len(m.bottomBlock())
+	h := m.viewHeight() - topChrome - m.bottomHeight()
 	if sidebarWidth(m.width) > 0 {
 		h -= 2
 	}
 	// The stacked panel is drawn inside the pane, so its rows come out of the same
 	// budget.
 	h -= m.stackedSidebarHeight()
-	if h < 1 {
-		return 1
-	}
-	return h
+	return max(h, 1)
 }
 
 func (m Model) detailView() string {
@@ -289,17 +296,9 @@ func (m Model) listView() string {
 	}
 
 	h := m.listHeight()
-	offset := m.offset
-	if total := len(m.entries); offset > total-h {
-		offset = total - h
-	}
-	if offset < 0 {
-		offset = 0
-	}
-	end := offset + h
-	if end > len(m.entries) {
-		end = len(m.entries)
-	}
+	offset := max(min(m.offset, len(m.entries)-h), 0)
+	end := min(offset+h, len(m.entries))
+	w := m.listWidth()
 
 	// Entries are one line each, so the window is a plain slice and a list far
 	// longer than the terminal costs no more to draw than a short one.
@@ -307,14 +306,14 @@ func (m Model) listView() string {
 	for i := offset; i < end; i++ {
 		e := m.entries[i]
 		if e.kind == entryHeader {
-			lines = append(lines, m.theme.GroupHeader(m.groupInfo(e.node, i == m.cursor), m.listWidth()))
+			lines = append(lines, m.theme.GroupHeader(m.groupInfo(e.node, i == m.cursor), w))
 			continue
 		}
 		// A row is indented one level past the compose file that owns it. The indent
 		// is unstyled and the line rendered into what is left, as the header does
 		// it, so the cursor highlight starts at the text rather than the margin.
 		indent := strings.Repeat("  ", m.rowDepth(e))
-		lines = append(lines, indent+m.theme.RowLine(m.rows[e.row], i == m.cursor, m.listWidth()-len(indent)))
+		lines = append(lines, indent+m.theme.RowLine(m.rows[e.row], i == m.cursor, w-len(indent)))
 	}
 
 	return strings.Join(lines, "\n")
@@ -362,18 +361,8 @@ func (m Model) issuesView() string {
 
 	lines, _ := m.issueLines()
 	h := m.listHeight()
-	offset := m.issueOffset
-	if offset > len(lines)-h {
-		offset = len(lines) - h
-	}
-	if offset < 0 {
-		offset = 0
-	}
-	end := offset + h
-	if end > len(lines) {
-		end = len(lines)
-	}
-	return strings.Join(lines[offset:end], "\n")
+	offset := max(min(m.issueOffset, len(lines)-h), 0)
+	return strings.Join(lines[offset:min(offset+h, len(lines))], "\n")
 }
 
 func (m Model) emptyText() string {

@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/charmbracelet/lipgloss"
 )
@@ -39,13 +40,12 @@ func (m Model) groupInfo(nodeIdx int, cursor bool) GroupInfo {
 	}
 
 	// From m.rows rather than subtreeRows, which already honours the filter: Total
-	// has to see the hidden rows so the header can say "2 of 7 updates".
-	files := make(map[string]struct{})
-	for _, f := range m.subtreeFiles(nodeIdx) {
-		files[f] = struct{}{}
-	}
+	// has to see the hidden rows so the header can say "2 of 7 updates". A file
+	// only has a node when it has a visible row, so the mask is the same set
+	// subtreeFiles would name, without building it for every header on screen.
+	in := m.subtreeMask(nodeIdx)
 	for _, r := range m.rows {
-		if _, ok := files[r.FilePath()]; !ok {
+		if n := m.fileNode(r.FilePath()); n < 0 || !in[n] {
 			continue
 		}
 		// Both counts go through the same predicates the list itself uses, so the
@@ -92,7 +92,7 @@ func (t Theme) GroupHeader(g GroupInfo, width int) string {
 
 	// Directories carry the plain text colour and files the accent, so the two are
 	// distinguishable without relying on the indent. Both stay bold: they are headers.
-	labelStyle := lipgloss.NewStyle().Foreground(t.Accent).Bold(true)
+	labelStyle := t.accent()
 	if g.IsDir {
 		labelStyle = lipgloss.NewStyle().Foreground(t.Text).Bold(true)
 	}
@@ -104,15 +104,11 @@ func (t Theme) GroupHeader(g GroupInfo, width int) string {
 
 	// The indent eats into the label's budget rather than the count's, so a deep
 	// node loses characters off its front instead of pushing the line past width.
-	budget := w - len([]rune(indent)) - 2 - len([]rune(count))
-	if budget < 4 {
-		budget = 4
-	}
+	budget := max(w-len(indent)-2-utf8.RuneCountInString(count), 4)
 
-	line := fit(indent+labelStyle.Render(arrow+" "+truncateLeft(label, budget))+
-		lipgloss.NewStyle().Foreground(t.Dim).Render(count), w)
+	line := fit(indent+labelStyle.Render(arrow+" "+truncateLeft(label, budget))+t.dim().Render(count), w)
 	if g.Cursor {
-		line = lipgloss.NewStyle().Background(t.Highlight).Render(line)
+		line = t.highlight().Render(line)
 	}
 	return line
 }

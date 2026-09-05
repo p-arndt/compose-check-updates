@@ -71,9 +71,9 @@ func TestPinRowShowsTheDigestItWouldWrite(t *testing.T) {
 	r := *rowFor(t, m, "nginx")
 	require.Equal(t, policy.LevelPin, r.Level)
 
-	tail := rowTailPlain(r)
+	tail := rowTailPlain(r, r.otherTargets())
 	assert.Equal(t, "latest → @"+shortDigest(testDigest), tail)
-	assert.Contains(t, m.theme.rowTail(r, tail, 80), shortDigest(testDigest))
+	assert.Contains(t, m.theme.rowTail(r, tail, r.otherTargets(), 80), shortDigest(testDigest))
 }
 
 // The badge and the colour are the level's own, so a pin cannot be mistaken for

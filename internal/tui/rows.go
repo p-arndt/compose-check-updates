@@ -1,7 +1,8 @@
 package tui
 
 import (
-	"sort"
+	"cmp"
+	"slices"
 	"strings"
 
 	"github.com/p-arndt/compose-check-updates/internal/check"
@@ -35,21 +36,24 @@ func (m *Model) addRow(r Row) {
 	m.retarget(&r, m.target)
 	r.Pin = m.capFor(r.Update.ImageName)
 
-	m.rows = append(m.rows, r)
-	// Stable ordering by file then image means a row arriving mid-scan lands in
-	// its final position immediately, so nothing below it ever shifts twice.
-	sort.SliceStable(m.rows, func(i, j int) bool {
-		a, b := m.rows[i], m.rows[j]
-		if a.Update.FilePath != b.Update.FilePath {
-			return a.Update.FilePath < b.Update.FilePath
-		}
-		if a.Update.ImageName != b.Update.ImageName {
-			return a.Update.ImageName < b.Update.ImageName
-		}
-		return a.Update.CurrentTag < b.Update.CurrentTag
-	})
+	// Ordering by file then image means a row arriving mid-scan lands in its
+	// final position immediately, so nothing below it ever shifts twice. The slice
+	// is already sorted, so the new row is slotted in rather than the whole list
+	// re-sorted per arrival; the rowKey check above rules out an equal neighbour.
+	i, _ := slices.BinarySearchFunc(m.rows, r, compareRows)
+	m.rows = slices.Insert(m.rows, i, r)
 
 	m.rebuild(key)
+}
+
+// compareRows is the list order: by compose file, then image, then the tag the
+// file currently pins.
+func compareRows(a, b Row) int {
+	return cmp.Or(
+		cmp.Compare(a.Update.FilePath, b.Update.FilePath),
+		cmp.Compare(a.Update.ImageName, b.Update.ImageName),
+		cmp.Compare(a.Update.CurrentTag, b.Update.CurrentTag),
+	)
 }
 
 // entryKey is the identity of one list line across re-sorts: its node key for a
@@ -65,11 +69,25 @@ func (m Model) entryKey(e entry) string {
 // compose file for a row. It lets rebuild fall back to a header when the line
 // the cursor was on has been folded away.
 func keyGroup(key string) string {
-	if strings.HasPrefix(key, headerKeyPrefix) {
-		return key[len(headerKeyPrefix):]
+	if path, ok := strings.CutPrefix(key, headerKeyPrefix); ok {
+		return path
 	}
 	path, _, _ := strings.Cut(key, "\x00")
 	return path
+}
+
+// entryIndex is the list line an entry key names, or -1 when it is not drawn.
+// Matched structurally rather than by building every entry's key: rebuild runs
+// once per arriving row, and each key is three strings joined.
+func (m Model) entryIndex(key string) int {
+	if path, ok := strings.CutPrefix(key, headerKeyPrefix); ok {
+		return slices.IndexFunc(m.entries, func(e entry) bool { return e.kind == entryHeader && e.path == path })
+	}
+	ri := m.rowIndex(key)
+	if ri < 0 {
+		return -1
+	}
+	return slices.IndexFunc(m.entries, func(e entry) bool { return e.kind == entryRow && e.row == ri })
 }
 
 // cursorKey is the identity of the entry under the cursor, or "" when the list
@@ -187,12 +205,10 @@ func (m *Model) rebuild(keepKey string) {
 	}
 
 	if keepKey != "" {
-		for i, e := range m.entries {
-			if m.entryKey(e) == keepKey {
-				m.cursor = i
-				m.clampCursor()
-				return
-			}
+		if i := m.entryIndex(keepKey); i >= 0 {
+			m.cursor = i
+			m.clampCursor()
+			return
 		}
 		// The entry is gone — folded away or filtered out. The nearest surviving
 		// header keeps the cursor where the user was looking.
@@ -239,12 +255,14 @@ func (m Model) ancestorHeader(path string) int {
 }
 
 func (m *Model) rowByKey(key string) *Row {
-	for i := range m.rows {
-		if rowKey(m.rows[i]) == key {
-			return &m.rows[i]
-		}
+	if i := m.rowIndex(key); i >= 0 {
+		return &m.rows[i]
 	}
 	return nil
+}
+
+func (m Model) rowIndex(key string) int {
+	return slices.IndexFunc(m.rows, func(r Row) bool { return rowKey(r) == key })
 }
 
 func (m Model) selectedRows() []Row {

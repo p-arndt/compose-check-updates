@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/charmbracelet/lipgloss"
 
@@ -52,12 +53,9 @@ func (t Theme) Detail(u check.Update, level policy.Level, width int) string {
 	)
 
 	const labelWidth = 11
-	labelStyle := lipgloss.NewStyle().Foreground(t.Dim)
+	labelStyle := t.dim()
 	valueStyle := lipgloss.NewStyle().Foreground(t.Text)
-	valueBudget := w - labelWidth
-	if valueBudget < 1 {
-		valueBudget = 1
-	}
+	valueBudget := max(w-labelWidth, 1)
 
 	lines := make([]string, 0, len(fields)+1)
 	lines = append(lines, t.Badge(level)+" "+
@@ -103,11 +101,11 @@ func (t Theme) IssueEntry(index int, msg string, attrs []string, cursor bool, wi
 	if cursor {
 		msgStyle = msgStyle.Bold(true)
 	}
-	markStyle := lipgloss.NewStyle().Foreground(t.Accent).Bold(true)
-	attrStyle := lipgloss.NewStyle().Foreground(t.Dim)
+	markStyle := t.accent()
+	attrStyle := t.dim()
 
 	var out []string
-	for i, l := range wrapPlain(fmt.Sprintf("%d. %s", index, msg), w-len([]rune(marker))) {
+	for i, l := range wrapPlain(fmt.Sprintf("%d. %s", index, msg), w-utf8.RuneCountInString(marker)) {
 		prefix := marker
 		if i > 0 {
 			prefix = "  "
@@ -115,14 +113,15 @@ func (t Theme) IssueEntry(index int, msg string, attrs []string, cursor bool, wi
 		out = append(out, fit(markStyle.Render(prefix)+msgStyle.Render(l), w))
 	}
 	for _, a := range attrs {
-		for _, l := range wrapPlain(a, w-len([]rune(attrIndent))) {
+		for _, l := range wrapPlain(a, w-len(attrIndent)) {
 			out = append(out, fit(attrIndent+attrStyle.Render(l), w))
 		}
 	}
 
 	if cursor {
+		bg := t.highlight()
 		for i := range out {
-			out[i] = lipgloss.NewStyle().Background(t.Highlight).Render(out[i])
+			out[i] = bg.Render(out[i])
 		}
 	}
 	return out
@@ -132,9 +131,7 @@ func (t Theme) IssueEntry(index int, msg string, attrs []string, cursor bool, wi
 // boundaries and cutting words that are longer than the whole width. Apply it
 // before styling, for the same reason truncatePlain must be.
 func wrapPlain(s string, w int) []string {
-	if w < 1 {
-		w = 1
-	}
+	w = max(w, 1)
 
 	var out []string
 	line := ""
@@ -142,18 +139,18 @@ func wrapPlain(s string, w int) []string {
 		out = append(out, line)
 		line = ""
 	}
-	for _, word := range strings.Fields(s) {
+	for word := range strings.FieldsSeq(s) {
 		switch {
 		case line == "":
 			line = word
-		case len([]rune(line))+1+len([]rune(word)) <= w:
+		case utf8.RuneCountInString(line)+1+utf8.RuneCountInString(word) <= w:
 			line += " " + word
 		default:
 			flush()
 			line = word
 		}
 		// A word wider than the pane still has to go somewhere.
-		for len([]rune(line)) > w {
+		for utf8.RuneCountInString(line) > w {
 			r := []rune(line)
 			out = append(out, string(r[:w]))
 			line = string(r[w:])
@@ -185,11 +182,8 @@ func (t Theme) Status(kind StatusKind, text string) string {
 func (t Theme) Empty(text string, width int) string {
 	w := clampWidth(width)
 	plain := truncatePlain(text, w)
-	body := lipgloss.NewStyle().Foreground(t.Dim).Italic(true).Render(plain)
+	body := t.dim().Italic(true).Render(plain)
 	// Left padding only — lipgloss.PlaceHorizontal would also pad the right,
 	// leaving trailing blanks on every empty-state line.
-	if pad := (w - len([]rune(plain))) / 2; pad > 0 {
-		body = strings.Repeat(" ", pad) + body
-	}
-	return fit(body, w)
+	return fit(strings.Repeat(" ", max((w-utf8.RuneCountInString(plain))/2, 0))+body, w)
 }

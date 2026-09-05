@@ -2,6 +2,7 @@ package tui
 
 import (
 	"strings"
+	"unicode/utf8"
 
 	"github.com/charmbracelet/lipgloss"
 
@@ -109,7 +110,7 @@ func (t Theme) BadgeTight(level policy.Level) string {
 // actually changed carrying the level colour, so the eye lands on the part of
 // the number that moved (the ncu trick the CLI logger uses).
 func (t Theme) VersionDelta(current, latest string, level policy.Level) string {
-	dim := lipgloss.NewStyle().Foreground(t.Dim)
+	dim := t.dim()
 	col := lipgloss.NewStyle().Foreground(t.LevelColor(level)).Bold(true)
 
 	if latest == "" {
@@ -155,12 +156,7 @@ func splitAtFirstDiff(current, latest string) (unchanged, changed string) {
 
 // clampWidth keeps every renderer inside a sane budget so a zero or negative
 // terminal width can never turn into a negative repeat count or slice bound.
-func clampWidth(width int) int {
-	if width < minWidth {
-		return minWidth
-	}
-	return width
-}
+func clampWidth(width int) int { return max(width, minWidth) }
 
 // truncatePlain shortens unstyled text to at most w visible runes, marking the
 // cut with an ellipsis. Apply it before styling — truncating rendered output
@@ -169,18 +165,19 @@ func truncatePlain(s string, w int) string {
 	if w <= 0 {
 		return ""
 	}
-	r := []rune(s)
-	if len(r) <= w {
+	// Counted before converting: nearly every string fits, and the rune slice
+	// is an allocation per cell of every frame.
+	if utf8.RuneCountInString(s) <= w {
 		return s
 	}
 	if w == 1 {
 		return "…"
 	}
-	return string(r[:w-1]) + "…"
+	return string([]rune(s)[:w-1]) + "…"
 }
 
 func padRight(s string, w int) string {
-	if n := w - len([]rune(s)); n > 0 {
+	if n := w - utf8.RuneCountInString(s); n > 0 {
 		return s + strings.Repeat(" ", n)
 	}
 	return s
@@ -226,10 +223,20 @@ func (t Theme) dim() lipgloss.Style {
 	return lipgloss.NewStyle().Foreground(t.Dim)
 }
 
+// accent is the bold accent every header, marker and key hint is drawn in.
+func (t Theme) accent() lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(t.Accent).Bold(true)
+}
+
+// highlight is the background of the line under the cursor.
+func (t Theme) highlight() lipgloss.Style {
+	return lipgloss.NewStyle().Background(t.Highlight)
+}
+
 // sideTitle names the image the column is about. It is the only bold line in
 // the sidebar, because everything below it is qualified by this one.
 func (t Theme) sideTitle(image string, width int) string {
-	return lipgloss.NewStyle().Foreground(t.Accent).Bold(true).Render(fit(image, width))
+	return t.accent().Render(fit(image, width))
 }
 
 // boxChrome is what a box costs a caller in width: two border columns and the
@@ -272,7 +279,7 @@ func (t Theme) sideValue(label, value string, focused bool, width int) string {
 	name := t.dim().Render(padRight(label, 8))
 	chevron := t.dim()
 	if focused {
-		name = lipgloss.NewStyle().Foreground(t.Accent).Bold(true).Render(padRight(label, 8))
+		name = t.accent().Render(padRight(label, 8))
 		chevron = lipgloss.NewStyle().Foreground(t.Accent)
 	}
 	return fit(name+chevron.Render("‹ ")+value+chevron.Render(" ›"), width)
