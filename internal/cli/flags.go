@@ -148,7 +148,7 @@ func Parse(version string) Flags {
 	inferMode(&args)
 
 	if args.Version {
-		println("Version:", version)
+		fmt.Println("Version:", version)
 		os.Exit(0)
 	}
 
