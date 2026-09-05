@@ -184,16 +184,13 @@ func checkFile(ctx context.Context, events chan<- Event, opts Options, path stri
 		return
 	}
 
-	for _, u := range updates {
-		// An image ccu could not read is reported rather than dropped: dropping it
-		// left a warning on stderr as its only trace, which no row and no report
-		// line could be hung off.
-		if !u.HasNewVersion() && !u.IsUnreadable() {
-			continue
-		}
-		if !send(ctx, events, Event{Kind: EventUpdate, Path: path, Update: u, Level: u.Level()}) {
-			return
-		}
+	// An image ccu could not read is reported rather than dropped: dropping it
+	// left a warning on stderr as its only trace, which no row and no report
+	// line could be hung off.
+	if !emitUpdates(ctx, events, path, updates, func(u check.Update) bool {
+		return u.HasNewVersion() || u.IsUnreadable()
+	}) {
+		return
 	}
 
 	// The image count travels with the file's last event so a caller can tell an
@@ -211,11 +208,24 @@ func checkFilePins(ctx context.Context, events chan<- Event, opts Options, path 
 		return
 	}
 
-	for _, u := range pins {
+	// Every pin is worth a row: CheckPins already returns only the floating tags
+	// it resolved.
+	emitUpdates(ctx, events, path, pins, nil)
+}
+
+// emitUpdates sends one update event per update the keep predicate accepts, nil
+// keeping all of them. It reports whether the stream is still alive, so a caller
+// with work left after the updates can stop the way send makes it stop.
+func emitUpdates(ctx context.Context, events chan<- Event, path string, updates []check.Update, keep func(check.Update) bool) bool {
+	for _, u := range updates {
+		if keep != nil && !keep(u) {
+			continue
+		}
 		if !send(ctx, events, Event{Kind: EventUpdate, Path: path, Update: u, Level: u.Level()}) {
-			return
+			return false
 		}
 	}
+	return true
 }
 
 // checkAll runs one kind of check over a compose file and the Dockerfiles its
