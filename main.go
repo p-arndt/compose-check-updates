@@ -18,6 +18,7 @@ import (
 	"github.com/p-arndt/compose-check-updates/internal/config"
 	"github.com/p-arndt/compose-check-updates/internal/logger"
 	"github.com/p-arndt/compose-check-updates/internal/modes"
+	"github.com/p-arndt/compose-check-updates/internal/registry"
 	"github.com/p-arndt/compose-check-updates/internal/report"
 	"github.com/p-arndt/compose-check-updates/internal/scanner"
 	"github.com/p-arndt/compose-check-updates/internal/tui"
@@ -83,6 +84,14 @@ func run(flags cli.Flags, updater *selfupdate.Updater) (int, error) {
 		return 0, fmt.Errorf("reading flags: %w", err)
 	}
 
+	// One cache for the whole run, handed to every registry client the scan
+	// builds: the scanner makes one per compose file, and an image two stacks
+	// share should cost one lookup, not two.
+	cache := registry.NewCache(registry.CacheOptions{
+		TTL:     effective.CacheTTLDuration(),
+		Refresh: flags.Refresh,
+	})
+
 	// A report about ccu's own settings, like the commands above: it answers a
 	// question about the tool, so no scan follows it.
 	if flags.ShowConfig {
@@ -92,10 +101,14 @@ func run(flags cli.Flags, updater *selfupdate.Updater) (int, error) {
 		if flags.Image != "" {
 			config.Explain(os.Stdout, cfg, effective, flags.Image, flags.Versioning, flags.MinAge)
 		} else {
-			config.Show(os.Stdout, cfg, effective)
+			config.Show(os.Stdout, cfg, effective, cache.Dir())
 		}
 		return exitUpToDate, nil
 	}
+
+	// Housekeeping after the run, never before it: pruning walks the cache
+	// directory, and no lookup should wait on that.
+	defer cache.Prune()
 
 	format, err := report.ParseFormat(flags.Format)
 	if err != nil {
@@ -111,7 +124,7 @@ func run(flags cli.Flags, updater *selfupdate.Updater) (int, error) {
 		flags.Check = true
 	}
 
-	opts := scanOptions(flags, effective)
+	opts := scanOptions(flags, effective, cache)
 
 	if !flags.Check {
 		if err := tui.Run(opts, cfg.Project, cfg.Global); err != nil {
@@ -120,10 +133,10 @@ func run(flags cli.Flags, updater *selfupdate.Updater) (int, error) {
 		return exitUpToDate, nil
 	}
 
-	return runReport(flags, updater, opts, format.Resolve(onTerminal))
+	return runReport(flags, updater, opts, format.Resolve(onTerminal), cache)
 }
 
-func runReport(flags cli.Flags, updater *selfupdate.Updater, opts scanner.Options, format report.Format) (int, error) {
+func runReport(flags cli.Flags, updater *selfupdate.Updater, opts scanner.Options, format report.Format, cache *registry.Cache) (int, error) {
 	// Said once, before the report itself, so an existing script keeps working
 	// and still gets told which spelling replaced it.
 	if flags.LegacyPlain {
@@ -145,6 +158,12 @@ func runReport(flags cli.Flags, updater *selfupdate.Updater, opts scanner.Option
 	outcome, err := modes.Default(ctx, opts, flags, report.New(format, os.Stdout))
 	if err != nil {
 		return 0, fmt.Errorf("checking for updates: %w", err)
+	}
+
+	// Always stderr, in both formats: a JSON stream stays a JSON stream, and the
+	// line is about how the answers were obtained, not about the images.
+	if summary := cache.Summary(); summary != "" {
+		fmt.Fprintln(os.Stderr, summary)
 	}
 
 	// Only the non-interactive path gets the notice: the TUI owns the alt screen,
@@ -215,8 +234,9 @@ func effectiveConfig(cfg config.Config, flags cli.Flags) (config.Config, error) 
 	return cfg, nil
 }
 
-func scanOptions(flags cli.Flags, effective config.Config) scanner.Options {
+func scanOptions(flags cli.Flags, effective config.Config, cache *registry.Cache) scanner.Options {
 	opts := scanner.Options{
+		Cache:       cache,
 		Root:        flags.Directory,
 		Exclude:     effective.Exclude,
 		Images:      flags.Images,

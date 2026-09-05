@@ -38,14 +38,18 @@ type Flags struct {
 	// same reason PinFloatingSet does: this one defaults to on, so a plain true
 	// says nothing about whether the user or the default asked for it.
 	DockerfilesSet bool
-	Version        bool     // Version of ccu
-	SelfUpdate     bool     // Download and install the latest version of ccu
-	CheckUpdate    bool     // Check whether a newer version of ccu is available, without installing it
-	Exclude        []string // Directories to exclude from search
-	ExcludeStr     string   // Comma-separated list of directories to exclude from search (flag only)
-	Config         string   // Explicit config file to read instead of searching for one
-	Format         string   // Output format of the report: auto, pretty or json
-	ShowConfig     bool     // Print the resolved configuration and where it came from
+	// Refresh ignores every cached registry answer for this run. The escape hatch
+	// for "a release went out a minute ago": the cache is short-lived by design,
+	// but this makes the run ask the registries about everything regardless.
+	Refresh     bool
+	Version     bool     // Version of ccu
+	SelfUpdate  bool     // Download and install the latest version of ccu
+	CheckUpdate bool     // Check whether a newer version of ccu is available, without installing it
+	Exclude     []string // Directories to exclude from search
+	ExcludeStr  string   // Comma-separated list of directories to exclude from search (flag only)
+	Config      string   // Explicit config file to read instead of searching for one
+	Format      string   // Output format of the report: auto, pretty or json
+	ShowConfig  bool     // Print the resolved configuration and where it came from
 	// Image narrows the `config` command to a single image: instead of the merged
 	// result it then explains how that image's settings were resolved and which
 	// layer produced each of them. Empty means the whole configuration.
@@ -169,6 +173,7 @@ func registerFlags(args *Flags, versioningName *string) {
 	flag.BoolVar(&args.Patch, "patch", true, "Update to the latest patch version")
 	flag.BoolVar(&args.PinFloating, "pin-floating", false, "Pin floating tags (latest, main, ...) to the digest they resolve to")
 	flag.BoolVar(&args.Dockerfiles, "dockerfiles", true, "Also check the base images of Dockerfiles built by a compose service")
+	flag.BoolVar(&args.Refresh, "refresh", false, "Ignore the cached registry answers and ask every registry again")
 	flag.BoolVar(&args.Version, "v", false, "Show version information")
 	// Kept registered so existing scripts keep working, hidden from the usage text
 	// so only the subcommand form is taught. Unlike -v and -h, which Parse acts on,
@@ -280,7 +285,7 @@ func usage(w io.Writer) {
 	fmt.Fprintln(tw, "  config -image <name>\tExplain how one image's settings were resolved, and from which file")
 	fmt.Fprintln(tw, "  help\tShow this help message")
 	fmt.Fprintln(tw, "  version\tShow version information")
-	fmt.Fprintf(tw, "\nFlags (-d, -exclude, -image, -config, -pin-floating, -dockerfiles, -versioning and -min-age apply to both modes, the rest only to `%s check`):\n", name)
+	fmt.Fprintf(tw, "\nFlags (-d, -exclude, -image, -config, -pin-floating, -dockerfiles, -versioning, -min-age and -refresh apply to both modes, the rest only to `%s check`):\n", name)
 	flag.VisitAll(func(f *flag.Flag) {
 		// An empty usage string marks a flag kept only for backwards
 		// compatibility; see the registrations in Parse.

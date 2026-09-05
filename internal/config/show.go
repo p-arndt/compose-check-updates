@@ -14,8 +14,9 @@ import (
 // in merge order, and what the merged result is once the command line has been
 // layered on top. It is the answer to "ccu is not excluding my folder" — which
 // is otherwise invisible, because a config file that was never found and one
-// that was found and says nothing look exactly alike.
-func Show(w io.Writer, loaded Loaded, effective Config) {
+// that was found and says nothing look exactly alike. cacheDir is where the
+// registry cache writes, empty when this run keeps none.
+func Show(w io.Writer, loaded Loaded, effective Config, cacheDir string) {
 	if len(loaded.Sources) == 0 {
 		fmt.Fprintln(w, "Config files: none found")
 		fmt.Fprintf(w, "  looked for %s in the scan root and its parents\n", filepath.Join("<dir>", projectNames[0]))
@@ -50,6 +51,12 @@ func Show(w io.Writer, loaded Loaded, effective Config) {
 		fmt.Fprintln(w, "  min_age: (none)")
 	} else {
 		fmt.Fprintf(w, "  min_age: %s\n", effective.MinAge)
+	}
+	fmt.Fprintf(w, "  cache_ttl: %s\n", effective.CacheTTLDuration())
+	if cacheDir == "" {
+		fmt.Fprintln(w, "  cache: off")
+	} else {
+		fmt.Fprintf(w, "  cache: %s\n", cacheDir)
 	}
 	fmt.Fprintf(w, "  pin_floating: %t\n", effective.PinFloatingEnabled())
 	fmt.Fprintf(w, "  dockerfiles: %t\n", effective.DockerfilesEnabled())

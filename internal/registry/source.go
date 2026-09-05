@@ -1,17 +1,11 @@
 package registry
 
 import (
-	"context"
-	"fmt"
 	"net/url"
 	"regexp"
 	"strings"
-	"sync"
 
-	"github.com/regclient/regclient"
-	"github.com/regclient/regclient/types/descriptor"
 	"github.com/regclient/regclient/types/manifest"
-	"github.com/regclient/regclient/types/ref"
 )
 
 // sourceLabels are the labels naming where an image is built from, in the order
@@ -26,10 +20,6 @@ var sourceLabels = []string{
 // schemePattern matches the "scheme:" a URL opens with.
 var schemePattern = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9+.-]*:`)
 
-// maxIndexDepth bounds how far an index is followed. A nested index is legal but
-// vanishingly rare, and without a bound a registry could loop a client forever.
-const maxIndexDepth = 4
-
 // SourceFetcher is the optional half of a Fetcher: where an image says its own
 // source lives. Kept out of Fetcher because every stand-in a test writes would
 // otherwise have to answer it, and because it costs requests only a caller with
@@ -40,86 +30,15 @@ type SourceFetcher interface {
 	SourceURL(image string) (string, error)
 }
 
-// sourceResult is one memoised lookup. The error is kept too: a repository that
-// refused the config blob once will refuse it again, and re-asking for every
-// occurrence of the image would multiply the cost of a failure.
-type sourceResult struct {
-	url string
-	err error
-}
-
-// SourceURL reads the source label of one reference. The result is cached per
-// repository and tag for the lifetime of the client, since the same image often
-// appears in several stacks of one scan.
+// SourceURL reads the source label of one reference. It rides on the same walk
+// down to the config blob that Created uses, so an update whose date and source
+// are both reported costs one manifest chain, not two.
 func (c *Client) SourceURL(image string) (string, error) {
-	c.mu.Lock()
-	if got, ok := c.sources[image]; ok {
-		c.mu.Unlock()
-		return got.url, got.err
-	}
-	c.mu.Unlock()
-
-	sourceURL, err := c.fetchSource(image)
-
-	c.mu.Lock()
-	if c.sources == nil {
-		c.sources = make(map[string]sourceResult)
-	}
-	c.sources[image] = sourceResult{url: sourceURL, err: err}
-	c.mu.Unlock()
-
-	return sourceURL, err
-}
-
-// fetchSource walks from the reference to the labels: the manifest, an index
-// followed to one platform manifest where there is one, and finally the config
-// blob. Annotations are read on the way down because they are already in hand —
-// only when none of them names a source is the config blob worth a request.
-func (c *Client) fetchSource(image string) (string, error) {
-	rRef, err := ref.New(image)
+	info, err := c.imageInfoFor(image)
 	if err != nil {
-		return "", fmt.Errorf("failed to parse image reference %q: %w", image, err)
+		return "", err
 	}
-
-	ctx := context.Background()
-	m, err := c.rc.ManifestGet(ctx, rRef)
-	if err != nil {
-		return "", fmt.Errorf("failed to fetch manifest for %q: %w", image, err)
-	}
-
-	for range maxIndexDepth {
-		if source := annotationSource(m); source != "" {
-			return source, nil
-		}
-		if !m.IsList() {
-			break
-		}
-
-		desc, err := platformDescriptor(m)
-		if err != nil {
-			return "", fmt.Errorf("failed to read the index of %q: %w", image, err)
-		}
-		if m, err = c.rc.ManifestGet(ctx, rRef, regclient.WithManifestDesc(desc)); err != nil {
-			return "", fmt.Errorf("failed to fetch platform manifest for %q: %w", image, err)
-		}
-	}
-
-	imager, ok := m.(manifest.Imager)
-	if !ok {
-		// An artifact or a schema1 manifest: no config blob to read labels from.
-		return "", nil
-	}
-	configDesc, err := imager.GetConfig()
-	if err != nil {
-		return "", fmt.Errorf("failed to read the config descriptor of %q: %w", image, err)
-	}
-
-	config, err := c.rc.BlobGetOCIConfig(ctx, rRef, configDesc)
-	if err != nil {
-		return "", fmt.Errorf("failed to fetch the config blob of %q: %w", image, err)
-	}
-
-	return pickSource(config.GetConfig().Config.Labels), nil
+	return info.Source, nil
 }
 
 // annotationSource reads the source out of a manifest's annotations, which an
@@ -143,32 +62,6 @@ func pickSource(values map[string]string) string {
 		}
 	}
 	return ""
-}
-
-// platformDescriptor picks the manifest of an index to descend into. Any real
-// platform will do — the labels describe the image, not the architecture — so
-// the first one is taken rather than matching the host, which would fail for an
-// image built for a single foreign platform. Attestation entries are skipped:
-// buildx lists them as "unknown/unknown" and they carry no image config.
-func platformDescriptor(m manifest.Manifest) (descriptor.Descriptor, error) {
-	indexer, ok := m.(manifest.Indexer)
-	if !ok {
-		return descriptor.Descriptor{}, fmt.Errorf("manifest list of unsupported type %s", m.GetDescriptor().MediaType)
-	}
-
-	list, err := indexer.GetManifestList()
-	if err != nil {
-		return descriptor.Descriptor{}, err
-	}
-
-	for _, d := range list {
-		if d.Platform != nil && d.Platform.OS == "unknown" {
-			continue
-		}
-		return d, nil
-	}
-
-	return descriptor.Descriptor{}, fmt.Errorf("no platform manifest in index")
 }
 
 // SourceLinks turns the source an image records into the two links ccu reports:
@@ -257,13 +150,4 @@ func normalizeSource(source string) string {
 	parsed.Path = strings.TrimSuffix(strings.TrimSuffix(parsed.Path, "/"), ".git")
 
 	return parsed.String()
-}
-
-// sourceCache memoises the lookups of one client: the same image often appears
-// in several stacks of one scan, and the labels behind a tag do not change while
-// it runs. Embedded in Client because nothing else there is shared between the
-// goroutines the scanner checks files in.
-type sourceCache struct {
-	mu      sync.Mutex
-	sources map[string]sourceResult
 }

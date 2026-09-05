@@ -89,9 +89,10 @@ ccu check -image traefik  # check one image and nothing else
 | `-format` | Output format: `auto`, `pretty` or `json` | `auto` |
 | `-pin-floating` | Pin floating tags (`latest`, `main`, …) to the digest they resolve to | `false` |
 | `-dockerfiles` | Also check the base images of Dockerfiles built by a compose service | `true` |
+| `-refresh` | Ignore the cached registry answers and ask every registry again | `false` |
 
 Only `-d`, `-exclude`, `-image`, `-config`, `-pin-floating`, `-dockerfiles`,
-`-versioning` and `-min-age` also apply to the TUI — it picks levels in the UI instead and always resolves
+`-versioning`, `-min-age` and `-refresh` also apply to the TUI — it picks levels in the UI instead and always resolves
 every level.
 
 **Exit codes:** `0` nothing to do · `1` updates available, not applied ·
@@ -115,6 +116,7 @@ pin_floating: true
 dockerfiles: false
 versioning: semver
 min_age: 7d
+cache_ttl: 10m
 floating_tags: [release, canary]
 
 images:
@@ -140,6 +142,7 @@ images:
 | `dockerfiles` | bool | `true` | Also check `FROM` lines of Dockerfiles built by a service |
 | `versioning` | `semver`, `loose` | `semver` | How tags are read as versions, run-wide |
 | `min_age` | duration (`7d`, `36h`) | none | Only offer tags published at least this long ago |
+| `cache_ttl` | duration (`10m`, `1h`) | `10m` | How long a cached tag list stays usable. `0` never reads the cache back. See [The cache](#recipes). |
 | `floating_tags` | list of tags | see below | Extra tags treated as moving. **Added** to the built-in set. |
 | `images` | map | — | Per-image settings, keyed by image name **without tag or digest** |
 
@@ -211,6 +214,53 @@ Any OCI registry works — Docker Hub, GHCR, Quay, Harbor, ECR, a self-hosted
 `registry:2`. Private repos need no setup: `ccu` reads the credentials
 `docker login` already stored. Logging in also lifts Docker Hub's anonymous rate
 limit, which starts to matter past a few dozen images.
+
+The other half of that problem is asking twice for the same answer: **the
+cache** below keeps registry answers for ten minutes, so reopening the TUI or
+running a `check` straight after one costs no requests at all.
+
+</details>
+
+<details>
+<summary><strong>The cache</strong></summary>
+
+`ccu` keeps registry answers on disk, in
+`~/.cache/ccu` (`~/Library/Caches/ccu` on macOS, `%LocalAppData%\ccu` on
+Windows). It exists so that reopening the TUI, or running `ccu check` right
+after a TUI session, does not pay Docker Hub's rate limit twice — and it is
+built so that it can never hide a release from you.
+
+Two kinds of answer, two policies:
+
+| Cached | For how long | Why |
+| ------ | ------------ | --- |
+| Tag lists, and what a tag currently points at | **`cache_ttl`, 10 minutes by default** | These change whenever something is published. Anything older is fetched again. |
+| The build date and source label of a **digest** | 30 days | A digest names its content: what it was built from cannot change. Which digest a tag points at is still checked every time. |
+
+So a release published a minute ago is found by the next run: the tag list is
+minutes old at most, and the step from tag to digest is never cached for longer.
+
+- **`-refresh`** ignores every cached entry for this run and asks the registries
+  about everything — `ccu -refresh`, `ccu check -refresh`. This is the "I want to
+  update *right now*" switch.
+- **`CCU_NO_CACHE=1`** reads and writes nothing, for a CI runner that throws the
+  directory away anyway.
+- **`cache_ttl`** sets the first row's lifetime, globally or per project;
+  `cache_ttl: 0` writes the cache but never reads it back.
+- **`CCU_CACHE_DIR`** puts the directory somewhere else. `ccu config` prints
+  where it is and how long entries are trusted.
+
+If a registry answers with a rate limit or cannot be reached at all, `ccu` falls
+back to an expired entry rather than failing, and says so on stderr with the age
+of the data. That only happens on failure — an answering registry always wins
+over the cache. `ccu check` reports what the cache saved on stderr:
+
+```
+served 12 of 40 lookups from cache (~/.cache/ccu, 10m0s ttl; -refresh to bypass)
+```
+
+Entries older than 30 days are dropped at the end of a run, so the directory
+does not grow forever.
 
 </details>
 
