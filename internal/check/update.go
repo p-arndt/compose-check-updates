@@ -65,6 +65,13 @@ type Update struct {
 	// Cap is the highest level this image may move to; empty means no cap.
 	Cap policy.Level
 
+	// SourceURL is the repository the image says it is built from, empty when it
+	// records no source. Resolved only for an image that has an update: reading
+	// it costs a request, and an image nobody is being asked to move has nothing
+	// to read up on. The release link is derived from it (see ReleaseURL) rather
+	// than stored, so switching target cannot leave a link to the tag before it.
+	SourceURL string
+
 	// Versioning and VersioningPattern travel with the update because the level
 	// is re-derived from the tags long after the checker that resolved them is
 	// gone, and a level derived under the wrong scheme is worse than none.
@@ -100,6 +107,21 @@ func (u *Update) MarkUnreadable(reason, message string) {
 	u.UnreadableReason, u.UnreadableMessage = reason, message
 	u.LatestTag, u.LatestDigest, u.digestFor = "", "", ""
 	u.PatchTag, u.MinorTag, u.MajorTag = "", "", ""
+	u.SourceURL = ""
+}
+
+// ReleaseURL is where the notes for the tag this update points at would be, or
+// "" when the image records no source or its forge has no release page ccu can
+// name. Derived on demand so it always describes the currently selected target.
+func (u *Update) ReleaseURL() string {
+	tag := u.LatestTag
+	if tag == "" {
+		// A drifted pin moves no tag; its notes, if any, are the ones for the tag
+		// the file already names.
+		tag = u.CurrentTag
+	}
+	_, release := registry.SourceLinks(u.SourceURL, tag)
+	return release
 }
 
 func (u *Update) IsUnreadable() bool { return u.UnreadableReason != "" }

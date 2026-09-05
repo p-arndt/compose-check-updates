@@ -454,6 +454,11 @@ On a terminal too narrow for two columns the detail column moves *below* the
 list rather than disappearing — the per-image target and cap have no keys of
 their own.
 
+Where the image says where it is built from, the detail column also names where
+to read what changed: the release page of the tag you are about to write, cut
+back to the repository when the column is too narrow for the whole link. Nothing
+is opened for you — the link is there to be read or copied.
+
 </details>
 
 <details>
@@ -509,6 +514,8 @@ parseable.
 | `level` | update | `major`, `minor`, `patch`, `digest` or `pin` |
 | `current_digest` / `latest_digest` | digest-pinned images | only present when the digest actually moved |
 | `targets` | update | the tag available at each level, so you can pick a different one |
+| `release_url` | updates whose image names a GitHub or GitLab source | where the notes for `latest` would be — constructed from the tag, not checked, so a project that tags its releases differently gives you a 404 |
+| `source_url` | updates whose image records a source | the repository the image says it is built from (`org.opencontainers.image.source`) |
 | `cap` | capped images | the ceiling recorded in your config |
 | `applied` / `restarted` | with `-u` / `-r` | whether the write or restart succeeded — `false` means it was asked for and failed |
 | `reason` / `message` | unreadable | why nothing could be resolved: a stable name to dispatch on, and the same thing in a sentence |

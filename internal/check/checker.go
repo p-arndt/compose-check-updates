@@ -50,6 +50,7 @@ func (c *Checker) Check(major, minor, patch bool) ([]Update, error) {
 
 	for i := range updates {
 		c.resolve(&updates[i], major, minor, patch)
+		c.resolveSource(&updates[i])
 	}
 	return updates, nil
 }
@@ -68,6 +69,7 @@ func (c *Checker) CheckImage(reference string, major, minor, patch bool) (Update
 			continue
 		}
 		c.resolve(&updates[i], major, minor, patch)
+		c.resolveSource(&updates[i])
 		return updates[i], true, nil
 	}
 	return Update{}, false, nil
@@ -187,6 +189,46 @@ func (c *Checker) resolve(u *Update, major, minor, patch bool) {
 	}
 
 	c.clampToCap(u)
+}
+
+// resolveSource reads where the image is built from, so the report can point at
+// what changed. Only for an image that actually moves: this is a manifest and a
+// config blob on top of the lookups the check itself needs, and paying that for
+// every up-to-date image would double the traffic of a quiet run for nothing.
+//
+// A failure is not one: the label is metadata about an update ccu has already
+// resolved, so anything that goes wrong here leaves the fields empty and the
+// update itself untouched.
+func (c *Checker) resolveSource(u *Update) {
+	if u.IsUnreadable() || !u.HasNewVersion() {
+		return
+	}
+
+	// Not part of Fetcher, so the stand-ins a test writes need not answer it.
+	fetcher, ok := c.registry.(registry.SourceFetcher)
+	if !ok {
+		return
+	}
+
+	// The tag being moved to is the one whose labels describe the new release; a
+	// drifted pin has none, and falls back to the tag the file names.
+	tag := u.LatestTag
+	if tag == "" {
+		tag = u.CurrentTag
+	}
+	if tag == "" {
+		return
+	}
+
+	source, err := fetcher.SourceURL(u.ImageName + ":" + tag)
+	if err != nil {
+		slog.Debug("Failed reading the source label", "image", u.ImageName, "tag", tag, "error", err)
+		return
+	}
+
+	// Stored normalised, so every consumer sees the same spelling of a link that
+	// registries carry in half a dozen forms.
+	u.SourceURL, _ = registry.SourceLinks(source, "")
 }
 
 // clampToCap moves a selection the cap forbids down to it, rather than letting
