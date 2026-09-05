@@ -3,6 +3,7 @@ package registry
 import (
 	"log/slog"
 	"sync"
+	"sync/atomic"
 )
 
 // probeWorkers limits how many tags are resolved at once. The probes are
@@ -13,22 +14,17 @@ const probeWorkers = 24
 // returning "" when none matches. Probes run concurrently and stop early.
 func TagForDigest(f Fetcher, image string, candidates []string, digest string) string {
 	var (
-		wg    sync.WaitGroup
-		mu    sync.Mutex
-		match string
+		wg sync.WaitGroup
+		// The first worker to match wins: CompareAndSwap from nil is what makes
+		// "first" well defined without a lock around every read of it.
+		match atomic.Pointer[string]
 		queue = make(chan string)
 	)
-
-	found := func() bool {
-		mu.Lock()
-		defer mu.Unlock()
-		return match != ""
-	}
 
 	for range min(probeWorkers, len(candidates)) {
 		wg.Go(func() {
 			for tag := range queue {
-				if found() {
+				if match.Load() != nil {
 					continue
 				}
 
@@ -41,17 +37,13 @@ func TagForDigest(f Fetcher, image string, candidates []string, digest string) s
 					continue
 				}
 
-				mu.Lock()
-				if match == "" {
-					match = tag
-				}
-				mu.Unlock()
+				match.CompareAndSwap(nil, &tag)
 			}
 		})
 	}
 
 	for _, tag := range candidates {
-		if found() {
+		if match.Load() != nil {
 			break
 		}
 		queue <- tag
@@ -59,5 +51,8 @@ func TagForDigest(f Fetcher, image string, candidates []string, digest string) s
 	close(queue)
 	wg.Wait()
 
-	return match
+	if m := match.Load(); m != nil {
+		return *m
+	}
+	return ""
 }
