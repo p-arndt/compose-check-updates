@@ -3,6 +3,7 @@ package versioning
 import (
 	"fmt"
 	"regexp"
+	"slices"
 	"strconv"
 	"sync"
 
@@ -72,13 +73,13 @@ func (r regexScheme) Parse(tag string) (Version, bool) {
 	return Version{Tag: tag, Release: release, Suffix: suffix}, true
 }
 
-func segmentIndex(name string) int {
-	for i, group := range segmentGroups {
-		if name == group {
-			return i
-		}
-	}
-	return -1
+func segmentIndex(name string) int { return slices.Index(segmentGroups, name) }
+
+// namesAnyGroup reports whether a compiled pattern names at least one group.
+// Without one there is nothing to read a version out of, which both the config
+// check and the scheme itself have to refuse.
+func namesAnyGroup(re *regexp.Regexp) bool {
+	return slices.ContainsFunc(re.SubexpNames(), func(name string) bool { return name != "" })
 }
 
 // regexSchemes caches schemes by pattern: ByName runs once per image per check,
@@ -111,18 +112,15 @@ func newRegexScheme(pattern string) (regexScheme, error) {
 		return regexScheme{}, err
 	}
 
-	segments, named := 0, false
+	if !namesAnyGroup(compiled) {
+		return regexScheme{}, fmt.Errorf("pattern %q names no group, so there is nothing to read a version out of", pattern)
+	}
+
+	segments := 0
 	for _, name := range compiled.SubexpNames() {
-		if name == "" {
-			continue
-		}
-		named = true
 		if index := segmentIndex(name); index >= 0 {
 			segments = max(segments, index+1)
 		}
-	}
-	if !named {
-		return regexScheme{}, fmt.Errorf("pattern %q names no group, so there is nothing to read a version out of", pattern)
 	}
 
 	return regexScheme{pattern: compiled, segments: segments}, nil
@@ -154,10 +152,8 @@ func ValidatePattern(v policy.Versioning, pattern string) error {
 	if err != nil {
 		return fmt.Errorf("versioning_pattern: %q is not a valid regular expression: %w", pattern, err)
 	}
-	for _, name := range compiled.SubexpNames() {
-		if name != "" {
-			return nil
-		}
+	if namesAnyGroup(compiled) {
+		return nil
 	}
 	return fmt.Errorf("versioning_pattern: %q names no group, so there is nothing to read a version out of; write (?P<major>…) around the part that carries it", pattern)
 }
