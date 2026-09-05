@@ -464,3 +464,26 @@ func TestUpdateLevelVersioning(t *testing.T) {
 		})
 	}
 }
+
+// A tag can also occur in the repository, registry port, or Dockerfile stage.
+// Only the tag after the repository is allowed to change.
+func TestApplyPreservesTagTextOutsideTag(t *testing.T) {
+	t.Parallel()
+	tests := []struct{ name, line, current, latest, want string }{
+		{"repository", "image: registry.example/app-1.0.0:1.0.0", "1.0.0", "1.1.0", "image: registry.example/app-1.0.0:1.1.0"},
+		{"registry port", "image: localhost:5000/app-5000:5000", "5000", "5001", "image: localhost:5000/app-5000:5001"},
+		{"dockerfile stage", "FROM --platform=linux/amd64 app-1.0.0:1.0.0 AS stage-1.0.0 # keep 1.0.0", "1.0.0", "1.1.0", "FROM --platform=linux/amd64 app-1.0.0:1.1.0 AS stage-1.0.0 # keep 1.0.0"},
+		{"quoted reference", "  image: \"app-1.0.0:1.0.0\"  ", "1.0.0", "1.1.0", "  image: \"app-1.0.0:1.1.0\"  "},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			path := writeComposeFile(t, tt.line)
+			u := Update{FilePath: path, RawLine: tt.line, CurrentTag: tt.current, LatestTag: tt.latest}
+			assert.NoError(t, u.Apply())
+			content, err := os.ReadFile(path)
+			assert.NoError(t, err)
+			assert.Equal(t, tt.want, string(content))
+		})
+	}
+}

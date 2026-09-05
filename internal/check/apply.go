@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"regexp"
 	"strings"
 	"sync"
 )
@@ -41,7 +42,7 @@ func (u *Update) replacements() []replacement {
 	if u.movesTag() {
 		switch {
 		case u.TagVar == nil:
-			reps = append(reps, replacement{u.CurrentTag, u.LatestTag})
+			// Literal tags are rewritten by position in Apply.
 		case u.TagVar.FromDefault:
 			// The value lives in the reference's own default, so the image line is
 			// still where it is written — just the default rather than the tag.
@@ -105,7 +106,13 @@ func (u *Update) Apply() error {
 	}
 
 	reps := u.replacements()
-	if len(reps) == 0 {
+	var tagPattern *regexp.Regexp
+	if u.TagVar == nil && u.movesTag() && !u.PinsFloating {
+		// Require both tag boundaries: the same text can occur in a repository
+		// name or a registry port (whose following slash must not match).
+		tagPattern = regexp.MustCompile(`:` + regexp.QuoteMeta(u.CurrentTag) + `(?:$|[@\s"'])`)
+	}
+	if len(reps) == 0 && tagPattern == nil {
 		return nil
 	}
 
@@ -116,6 +123,12 @@ func (u *Update) Apply() error {
 			// match rewrote the second into "nginx:stable@sha256:…-alpine".
 			if !u.rewrites(line) {
 				continue
+			}
+			if tagPattern != nil {
+				if loc := tagPattern.FindStringIndex(line); loc != nil {
+					start := loc[0] + 1
+					line = line[:start] + u.LatestTag + line[start+len(u.CurrentTag):]
+				}
 			}
 			for _, r := range reps {
 				line = strings.Replace(line, r.old, r.new, 1)
