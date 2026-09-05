@@ -38,9 +38,25 @@ func isUpgrade(v, current Version) bool {
 	return v.GreaterThan(current) && v.Suffix == current.Suffix
 }
 
+// Eligible reports whether a candidate tag may be offered at all. It is how a
+// rule the version alone cannot express — a minimum age, which only a registry
+// can answer — reaches the tag selection without versioning having to know
+// where the answer comes from. A nil Eligible accepts every tag.
+type Eligible func(tag string) bool
+
+// allows applies an Eligible, treating a nil one as "no rule".
+func (e Eligible) allows(tag string) bool { return e == nil || e(tag) }
+
 // LatestPerLevel returns the newest tag available at each upgrade level relative
 // to currentTag, or "" where none exists.
 func LatestPerLevel(scheme Scheme, currentTag string, tags []string) (patchTag, minorTag, majorTag string) {
+	return LatestPerLevelFunc(scheme, currentTag, tags, nil)
+}
+
+// LatestPerLevelFunc is LatestPerLevel with a rule the candidates have to pass.
+// A rejected candidate is skipped rather than ending the walk, so a level falls
+// back to the newest tag that does pass.
+func LatestPerLevelFunc(scheme Scheme, currentTag string, tags []string, eligible Eligible) (patchTag, minorTag, majorTag string) {
 	current, ok := scheme.Parse(currentTag)
 	if !ok {
 		return "", "", ""
@@ -51,9 +67,12 @@ func LatestPerLevel(scheme Scheme, currentTag string, tags []string) (patchTag, 
 		if !isUpgrade(v, current) {
 			continue
 		}
-		if level := Diff(current, v); best[level] == "" {
-			best[level] = v.Tag
+		if level := Diff(current, v); best[level] != "" || !eligible.allows(v.Tag) {
+			// Asked only for a level still open, so a rule that costs something to
+			// evaluate is never spent on a candidate that is already outranked.
+			continue
 		}
+		best[Diff(current, v)] = v.Tag
 		if len(best) == 3 {
 			break
 		}
@@ -65,6 +84,12 @@ func LatestPerLevel(scheme Scheme, currentTag string, tags []string) (patchTag, 
 // Latest returns the highest tag currentTag may move to under the requested
 // levels, or "" when there is none.
 func Latest(scheme Scheme, currentTag string, tags []string, major, minor, patch bool) string {
+	return LatestFunc(scheme, currentTag, tags, major, minor, patch, nil)
+}
+
+// LatestFunc is Latest with a rule the candidate has to pass; a rejected one is
+// skipped, so the result is the newest tag that does pass.
+func LatestFunc(scheme Scheme, currentTag string, tags []string, major, minor, patch bool, eligible Eligible) string {
 	current, ok := scheme.Parse(currentTag)
 	if !ok {
 		return ""
@@ -84,7 +109,7 @@ func Latest(scheme Scheme, currentTag string, tags []string, major, minor, patch
 	}
 
 	for _, v := range candidates(scheme, tags, current) {
-		if isUpgrade(v, current) && wanted[Diff(current, v)] {
+		if isUpgrade(v, current) && wanted[Diff(current, v)] && eligible.allows(v.Tag) {
 			return v.Tag
 		}
 	}

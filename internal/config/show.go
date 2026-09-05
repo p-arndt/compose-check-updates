@@ -46,6 +46,11 @@ func Show(w io.Writer, loaded Loaded, effective Config) {
 		fmt.Fprintf(w, "  floating_tags: %s (on top of the built-in names)\n", strings.Join(effective.FloatingTags, " "))
 	}
 	fmt.Fprintf(w, "  versioning: %s\n", effective.Policies().Versioning)
+	if effective.MinAge == "" {
+		fmt.Fprintln(w, "  min_age: (none)")
+	} else {
+		fmt.Fprintf(w, "  min_age: %s\n", effective.MinAge)
+	}
 	fmt.Fprintf(w, "  pin_floating: %t\n", effective.PinFloatingEnabled())
 	fmt.Fprintf(w, "  dockerfiles: %t\n", effective.DockerfilesEnabled())
 
@@ -88,6 +93,7 @@ func imageSettings(p policy.Image) []string {
 		{"versioning", p.Versioning.String()},
 		{"pattern", p.VersioningPattern},
 		{"reference_tag", p.ReferenceTag},
+		{"min_age", p.MinAge},
 		{"floating_tags", strings.Join(p.FloatingTags, " ")},
 	} {
 		if s.value != "" {

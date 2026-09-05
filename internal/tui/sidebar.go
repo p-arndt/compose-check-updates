@@ -160,7 +160,7 @@ func (m Model) sidebarLines(width, height int) []string {
 	// Everything here has to survive: the image, then what can be changed about it.
 	fields := []string{
 		m.theme.sideTitle(u.ImageName, width),
-		m.theme.sideValue("target", m.targetValue(r), m.focused(fieldTarget), width),
+		m.theme.sideValue("target", m.targetValue(r, width), m.focused(fieldTarget), width),
 	}
 	if m.fieldVisible(fieldVersioning) {
 		// Above the cap, because on this row it is the only field that can change
@@ -219,13 +219,26 @@ func (m Model) versioningValue(r *Row) string {
 
 // targetValue is the release this row would move to, named by its level as well
 // as its tag: the level is the thing being chosen, the tag only the consequence.
-func (m Model) targetValue(r *Row) string {
+func (m Model) targetValue(r *Row, width int) string {
 	focused := m.focused(fieldTarget)
 	if r.NoTarget || len(r.Update.AvailableTargets()) == 0 {
 		return m.theme.sideText("—", focused)
 	}
 	// The same badge the row carries in the list, so field and row read as one.
-	return m.theme.BadgeTight(policy.Level(targetLabel(r.Target))) + " " + m.theme.sideText(r.Update.LatestTag, focused)
+	value := m.theme.BadgeTight(policy.Level(targetLabel(r.Target))) + " " + m.theme.sideText(r.Update.LatestTag, focused)
+
+	// How long the release has been out, dimmed: it is context for the choice,
+	// not part of it. Dropped rather than truncated when the column is too
+	// narrow, the same way the scope path is — a cut line eats the chevron.
+	age := r.Update.Age()
+	if age == "" {
+		return value
+	}
+	const chrome = 8 + 4 // what sideValue puts around the value
+	if lipgloss.Width(value)+lipgloss.Width("  "+age)+chrome > width {
+		return value
+	}
+	return value + m.theme.dim().Render("  "+age)
 }
 
 // capValue is the ceiling this image may never move past, phrased as a rule

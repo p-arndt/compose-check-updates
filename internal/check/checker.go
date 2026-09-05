@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log/slog"
 	"slices"
+	"time"
 
 	"github.com/p-arndt/compose-check-updates/internal/compose"
 	"github.com/p-arndt/compose-check-updates/internal/policy"
@@ -147,11 +148,15 @@ func (c *Checker) resolve(u *Update, major, minor, patch bool) {
 		return
 	}
 
+	// One filter for both calls below, so the two walks share its budget and its
+	// answers: they run over the same candidates, newest first.
+	oldEnough := c.oldEnoughFilter(u, p.MinAgeDuration())
+
 	// Every level is resolved so an interactive caller can offer a choice of
 	// target; LatestTag stays the highest tag the requested flags allow.
-	u.PatchTag, u.MinorTag, u.MajorTag = versioning.LatestPerLevel(scheme, u.CurrentTag, tags)
+	u.PatchTag, u.MinorTag, u.MajorTag = versioning.LatestPerLevelFunc(scheme, u.CurrentTag, tags, oldEnough)
 
-	latest := versioning.Latest(scheme, u.CurrentTag, tags, major, minor, patch)
+	latest := versioning.LatestFunc(scheme, u.CurrentTag, tags, major, minor, patch, oldEnough)
 	if latest == "" {
 		// No tag to move to at any level, so a pinned reference that drifted where
 		// it stands is the only thing left worth saying about this image. Gated on
@@ -187,6 +192,68 @@ func (c *Checker) resolve(u *Update, major, minor, patch bool) {
 	}
 
 	c.clampToCap(u)
+	c.resolvePublished(u)
+}
+
+// maxAgeProbes caps how many candidate tags one image may have their build date
+// fetched for. Each answer costs a manifest and a config blob, and a repository
+// that publishes a burst of releases in one afternoon would otherwise have every
+// one of them probed before min_age finds a tag old enough. Ten is well past the
+// number of releases a settling window realistically spans; beyond it ccu offers
+// nothing rather than spending the requests.
+const maxAgeProbes = 10
+
+// oldEnoughFilter is the rule min_age puts on a candidate tag, or nil when no
+// minimum age applies to this image. Nil rather than a predicate that always
+// says yes: versioning skips a nil filter entirely, which is what keeps a run
+// without min_age from fetching a single build date for a candidate.
+func (c *Checker) oldEnoughFilter(u *Update, minAge time.Duration) versioning.Eligible {
+	if minAge <= 0 {
+		return nil
+	}
+
+	cutoff := time.Now().Add(-minAge)
+	// Answers are remembered per tag as well as in the registry client, because
+	// the budget must count tags asked about, not questions asked.
+	answers := map[string]bool{}
+
+	return func(tag string) bool {
+		if answer, asked := answers[tag]; asked {
+			return answer
+		}
+		if len(answers) >= maxAgeProbes {
+			return false
+		}
+
+		published, err := c.registry.Created(u.ImageName + ":" + tag)
+		if err != nil {
+			// An age nobody can read is no reason to hide a release: min_age asks
+			// for tags known to be young to be skipped, not for unknown ones to be.
+			slog.Debug("Failed reading the build date, treating the tag as old enough",
+				"image", u.ImageName, "tag", tag, "error", err)
+			answers[tag] = true
+			return true
+		}
+
+		answers[tag] = !published.After(cutoff)
+		return answers[tag]
+	}
+}
+
+// resolvePublished reads the build date of the tag this run settled on, for the
+// report to show beside it. One request set per update, and only for the tag
+// actually offered: it is display, not a decision.
+func (c *Checker) resolvePublished(u *Update) {
+	if u.LatestTag == "" {
+		return
+	}
+
+	published, err := c.registry.Created(u.ImageName + ":" + u.LatestTag)
+	if err != nil {
+		slog.Debug("Failed reading the build date", "image", u.ImageName, "tag", u.LatestTag, "error", err)
+		return
+	}
+	u.SetPublished(u.LatestTag, published)
 }
 
 // clampToCap moves a selection the cap forbids down to it, rather than letting

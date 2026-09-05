@@ -6,6 +6,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -102,6 +103,30 @@ func TestJSONLUpdate(t *testing.T) {
 	assert.NotContains(t, rec, "current_digest")
 	assert.NotContains(t, rec, "latest_digest")
 	assert.NotContains(t, rec, "cap")
+}
+
+func TestJSONLPublished(t *testing.T) {
+	t.Parallel()
+
+	built := time.Date(2026, 3, 1, 12, 30, 0, 0, time.UTC)
+
+	var buf bytes.Buffer
+	w := New(FormatJSONL, &buf)
+
+	dated := check.Update{ImageName: "traefik", CurrentTag: "2.9.3", LatestTag: "2.11.0"}
+	dated.SetPublished("2.11.0", built)
+	w.Update(dated, "minor", Result{})
+
+	// An image whose build date the registry would not say keeps the key out
+	// entirely: a zero timestamp would read as a release from 1970.
+	w.Update(check.Update{ImageName: "nginx", CurrentTag: "1.2.3", LatestTag: "1.2.4"}, "patch", Result{})
+	require.NoError(t, w.Close())
+
+	recs := decode(t, &buf)
+	require.Len(t, recs, 2)
+
+	assert.Equal(t, "2026-03-01T12:30:00Z", recs[0]["published"])
+	assert.NotContains(t, recs[1], "published")
 }
 
 func TestJSONLDigestUpdate(t *testing.T) {

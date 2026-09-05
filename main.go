@@ -89,7 +89,7 @@ func run(flags cli.Flags, updater *selfupdate.Updater) (int, error) {
 		// off effective, where a scheme named on the command line and one written
 		// in a file are indistinguishable.
 		if flags.Image != "" {
-			config.Explain(os.Stdout, cfg, effective, flags.Image, flags.Versioning)
+			config.Explain(os.Stdout, cfg, effective, flags.Image, flags.Versioning, flags.MinAge)
 		} else {
 			config.Show(os.Stdout, cfg, effective)
 		}
@@ -182,6 +182,15 @@ func effectiveConfig(cfg config.Config, flags cli.Flags) (config.Config, error) 
 			return config.Config{}, err
 		}
 		cfg.Versioning = flags.Versioning
+	}
+
+	// -min-age replaces the run-wide settling time, and like -versioning leaves a
+	// per-image entry alone: naming an image is the more specific statement.
+	if flags.MinAge != "" {
+		if err := config.ValidateMinAge(flags.MinAge); err != nil {
+			return config.Config{}, err
+		}
+		cfg.MinAge = flags.MinAge
 	}
 
 	// A flag that was not spelled out says nothing about what the config decided,

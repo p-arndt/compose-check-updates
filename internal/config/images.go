@@ -34,6 +34,7 @@ func (c Config) Policies() policy.Set {
 	return policy.Set{
 		Images:       images,
 		Versioning:   scheme,
+		MinAge:       c.MinAge,
 		FloatingTags: c.FloatingTags,
 		PinFloating:  c.PinFloatingEnabled(),
 	}
@@ -82,6 +83,9 @@ func validateImage(p policy.Image) error {
 	if p.ReferenceTag != "" && !validTag(p.ReferenceTag) {
 		return fmt.Errorf("reference_tag: %q is not a valid tag", p.ReferenceTag)
 	}
+	if err := ValidateMinAge(p.MinAge); err != nil {
+		return err
+	}
 	for _, tag := range p.FloatingTags {
 		// An empty entry is a list item written and left blank: rejected rather
 		// than dropped, because the user meant to say something with it.
@@ -90,6 +94,20 @@ func validateImage(p policy.Image) error {
 		}
 	}
 	return versioning.ValidatePattern(p.Versioning, p.VersioningPattern)
+}
+
+// ValidateMinAge rejects a settling time ccu cannot read or would never let an
+// image move again under. Exported because the same value arrives from the
+// command line, where it has to be refused just as loudly as in a file.
+func ValidateMinAge(value string) error {
+	d, err := policy.ParseDuration(value)
+	if err != nil {
+		return fmt.Errorf("min_age: %w", err)
+	}
+	if d < 0 {
+		return fmt.Errorf("min_age: %q is negative; a tag cannot be published in the future", value)
+	}
+	return nil
 }
 
 // tagPattern is the tag grammar registries accept. Checking it here turns a typo

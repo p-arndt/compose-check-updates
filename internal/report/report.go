@@ -10,6 +10,7 @@ import (
 	"io"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/p-arndt/compose-check-updates/internal/check"
 	"github.com/p-arndt/compose-check-updates/internal/policy"
@@ -102,6 +103,10 @@ type record struct {
 	Current string `json:"current,omitempty"`
 	Latest  string `json:"latest,omitempty"`
 	Level   string `json:"level,omitempty"`
+	// Published is when the image behind Latest was built, RFC 3339. Left out
+	// when the registry does not say — an absent key is honest about that, where
+	// a zero timestamp would read as 1970.
+	Published string `json:"published,omitempty"`
 
 	CurrentDigest string `json:"current_digest,omitempty"`
 	LatestDigest  string `json:"latest_digest,omitempty"`
@@ -165,6 +170,10 @@ func (w *jsonlWriter) Update(u check.Update, level policy.Level, res Result) {
 		CurrentDigest: u.CurrentDigest,
 		Cap:           u.Cap.String(),
 	}
+	if published := u.PublishedAt(); !published.IsZero() {
+		rec.Published = published.UTC().Format(time.RFC3339)
+	}
+
 	// Only a digest that actually differs describes the update; repeating the
 	// current one under a "latest" key would claim a change that is not there.
 	if u.IsDigestUpdate() {
@@ -214,6 +223,11 @@ func (prettyWriter) Update(u check.Update, level policy.Level, res Result) {
 
 	if !res.ApplyRequested && !res.RestartRequested {
 		attrs := []any{"image", u.ImageName, "current", u.CurrentTag, "latest", u.LatestTag, "file", u.FilePath, "update_level", level}
+		// The handler puts the age inside the version column, so it only ever
+		// appears where there is a tag for it to belong to.
+		if age := u.Age(); age != "" {
+			attrs = append(attrs, "age", age)
+		}
 		if u.IsDigestUpdate() {
 			// A pin has no current digest to report — that is the whole point of it —
 			// and an empty field would read as one that failed to resolve.

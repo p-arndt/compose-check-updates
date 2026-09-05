@@ -3,6 +3,8 @@
 package check
 
 import (
+	"time"
+
 	"github.com/p-arndt/compose-check-updates/internal/policy"
 	"github.com/p-arndt/compose-check-updates/internal/registry"
 	"github.com/p-arndt/compose-check-updates/internal/versioning"
@@ -91,7 +93,33 @@ type Update struct {
 	// digestFor is the tag LatestDigest was resolved for. A digest only ever
 	// describes one release, so switching target has to invalidate it.
 	digestFor string
+
+	// published is when the image behind publishedFor was built, and publishedFor
+	// the tag it was read for — the same pairing digestFor makes, and for the same
+	// reason: an age shown beside a tag it does not belong to is a lie a user
+	// cannot spot.
+	published    time.Time
+	publishedFor string
 }
+
+// SetPublished records when the image behind tag was built. Exported because
+// the age is resolved by the checker but read by every renderer, and a test
+// building an update by hand needs the same way in.
+func (u *Update) SetPublished(tag string, at time.Time) {
+	u.published, u.publishedFor = at, tag
+}
+
+// PublishedAt is when the image behind LatestTag was built, zero when unknown
+// or when the selected tag has moved on since it was resolved.
+func (u *Update) PublishedAt() time.Time {
+	if u.publishedFor == "" || u.publishedFor != u.LatestTag {
+		return time.Time{}
+	}
+	return u.published
+}
+
+// Age is PublishedAt as a phrase to put beside the tag, empty when unknown.
+func (u *Update) Age() string { return Age(u.PublishedAt(), time.Now()) }
 
 // MarkUnreadable records that this image could not be resolved. The
 // half-resolved target fields go with it: a digest fetched for a tag that was
@@ -100,6 +128,7 @@ func (u *Update) MarkUnreadable(reason, message string) {
 	u.UnreadableReason, u.UnreadableMessage = reason, message
 	u.LatestTag, u.LatestDigest, u.digestFor = "", "", ""
 	u.PatchTag, u.MinorTag, u.MajorTag = "", "", ""
+	u.published, u.publishedFor = time.Time{}, ""
 }
 
 func (u *Update) IsUnreadable() bool { return u.UnreadableReason != "" }

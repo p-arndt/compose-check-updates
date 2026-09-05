@@ -43,6 +43,11 @@ type Config struct {
 	// here" the merge needs, so no pointer.
 	Versioning policy.Versioning `yaml:"versioning"`
 
+	// MinAge is how long a tag has to have been published before any image may be
+	// moved to it, written as a duration ("7d", "36h"). Empty means no waiting;
+	// "" is already the "not set here" the merge needs, so no pointer.
+	MinAge string `yaml:"min_age"`
+
 	// Dockerfiles turns off checking the base images of Dockerfiles built by a
 	// compose service. Absent means on: it is the only way `build:` is covered.
 	Dockerfiles *bool `yaml:"dockerfiles"`
@@ -248,6 +253,10 @@ func Parse(r io.Reader) (Config, error) {
 		return Config{}, err
 	}
 
+	if err := ValidateMinAge(cfg.MinAge); err != nil {
+		return Config{}, err
+	}
+
 	if err := validateImages(cfg.Images); err != nil {
 		return Config{}, err
 	}
@@ -272,6 +281,9 @@ func merge(base, over Config) Config {
 	}
 	if over.Versioning != "" {
 		base.Versioning = over.Versioning
+	}
+	if over.MinAge != "" {
+		base.MinAge = over.MinAge
 	}
 	return base
 }

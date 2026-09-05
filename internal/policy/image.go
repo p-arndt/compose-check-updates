@@ -1,6 +1,9 @@
 package policy
 
-import "slices"
+import (
+	"slices"
+	"time"
+)
 
 // DefaultReferenceTag is the mutable tag digest mode compares against when an
 // image names none: images without version tags carry no ordering, so what this
@@ -33,6 +36,13 @@ type Image struct {
 	// (?P<build>…) and (?P<suffix>…). A pattern that fits one repository's tags
 	// is meaningless for the next one's, so there is no run-wide key for it.
 	VersioningPattern string `yaml:"versioning_pattern"`
+
+	// MinAge is how long a tag must have been published before this image may be
+	// moved to it, written as a duration ("7d", "36h"); empty means the run-wide
+	// setting. Kept as the raw string because policy is the vocabulary the config
+	// file is written in, and a value the user mistyped has to survive as far as
+	// the config layer — the only one that can name the image in the error.
+	MinAge string `yaml:"min_age"`
 }
 
 // Set is every per-image policy in effect, plus the settings that apply to the
@@ -46,6 +56,10 @@ type Set struct {
 
 	// FloatingTags apply to every image, added to whatever it named for itself.
 	FloatingTags []string
+
+	// MinAge is the settling time for images that named none, same syntax. Empty
+	// means a tag is offered the moment it is published.
+	MinAge string
 
 	// PinFloating turns on writing down what a bare floating tag resolves to. Off
 	// by default: it costs a request per floating image and pins a reference the
@@ -64,6 +78,9 @@ func (s Set) For(image string) Image {
 	if p.ReferenceTag == "" {
 		p.ReferenceTag = DefaultReferenceTag
 	}
+	if p.MinAge == "" {
+		p.MinAge = s.MinAge
+	}
 	if len(s.FloatingTags) > 0 {
 		p.FloatingTags = slices.Concat(s.FloatingTags, p.FloatingTags)
 	}
@@ -74,5 +91,17 @@ func (s Set) For(image string) Image {
 // IsZero reports whether the user recorded nothing about this image.
 func (i Image) IsZero() bool {
 	return i.Max == "" && i.Versioning == "" && i.ReferenceTag == "" &&
-		i.VersioningPattern == "" && len(i.FloatingTags) == 0
+		i.VersioningPattern == "" && i.MinAge == "" && len(i.FloatingTags) == 0
+}
+
+// MinAgeDuration is the settling time in effect for this image, zero when there
+// is none. A value ParseDuration cannot read resolves to zero rather than to an
+// error: the config layer rejects those on load, so one reaching this far must
+// not silently hide every update the image has.
+func (i Image) MinAgeDuration() time.Duration {
+	d, err := ParseDuration(i.MinAge)
+	if err != nil || d < 0 {
+		return 0
+	}
+	return d
 }
