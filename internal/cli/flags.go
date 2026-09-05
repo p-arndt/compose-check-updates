@@ -280,7 +280,7 @@ func usage(w io.Writer) {
 	fmt.Fprintln(tw, "  config -image <name>\tExplain how one image's settings were resolved, and from which file")
 	fmt.Fprintln(tw, "  help\tShow this help message")
 	fmt.Fprintln(tw, "  version\tShow version information")
-	fmt.Fprintf(tw, "\nFlags (-d, -exclude, -image, -config, -pin-floating, -versioning and -min-age apply to both modes, the rest only to `%s check`):\n", name)
+	fmt.Fprintf(tw, "\nFlags (-d, -exclude, -image, -config, -pin-floating, -dockerfiles, -versioning and -min-age apply to both modes, the rest only to `%s check`):\n", name)
 	flag.VisitAll(func(f *flag.Flag) {
 		// An empty usage string marks a flag kept only for backwards
 		// compatibility; see the registrations in Parse.

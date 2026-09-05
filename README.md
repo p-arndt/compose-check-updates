@@ -90,8 +90,8 @@ ccu check -image traefik  # check one image and nothing else
 | `-pin-floating` | Pin floating tags (`latest`, `main`, …) to the digest they resolve to | `false` |
 | `-dockerfiles` | Also check the base images of Dockerfiles built by a compose service | `true` |
 
-Only `-d`, `-exclude`, `-image`, `-config`, `-pin-floating` and `-dockerfiles`
-also apply to the TUI — it picks levels in the UI instead and always resolves
+Only `-d`, `-exclude`, `-image`, `-config`, `-pin-floating`, `-dockerfiles`,
+`-versioning` and `-min-age` also apply to the TUI — it picks levels in the UI instead and always resolves
 every level.
 
 **Exit codes:** `0` nothing to do · `1` updates available, not applied ·
