@@ -117,19 +117,35 @@ failure.
 Third-party actions are pinned to full commit SHAs, not tags. Keep it that way
 when you touch a workflow.
 
-## Releases
+## Releases and the changelog
 
 `VERSION` at the repo root is the single source of truth. It is stamped into
 the binary with `-ldflags` by `just build-release`, and read back through
-`internal/buildinfo`.
+`internal/buildinfo`. [stamp](https://github.com/p-arndt/stamp) owns it, via
+`.stamp.yml`; never edit `VERSION` or a tag by hand.
 
-`just release [patch|minor|major|x.y.z]` bumps `VERSION`, commits, tags and
-pushes. The **tag push** is what triggers `.github/workflows/release.yml`,
-which builds the binaries for every platform and publishes them with a
-`checksums.txt`. Nothing is released by merging to `main`.
+The changelog is written as you go, one file per user-facing change:
 
-`just set-version` stamps `VERSION` without committing, for when you want to
-look at the diff first.
+```bash
+just note added "Tags kept in a variable are resolved from the .env"
+just note fixed "An image that is the only release in its repository is no longer unreadable"
+```
+
+That writes a fragment under `.stamp/changelog/`; commit it with the change it
+describes. Kinds are `added`, `changed`, `deprecated`, `removed`, `fixed`,
+`security`. Write the entry for the person reading the release page, not for the
+person who wrote the code: what they can do now, or what stopped going wrong.
+Internal refactors, CI and docs get no entry. `just changelog` prints what has
+piled up.
+
+`just release [patch|minor|major|x.y.z]` bumps `VERSION`, renders the fragments
+into `CHANGELOG.md` and into the annotated tag, commits, tags and pushes. The
+**tag push** is what triggers `.github/workflows/release.yml`, which verifies
+the tag against `VERSION` with `stamp verify`, tests, builds the binaries for
+every platform and publishes them with a `checksums.txt` — the release notes are
+the tag's message, nothing is generated in CI. Nothing is released by merging to
+`main`. `just set-version` writes `VERSION` without committing, for when you
+want to look at the diff first.
 
 ## Style
 

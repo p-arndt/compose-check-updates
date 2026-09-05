@@ -133,18 +133,30 @@ version:
 version:
     @(Get-Content VERSION -Raw).Trim()
 
-# Stamp a version into the VERSION file without committing. Accepts a bump
-# keyword or an explicit version. Examples:
+# Write a version into VERSION without committing, for looking at the diff
+# first. Accepts a bump keyword or an explicit version:
 #   just set-version patch        just set-version 0.5.0
 set-version BUMP="patch":
-    node scripts/set-version.mjs {{BUMP}}
+    stamp set {{BUMP}}
 
-# Cut a release: bump the version (patch|minor|major, or an explicit x.y.z),
-# stamp VERSION, commit, tag, and push -> the tag push triggers the release
-# workflow which builds the binaries for every platform. Examples:
+# Record one user-facing change for the changelog. KIND is one of added,
+# changed, deprecated, removed, fixed, security. Commit the fragment it writes
+# under .stamp/changelog/ together with the change it describes:
+#   just note added "Tags kept in a variable are resolved from the .env"
+note KIND +TEXT:
+    stamp note {{KIND}} "{{TEXT}}"
+
+# Print the changelog entries noted since the last release.
+changelog:
+    stamp changelog
+
+# Cut a release: bump VERSION, render the noted changes into CHANGELOG.md and
+# into the annotated tag, commit, tag and push. The tag push triggers the
+# release workflow, which builds the binaries and takes its release notes from
+# that tag. Examples:
 #   just release            just release minor            just release 1.0.0
 release BUMP="patch":
-    node scripts/release.mjs {{BUMP}}
+    stamp release {{BUMP}}
 
 # ---------------------------------------------------------------------------
 # Housekeeping

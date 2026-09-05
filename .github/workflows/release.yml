@@ -9,31 +9,59 @@ concurrency:
   group: release
   cancel-in-progress: false
 
-# Releases are cut deliberately, never as a side effect of merging: `just
-# release` stamps VERSION, commits, and pushes an annotated tag — that tag push
-# is what runs this workflow. Pushes to main only run CI.
+# Tag pushes only. `stamp release` decides the version, renders the changelog
+# into CHANGELOG.md and the annotated tag, commits and pushes — that tag push is
+# what runs this. The pipeline is a worker, not a controller: it neither picks a
+# version nor writes release notes.
 on:
   push:
     tags: ['v*']
-  workflow_dispatch:
-    inputs:
-      version:
-        description: 'Version to build, e.g. 0.5.0 or 0.5.0-beta.1 ("v" prefix optional). Leave empty to use the VERSION file with a -pre.<run> suffix'
-        required: false
-        type: string
-      prerelease:
-        description: 'Mark as a GitHub pre-release'
-        required: false
-        type: boolean
-        default: true
-      draft:
-        description: 'Create as a draft so you can review/publish it manually'
-        required: false
-        type: boolean
-        default: true
 
 jobs:
-  build:
+  # The tag is the only input, so it has to agree with the version committed in
+  # VERSION. `stamp verify` renders the tag from the committed version and
+  # compares, rather than trusting whatever was pushed.
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      VERSION: ${{ steps.version.outputs.VERSION }}
+      PRERELEASE: ${{ steps.version.outputs.PRERELEASE }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install stamp
+        # Pinned to a commit of the installer and a released version of the
+        # binary, like every action here: this job gates what gets published.
+        # The installer checks the archive against the release's checksums.
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/p-arndt/stamp/2518ad5c573441c8dd54c6f9e5e87e968f28c159/install.sh \
+            | sh -s -- --version 0.3.0 --bin-dir /usr/local/bin
+
+      - name: Verify the tag against the committed version
+        run: stamp verify --tag "$GITHUB_REF_NAME"
+
+      - name: Resolve version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          # Digits-first, semver charset, bounded length: the version is spliced
+          # into asset file names, so reject anything that isn't a plain version.
+          if ! [[ "$VERSION" =~ ^[0-9][0-9A-Za-z.+-]{0,63}$ ]]; then
+            echo "::error::version '$VERSION' is not a valid release version" >&2
+            exit 1
+          fi
+          # Semver pre-release tags (v0.5.0-beta.1) are flagged automatically.
+          if [[ "$VERSION" == *-* ]]; then PRERELEASE=true; else PRERELEASE=false; fi
+          echo "VERSION=$VERSION"       >> "$GITHUB_OUTPUT"
+          echo "PRERELEASE=$PRERELEASE" >> "$GITHUB_OUTPUT"
+
+  release:
+    needs: verify
     # Cross-compiling with CGO disabled means one Linux runner builds every
     # target — no per-OS matrix needed.
     runs-on: ubuntu-latest
@@ -47,7 +75,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          # Full history + tags so git-cliff can diff against the previous tag.
+          # The release notes live in the annotated tag; a shallow checkout
+          # without tags would not have them.
           fetch-depth: 0
           fetch-tags: true
 
@@ -57,45 +86,6 @@ jobs:
           # Reads the Go version straight from go.mod so it never drifts.
           go-version-file: go.mod
           cache: true
-
-      - name: Determine version
-        id: version
-        shell: bash
-        # The version input reaches this script through env, never inline
-        # ${{ }} interpolation into the script body — interpolated input is
-        # how GitHub Actions script injection happens.
-        env:
-          INPUT_VERSION: ${{ inputs.version }}
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            VERSION="$INPUT_VERSION"
-            if [ -z "$VERSION" ]; then
-              # No version given: derive one from the VERSION file, suffixed with
-              # the semver pre-release identifier "-pre.<run number>" so each
-              # manual run gets its own, ever-incrementing version.
-              VERSION="$(cat VERSION)-pre.${{ github.run_number }}"
-            fi
-            VERSION="${VERSION#v}"
-            PRERELEASE="${{ inputs.prerelease }}"
-            DRAFT="${{ inputs.draft }}"
-          else
-            # Tag push: v0.5.0 -> 0.5.0.
-            VERSION="${GITHUB_REF_NAME#v}"
-            DRAFT=false
-            # Semver pre-release tags (e.g. v0.5.0-beta.1) are flagged automatically.
-            if [[ "$VERSION" == *-* ]]; then PRERELEASE=true; else PRERELEASE=false; fi
-          fi
-          # Digits-first, semver charset, bounded length. The version is spliced
-          # into asset file names and the tag, so reject anything that isn't a
-          # plain version string before it reaches either.
-          if ! [[ "$VERSION" =~ ^[0-9][0-9A-Za-z.+-]{0,63}$ ]]; then
-            echo "::error::version '$VERSION' is not a valid release version" >&2
-            exit 1
-          fi
-          echo "VERSION=$VERSION"   >> "$GITHUB_OUTPUT"
-          echo "TAG=v$VERSION"      >> "$GITHUB_OUTPUT"
-          echo "PRERELEASE=$PRERELEASE" >> "$GITHUB_OUTPUT"
-          echo "DRAFT=$DRAFT"       >> "$GITHUB_OUTPUT"
 
       - name: Test
         # Nothing gets built or published from a commit that fails vet + tests.
@@ -109,10 +99,10 @@ jobs:
         # CGO_ENABLED=0 links no libc -> every binary is fully static and
         # portable across distros. -trimpath drops local paths; -s -w strips
         # symbols/DWARF. Version metadata is injected into internal/buildinfo
-        # via -X, from the same VERSION file `just release` stamps.
+        # via -X, from the same version `stamp release` wrote to VERSION.
         shell: bash
         env:
-          VERSION: ${{ steps.version.outputs.VERSION }}
+          VERSION: ${{ needs.verify.outputs.VERSION }}
         run: |
           set -euo pipefail
           PKG=github.com/p-arndt/compose-check-updates/internal/buildinfo
@@ -148,36 +138,39 @@ jobs:
           (cd dist && sha256sum ccu-* > "ccu_${VERSION}_checksums.txt")
           ls -l dist
 
-      - name: Generate changelog
-        uses: orhun/git-cliff-action@f50e11560dce63f7c33227798f90b924471a88b5 # v4.8.0
-        with:
-          config: cliff.toml
-          # On a tag push the tag already exists, so --latest covers it. On a
-          # manual run no tag exists yet (action-gh-release creates it below),
-          # so fall back to --unreleased to cover commits since the last tag.
-          args: ${{ github.event_name == 'workflow_dispatch' && '--unreleased --strip all' || '--latest --strip all' }}
-        env:
-          OUTPUT: CHANGELOG_BODY.md
-
+      # The notes were written before the tag existed: `stamp release` renders
+      # the changelog section into the annotated tag message, so the tag this
+      # run was triggered by carries its own release notes. Nothing is generated.
       - name: Assemble release notes
         shell: bash
+        env:
+          PRERELEASE: ${{ needs.verify.outputs.PRERELEASE }}
         run: |
-          CUR="${{ steps.version.outputs.TAG }}"
-          if [ "${{ steps.version.outputs.PRERELEASE }}" = "true" ]; then
-            echo "## 🧪 Pre-release $CUR" > RELEASE_NOTES.md
+          set -euo pipefail
+          if [ "$PRERELEASE" = "true" ]; then
+            echo "## 🧪 Pre-release $GITHUB_REF_NAME" > RELEASE_NOTES.md
           else
-            echo "## 🚀 Release $CUR" > RELEASE_NOTES.md
+            echo "## 🚀 Release $GITHUB_REF_NAME" > RELEASE_NOTES.md
           fi
           echo "" >> RELEASE_NOTES.md
-          cat CHANGELOG_BODY.md >> RELEASE_NOTES.md
+
+          body="$(git tag -l --format='%(contents:body)' "$GITHUB_REF_NAME")"
+          # A tag with nothing noted has no body. Point at the history rather
+          # than publishing an empty release page.
+          if [ -n "${body//[[:space:]]/}" ]; then
+            printf '%s\n' "$body" >> RELEASE_NOTES.md
+          else
+            printf 'See the [commit history](%s/commits/%s) for what changed.\n' \
+              "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" "$GITHUB_REF_NAME" >> RELEASE_NOTES.md
+          fi
+          cat RELEASE_NOTES.md
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
         with:
-          tag_name: ${{ steps.version.outputs.TAG }}
+          tag_name: ${{ github.ref_name }}
           body_path: RELEASE_NOTES.md
-          prerelease: ${{ steps.version.outputs.PRERELEASE }}
-          draft: ${{ steps.version.outputs.DRAFT }}
+          prerelease: ${{ needs.verify.outputs.PRERELEASE }}
           files: |
             dist/*
         env:
