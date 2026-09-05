@@ -307,7 +307,7 @@ func TestSummary(t *testing.T) {
 	cache := NewCache(CacheOptions{TTL: 10 * time.Minute})
 	assert.Empty(t, cache.Summary(), "a run that fetched everything has nothing to report")
 
-	cache.countLookup()
+	cache.lookups.Add(1)
 	cache.countHit(false)
 	assert.Contains(t, cache.Summary(), "served 1 of 1 lookups from cache")
 	assert.Contains(t, cache.Summary(), "10m0s ttl; -refresh to bypass")

@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/regclient/regclient/types/errs"
@@ -58,34 +59,29 @@ type Cache struct {
 	refresh  bool
 	disabled bool
 
-	mu      sync.Mutex
-	lookups int
-	hits    int
-	stale   int
+	// Counters only, never read back to decide anything, so they need no lock of
+	// their own next to the workers that bump them.
+	lookups atomic.Int64
+	hits    atomic.Int64
+	stale   atomic.Int64
 
 	// locks serializes the lookups of one key. The scanner checks compose files
 	// concurrently, so two workers reach the same image at the same moment and
 	// would both miss an entry neither has written yet; the second one waits and
 	// then finds what the first just wrote.
-	lockMu sync.Mutex
-	locks  map[string]*sync.Mutex
+	locks sync.Map // entryKey -> *sync.Mutex
 }
+
+// entryKey is how a kind and a key make one identity. The NUL separator cannot
+// occur in either half, so two different pairs can never collide.
+func entryKey(kind, key string) string { return kind + "\x00" + key }
 
 // lockFor returns the mutex guarding one key, creating it on first use. The
 // locks are never reaped: a run asks about a bounded set of images, and a
 // released mutex costs a pointer.
 func (c *Cache) lockFor(kind, key string) *sync.Mutex {
-	c.lockMu.Lock()
-	defer c.lockMu.Unlock()
-	if c.locks == nil {
-		c.locks = map[string]*sync.Mutex{}
-	}
-	lock, ok := c.locks[kind+"\x00"+key]
-	if !ok {
-		lock = &sync.Mutex{}
-		c.locks[kind+"\x00"+key] = lock
-	}
-	return lock
+	lock, _ := c.locks.LoadOrStore(entryKey(kind, key), &sync.Mutex{})
+	return lock.(*sync.Mutex)
 }
 
 // CacheStats is what a finished run can say about its cache use.
@@ -159,9 +155,11 @@ func (c *Cache) Stats() CacheStats {
 	if c == nil {
 		return CacheStats{}
 	}
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return CacheStats{Lookups: c.lookups, Hits: c.hits, Stale: c.stale}
+	return CacheStats{
+		Lookups: int(c.lookups.Load()),
+		Hits:    int(c.hits.Load()),
+		Stale:   int(c.stale.Load()),
+	}
 }
 
 // Summary is the one line a finished run prints when the cache spared it work,
@@ -189,7 +187,7 @@ func (e entry) age() time.Duration { return time.Since(e.Fetched) }
 // path is the file one key lives in. Hashed rather than escaped, because a
 // reference carries slashes and colons that no filesystem takes as-is.
 func (c *Cache) path(kind, key string) string {
-	sum := sha256.Sum256([]byte(kind + "\x00" + key))
+	sum := sha256.Sum256([]byte(entryKey(kind, key)))
 	return filepath.Join(c.dir, kind, hex.EncodeToString(sum[:])+".json")
 }
 
@@ -272,18 +270,12 @@ func (c *Cache) Prune() {
 	})
 }
 
-func (c *Cache) countLookup() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.lookups++
-}
-
+// countHit records a served entry, stale ones separately: the summary reports
+// both numbers.
 func (c *Cache) countHit(stale bool) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.hits++
+	c.hits.Add(1)
 	if stale {
-		c.stale++
+		c.stale.Add(1)
 	}
 }
 
@@ -300,7 +292,7 @@ func cached[T any](c *Cache, kind, key, label string, ttl time.Duration, fetch f
 		return fetch()
 	}
 
-	c.countLookup()
+	c.lookups.Add(1)
 
 	lock := c.lockFor(kind, key)
 	lock.Lock()
@@ -357,8 +349,12 @@ func servableStale(err error) bool {
 // shortenHome writes a path the way a user would: the home directory as "~".
 func shortenHome(path string) string {
 	home, err := os.UserHomeDir()
-	if err != nil || home == "" || !strings.HasPrefix(path, home) {
+	if err != nil || home == "" {
 		return path
 	}
-	return "~" + path[len(home):]
+	rest, ok := strings.CutPrefix(path, home)
+	if !ok {
+		return path
+	}
+	return "~" + rest
 }
