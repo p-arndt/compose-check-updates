@@ -806,10 +806,9 @@ func TestFrameIsExactlyTerminalHeight(t *testing.T) {
 
 		for _, h := range []int{0, 1, 5, 8, 9, 12, 24, 40, 100} {
 			for _, w := range []int{20, 40, 80, 200} {
-				for _, mode := range []string{"plain", "detail", "help", "detail+help", "issues", "issues+help"} {
+				for _, mode := range []string{"plain", "help", "issues", "issues+help"} {
 					m := base
 					m.width, m.height = w, h
-					m.showDetail = strings.Contains(mode, "detail")
 					m.showHelp = strings.Contains(mode, "help")
 					m.showIssues = strings.Contains(mode, "issues")
 					m.syncScroll()

@@ -115,8 +115,7 @@ type Model struct {
 
 	scanErrs []error
 
-	showDetail bool
-	showHelp   bool
+	showHelp bool
 
 	// The issues pane browses scanErrs in full. It keeps its own cursor, so
 	// returning to the list lands where the user left it.

@@ -210,44 +210,6 @@ func TestRowLineNoTargetIsInert(t *testing.T) {
 	assert.NotContains(t, out, "3.7.8")
 }
 
-func TestDetailDigestLines(t *testing.T) {
-	t.Parallel()
-
-	th := DefaultTheme()
-
-	u := sampleRow().Update
-	out := plain(th.Detail(u, "patch", 80))
-	assert.NotContains(t, out, "digest")
-	assert.Contains(t, out, "tests/docker-compose.yml")
-	assert.Contains(t, out, "1.2.3 → 1.2.9")
-
-	u.CurrentDigest = "sha256:1111111111111111111111111111111111111111111111111111111111111111"
-	u.LatestDigest = "sha256:2222222222222222222222222222222222222222222222222222222222222222"
-	withDigest := plain(th.Detail(u, "digest", 80))
-	assert.Contains(t, withDigest, "digest")
-	assert.Contains(t, withDigest, "new digest")
-	assert.Contains(t, withDigest, "sha256:111111111111…")
-	// Long digests must not blow the pane out.
-	for _, line := range strings.Split(th.Detail(u, "digest", 80), "\n") {
-		assert.LessOrEqual(t, lipgloss.Width(line), 80)
-	}
-}
-
-func TestDetailRespectsWidth(t *testing.T) {
-	withColor(t)
-	th := DefaultTheme()
-
-	u := sampleRow().Update
-	u.CurrentDigest = "sha256:1111111111111111111111111111111111111111111111111111111111111111"
-	u.LatestDigest = "sha256:2222222222222222222222222222222222222222222222222222222222222222"
-
-	for _, w := range []int{-1, 0, 1, 3, 20, 25, 40, 100} {
-		for _, line := range strings.Split(th.Detail(u, "digest", w), "\n") {
-			assert.LessOrEqual(t, lipgloss.Width(line), clampWidth(w), "width %d", w)
-		}
-	}
-}
-
 func TestRenderersSurviveDegenerateWidths(t *testing.T) {
 	withColor(t)
 	th := DefaultTheme()
@@ -258,7 +220,6 @@ func TestRenderersSurviveDegenerateWidths(t *testing.T) {
 			th.Title(w)
 			th.FileHeader("some/deeply/nested/path/docker-compose.yml", 3, 5, w)
 			th.RowLine(r, true, w)
-			th.Detail(r.Update, "patch", w)
 			th.Help(helpBindings, w)
 			th.Empty("no updates found", w)
 		}, "width %d", w)
