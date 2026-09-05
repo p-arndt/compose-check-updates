@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"maps"
 	"regexp"
 	"strings"
 
@@ -52,12 +53,8 @@ func mergeImages(base, over map[string]policy.Image) map[string]policy.Image {
 	}
 
 	merged := make(map[string]policy.Image, len(base)+len(over))
-	for k, v := range base {
-		merged[k] = v
-	}
-	for k, v := range over {
-		merged[k] = v
-	}
+	maps.Copy(merged, base)
+	maps.Copy(merged, over)
 	return merged
 }
 

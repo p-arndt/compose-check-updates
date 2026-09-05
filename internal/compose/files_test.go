@@ -147,6 +147,11 @@ func TestGetComposeFilePathsIgnoresPermissionDenied(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("Skipping permission denied test on Windows")
 	}
+	// Mode 0 denies nobody when the walk runs as root, so the case under test
+	// would never be reached and the assertions below would prove nothing.
+	if os.Geteuid() == 0 {
+		t.Skip("Skipping permission denied test as root")
+	}
 
 	tmpDir := t.TempDir()
 
@@ -163,13 +168,20 @@ func TestGetComposeFilePathsIgnoresPermissionDenied(t *testing.T) {
 	if err := os.Chmod(subdir, 0000); err != nil {
 		t.Fatalf("Failed to chmod restricted dir: %v", err)
 	}
-	defer func() {
+	// Restored before t.TempDir's own cleanup, which cannot remove a directory it
+	// may not enter.
+	t.Cleanup(func() {
 		_ = os.Chmod(subdir, 0755)
-	}()
+	})
 
-	_, err := Files(tmpDir, []string{})
+	got, err := Files(tmpDir, []string{})
 	if err != nil {
 		t.Fatalf("Files() should ignore permission errors, got %v", err)
+	}
+	// The unreadable directory is skipped, not the rest of the walk with it.
+	want := []string{filepath.Join(tmpDir, "docker-compose.yml")}
+	if len(got) != 1 || got[0] != want[0] {
+		t.Errorf("Files() = %v, want %v", got, want)
 	}
 }
 
