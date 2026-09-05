@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/p-arndt/compose-check-updates/internal/policy"
@@ -30,6 +30,10 @@ func Show(w io.Writer, loaded Loaded, effective Config, cacheDir string) {
 		}
 	}
 
+	// Resolved once and passed down: Policies copies the image map and unions
+	// every entry's floating tags, which is work per call and not per line.
+	policies := effective.Policies()
+
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Effective settings (config plus command line):")
 	if len(effective.Exclude) == 0 {
@@ -46,7 +50,7 @@ func Show(w io.Writer, loaded Loaded, effective Config, cacheDir string) {
 	} else {
 		fmt.Fprintf(w, "  floating_tags: %s (on top of the built-in names)\n", strings.Join(effective.FloatingTags, " "))
 	}
-	fmt.Fprintf(w, "  versioning: %s\n", effective.Policies().Versioning)
+	fmt.Fprintf(w, "  versioning: %s\n", policies.Versioning)
 	if effective.MinAge == "" {
 		fmt.Fprintln(w, "  min_age: (none)")
 	} else {
@@ -61,17 +65,15 @@ func Show(w io.Writer, loaded Loaded, effective Config, cacheDir string) {
 	fmt.Fprintf(w, "  pin_floating: %t\n", effective.PinFloatingEnabled())
 	fmt.Fprintf(w, "  dockerfiles: %t\n", effective.DockerfilesEnabled())
 
-	showImages(w, effective)
+	showImages(w, policies.Images)
 }
 
 // showImages lists the per-image settings in a stable order. A map iterates at
 // random, and a report whose lines move between two identical runs is one nobody
 // can diff.
-func showImages(w io.Writer, effective Config) {
-	// The resolved policies rather than the raw entries, so what is printed is
-	// what the scan uses: trimmed and deduplicated floating tags included.
-	policies := effective.Policies().Images
-
+// The policies rather than the raw entries, so what is printed is what the scan
+// uses: trimmed and deduplicated floating tags included.
+func showImages(w io.Writer, policies map[string]policy.Image) {
 	images := make([]string, 0, len(policies))
 	for image, p := range policies {
 		if !p.IsZero() {
@@ -82,7 +84,7 @@ func showImages(w io.Writer, effective Config) {
 		fmt.Fprintln(w, "  images: (nothing set)")
 		return
 	}
-	sort.Strings(images)
+	slices.Sort(images)
 
 	fmt.Fprintln(w, "  images:")
 	for _, image := range images {

@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 
 	"gopkg.in/yaml.v3"
 
@@ -26,8 +28,8 @@ const configFileMode fs.FileMode = 0o644
 func SetImageMax(path, image string, max policy.Level) error {
 	// Refuse before touching the file rather than writing a value the next Parse
 	// would reject: a config ccu itself wrote should never fail to load.
-	if !max.Valid() {
-		return fmt.Errorf("config: max: %q is not one of %s, %s, %s", max, policy.LevelPatch, policy.LevelMinor, policy.LevelMajor)
+	if err := validateLevel(max); err != nil {
+		return fmt.Errorf("config: %w", err)
 	}
 
 	return setImageKey(path, image, "max", string(max))
@@ -151,17 +153,25 @@ func clearImageKey(path, image, key string) error {
 // back with. A missing or empty file yields an empty mapping document so the
 // callers can patch the same shape either way.
 func readDocument(path string) (*yaml.Node, fs.FileMode, error) {
-	data, err := os.ReadFile(path)
+	// One open for both the bytes and the mode: a second os.Stat would read a
+	// file that may no longer be the one just read.
+	f, err := os.Open(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return emptyDocument(), configFileMode, os.ErrNotExist
 	}
 	if err != nil {
 		return nil, 0, err
 	}
+	defer f.Close()
 
 	mode := configFileMode
-	if info, err := os.Stat(path); err == nil {
+	if info, err := f.Stat(); err == nil {
 		mode = info.Mode().Perm()
+	}
+
+	data, err := io.ReadAll(f)
+	if err != nil {
+		return nil, 0, err
 	}
 
 	var doc yaml.Node
@@ -207,16 +217,26 @@ func documentRoot(doc *yaml.Node) *yaml.Node {
 	return nil
 }
 
-// mappingValue returns the value node stored under key, or nil when the mapping
-// does not have that key.
-func mappingValue(node *yaml.Node, key string) *yaml.Node {
+// mappingIndex returns the position of key's *key* node in the mapping's
+// content, or -1 when the mapping does not have that key. A mapping node keeps
+// its pairs flattened, so the value sits at i+1.
+func mappingIndex(node *yaml.Node, key string) int {
 	if node == nil || node.Kind != yaml.MappingNode {
-		return nil
+		return -1
 	}
 	for i := 0; i+1 < len(node.Content); i += 2 {
 		if node.Content[i].Value == key {
-			return node.Content[i+1]
+			return i
 		}
+	}
+	return -1
+}
+
+// mappingValue returns the value node stored under key, or nil when the mapping
+// does not have that key.
+func mappingValue(node *yaml.Node, key string) *yaml.Node {
+	if i := mappingIndex(node, key); i >= 0 {
+		return node.Content[i+1]
 	}
 	return nil
 }
@@ -225,11 +245,9 @@ func mappingValue(node *yaml.Node, key string) *yaml.Node {
 // holds. Appending rather than inserting is what keeps the user's key order:
 // what ccu adds goes at the end, and what was there stays where it was written.
 func setMappingValue(node *yaml.Node, key string, value *yaml.Node) {
-	for i := 0; i+1 < len(node.Content); i += 2 {
-		if node.Content[i].Value == key {
-			node.Content[i+1] = value
-			return
-		}
+	if i := mappingIndex(node, key); i >= 0 {
+		node.Content[i+1] = value
+		return
 	}
 	node.Content = append(node.Content,
 		&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: key},
@@ -239,16 +257,12 @@ func setMappingValue(node *yaml.Node, key string, value *yaml.Node) {
 
 // deleteMappingKey drops a key and its value, reporting whether there was one.
 func deleteMappingKey(node *yaml.Node, key string) bool {
-	if node == nil || node.Kind != yaml.MappingNode {
+	i := mappingIndex(node, key)
+	if i < 0 {
 		return false
 	}
-	for i := 0; i+1 < len(node.Content); i += 2 {
-		if node.Content[i].Value == key {
-			node.Content = append(node.Content[:i], node.Content[i+2:]...)
-			return true
-		}
-	}
-	return false
+	node.Content = slices.Delete(node.Content, i, i+2)
+	return true
 }
 
 // writeDocument encodes doc over path. The file is written beside its target and

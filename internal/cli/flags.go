@@ -46,7 +46,6 @@ type Flags struct {
 	SelfUpdate  bool     // Download and install the latest version of ccu
 	CheckUpdate bool     // Check whether a newer version of ccu is available, without installing it
 	Exclude     []string // Directories to exclude from search
-	ExcludeStr  string   // Comma-separated list of directories to exclude from search (flag only)
 	Config      string   // Explicit config file to read instead of searching for one
 	Format      string   // Output format of the report: auto, pretty or json
 	ShowConfig  bool     // Print the resolved configuration and where it came from
@@ -69,21 +68,17 @@ type Flags struct {
 	Versioning policy.Versioning
 }
 
-// imageList collects -image, which may be repeated and may carry a
+// commaList collects a flag that may be repeated and may carry a
 // comma-separated list, so `-image a,b` and `-image a -image b` are the same
-// selection. flag's own StringVar would keep only the last one.
-type imageList []string
+// selection, and `-exclude a,b` needs no parsing of its own. flag's own
+// StringVar would keep only the last one.
+type commaList []string
 
-// String is called by the flag package on a zero Value to decide whether a
-// default is worth printing, so it has to survive a nil receiver.
-func (l *imageList) String() string {
-	if l == nil {
-		return ""
-	}
+func (l *commaList) String() string {
 	return strings.Join(*l, ",")
 }
 
-func (l *imageList) Set(value string) error {
+func (l *commaList) Set(value string) error {
 	for _, part := range strings.Split(value, ",") {
 		if part = strings.TrimSpace(part); part != "" {
 			*l = append(*l, part)
@@ -99,15 +94,27 @@ var plainOnlyFlags = map[string]bool{
 	"u": true, "r": true, "f": true, "major": true, "minor": true, "patch": true,
 }
 
-// splitSubcommand pulls a leading subcommand off the argument list. Each picks a
-// mode of its own and ignores the options the others read, which a flag cannot
-// say as plainly. Anything else is handed back untouched.
+// subcommands are the leading words that pick a mode of their own, each with
+// what it sets. One table rather than a list and a switch elsewhere: a command
+// present in only one of the two would either parse and then do nothing, or be
+// rejected as unknown while still being handled.
+var subcommands = map[string]func(*Flags){
+	"check":        func(args *Flags) { args.Check = true },
+	"self-update":  func(args *Flags) { args.SelfUpdate = true },
+	"check-update": func(args *Flags) { args.CheckUpdate = true },
+	"config":       func(args *Flags) { args.ShowConfig = true },
+	"help":         func(args *Flags) { args.Help = true },
+	"version":      func(args *Flags) { args.Version = true },
+}
+
+// splitSubcommand pulls a leading subcommand off the argument list. A
+// subcommand ignores the options the others read, which a flag cannot say as
+// plainly. Anything else is handed back untouched.
 func splitSubcommand(argv []string) (sub string, rest []string) {
 	if len(argv) == 0 || strings.HasPrefix(argv[0], "-") {
 		return "", argv
 	}
-	switch argv[0] {
-	case "check", "self-update", "check-update", "config", "help", "version":
+	if _, ok := subcommands[argv[0]]; ok {
 		return argv[0], argv[1:]
 	}
 	return "", argv
@@ -141,7 +148,7 @@ func Parse(version string) Flags {
 	inferMode(&args)
 
 	if args.Version {
-		println("Version:", version)
+		fmt.Println("Version:", version)
 		os.Exit(0)
 	}
 
@@ -181,29 +188,18 @@ func registerFlags(args *Flags, versioningName *string) {
 	// failure.
 	flag.BoolVar(&args.SelfUpdate, "self-update", false, "")
 	flag.BoolVar(&args.CheckUpdate, "check-update", false, "")
-	flag.StringVar(&args.ExcludeStr, "exclude", "", "Comma-separated list of directories to exclude from search")
+	flag.Var((*commaList)(&args.Exclude), "exclude", "Comma-separated list of directories to exclude from search")
 	flag.StringVar(&args.Config, "config", "", "Read this config file instead of searching for one")
 	flag.StringVar(&args.Format, "format", "auto", "Report output format: auto, pretty or json")
-	flag.Var((*imageList)(&args.Images), "image", "Only check images matching this name or pattern (repeatable, comma-separated); with the config command: explain how one image's settings were resolved")
+	flag.Var((*commaList)(&args.Images), "image", "Only check images matching this name or pattern (repeatable, comma-separated); with the config command: explain how one image's settings were resolved")
 	flag.StringVar(&args.MinAge, "min-age", "", "Only offer tags published at least this long ago, e.g. 7d or 36h (per-image config still wins)")
 	flag.StringVar(versioningName, "versioning", "", "Default scheme for reading image tags as versions: semver or loose (per-image config still wins)")
 }
 
 // applySubcommand turns the leading word into the mode it names.
 func applySubcommand(args *Flags, sub string) {
-	switch sub {
-	case "check":
-		args.Check = true
-	case "self-update":
-		args.SelfUpdate = true
-	case "check-update":
-		args.CheckUpdate = true
-	case "config":
-		args.ShowConfig = true
-	case "help":
-		args.Help = true
-	case "version":
-		args.Version = true
+	if apply, ok := subcommands[sub]; ok {
+		apply(args)
 	}
 }
 
@@ -211,30 +207,29 @@ func applySubcommand(args *Flags, sub string) {
 // flag's value alone cannot answer: which mode was meant, and whether a
 // setting came from the command line or from its default.
 func inferMode(args *Flags) {
-	// A report-only flag without `check` is what every pre-TUI-default script looks
-	// like, and `ccu -u` in a cron entry would hang waiting for a terminal. The
-	// implied mode is honoured, and main names the new spelling once.
-	if !args.Check {
-		flag.Visit(func(f *flag.Flag) {
-			if plainOnlyFlags[f.Name] {
-				args.Check, args.LegacyPlain = true, true
-			}
-			// -format only ever describes the report, so asking for one names the
-			// mode as plainly as `check` does, and there is no old spelling to warn
-			// about. Without this, `ccu -format=json` would open the TUI instead.
-			if f.Name == "format" && args.Format != "auto" {
-				args.Check = true
-			}
-		})
-	}
+	// Whether `check` was the subcommand, read before the pass below can set
+	// Check itself: only a mode that was inferred is the legacy spelling main
+	// warns about.
+	subCheck := args.Check
 
-	// Read outside the block above, which only runs when the mode is still open:
-	// `ccu check -pin-floating=false` has to be seen as well.
 	flag.Visit(func(f *flag.Flag) {
-		if f.Name == "pin-floating" {
+		switch {
+		// A report-only flag without `check` is what every pre-TUI-default script
+		// looks like, and `ccu -u` in a cron entry would hang waiting for a
+		// terminal. The implied mode is honoured, and main names the new spelling
+		// once.
+		case !subCheck && plainOnlyFlags[f.Name]:
+			args.Check, args.LegacyPlain = true, true
+		// -format only ever describes the report, so asking for one names the mode
+		// as plainly as `check` does, and there is no old spelling to warn about.
+		// Without this, `ccu -format=json` would open the TUI instead.
+		case !subCheck && f.Name == "format" && args.Format != "auto":
+			args.Check = true
+		// Read whatever the mode is: `ccu check -pin-floating=false` has to be
+		// seen as well.
+		case f.Name == "pin-floating":
 			args.PinFloatingSet = true
-		}
-		if f.Name == "dockerfiles" {
+		case f.Name == "dockerfiles":
 			args.DockerfilesSet = true
 		}
 	})
@@ -255,13 +250,6 @@ func expandFlags(args *Flags, versioningName string) {
 	// the first name given rather than growing a second spelling of the flag.
 	if len(args.Images) > 0 {
 		args.Image = args.Images[0]
-	}
-
-	if args.ExcludeStr != "" {
-		args.Exclude = strings.Split(args.ExcludeStr, ",")
-		for i := range args.Exclude {
-			args.Exclude[i] = strings.TrimSpace(args.Exclude[i])
-		}
 	}
 }
 

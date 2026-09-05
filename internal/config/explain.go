@@ -3,7 +3,7 @@ package config
 import (
 	"fmt"
 	"io"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/p-arndt/compose-check-updates/internal/policy"
@@ -30,7 +30,11 @@ func Explain(w io.Writer, loaded Loaded, effective Config, image string, flagVer
 	fmt.Fprintln(w)
 	fmt.Fprintf(w, "Settings in effect for %s:\n", image)
 
-	scheme, from := explainVersioning(loaded, effective, image, flagVersioning)
+	// Resolved once and passed down: Policies copies the image map and unions
+	// every entry's floating tags, which is work per call and not per setting.
+	policies := effective.Policies()
+
+	scheme, from := explainVersioning(loaded, effective, policies, image, flagVersioning)
 	fmt.Fprintf(w, "  versioning: %s (%s)\n", scheme, from)
 
 	cap, from := explainMax(loaded, effective, image)
@@ -40,7 +44,7 @@ func Explain(w io.Writer, loaded Loaded, effective Config, image string, flagVer
 		fmt.Fprintf(w, "  max: %s (%s)\n", cap, from)
 	}
 
-	minAge, from := explainMinAge(loaded, effective, image, flagMinAge)
+	minAge, from := explainMinAge(loaded, effective, policies, image, flagMinAge)
 	if minAge == "" {
 		fmt.Fprintf(w, "  min_age: none (%s)\n", from)
 	} else {
@@ -53,8 +57,8 @@ func Explain(w io.Writer, loaded Loaded, effective Config, image string, flagVer
 // explainMinAge resolves the settling time and names the layer it came from.
 // Four layers can set it — the image entry, the flag, and the run-wide key in
 // either file — which is exactly why it needs explaining.
-func explainMinAge(loaded Loaded, effective Config, image, flagMinAge string) (minAge, from string) {
-	minAge = effective.Policies().For(image).MinAge
+func explainMinAge(loaded Loaded, effective Config, policies policy.Set, image, flagMinAge string) (minAge, from string) {
+	minAge = policies.For(image).MinAge
 
 	if effective.Images[image].MinAge != "" {
 		return minAge, entryOrigin(loaded, image, ".min_age")
@@ -74,8 +78,8 @@ func explainMinAge(loaded Loaded, effective Config, image, flagMinAge string) (m
 // explainVersioning resolves the scheme and names the layer it came from. The
 // value comes from policy.Set.For, the one copy of the precedence rule, so this
 // can never report a scheme the checker would not use.
-func explainVersioning(loaded Loaded, effective Config, image string, flagVersioning policy.Versioning) (scheme policy.Versioning, from string) {
-	scheme = effective.Policies().For(image).Versioning
+func explainVersioning(loaded Loaded, effective Config, policies policy.Set, image string, flagVersioning policy.Versioning) (scheme policy.Versioning, from string) {
+	scheme = policies.For(image).Versioning
 
 	if effective.Images[image].Versioning != "" {
 		return scheme, entryOrigin(loaded, image, ".versioning")
@@ -164,7 +168,7 @@ func nearMisses(images map[string]policy.Image, image string) []string {
 			out = append(out, key)
 		}
 	}
-	sort.Strings(out)
+	slices.Sort(out)
 	return out
 }
 
@@ -184,13 +188,8 @@ func isNearMiss(image, key string) bool {
 // keys are spelled as. Only a colon after the last slash is a tag separator: a
 // registry may carry a port, as in "registry.local:5000/redis".
 func bareName(image string) string {
-	if at := strings.Index(image, "@"); at >= 0 {
-		image = image[:at]
-	}
-	name := image
-	if slash := strings.LastIndex(image, "/"); slash >= 0 {
-		name = image[slash+1:]
-	}
+	image, _, _ = strings.Cut(image, "@")
+	name := lastSegment(image)
 	if colon := strings.LastIndex(name, ":"); colon >= 0 {
 		image = image[:len(image)-len(name)+colon]
 	}
