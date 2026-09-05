@@ -44,24 +44,19 @@ type infoResult struct {
 // cache below it holds successes only, and only where a digest could be
 // resolved; this one also stops a failure from being retried per occurrence.
 type infoCache struct {
-	mu      sync.Mutex
-	entries map[string]infoResult
+	entries sync.Map // image -> infoResult
 }
 
 func (c *infoCache) get(image string) (infoResult, bool) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	e, ok := c.entries[image]
-	return e, ok
+	e, ok := c.entries.Load(image)
+	if !ok {
+		return infoResult{}, false
+	}
+	return e.(infoResult), true
 }
 
 func (c *infoCache) set(image string, r infoResult) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.entries == nil {
-		c.entries = map[string]infoResult{}
-	}
-	c.entries[image] = r
+	c.entries.Store(image, r)
 }
 
 // imageInfoFor resolves what the config blob of a reference says, through both
@@ -217,6 +212,21 @@ func platformDescriptor(index manifest.Manifest) (descriptor.Descriptor, error) 
 	// An index with no manifest for this host still describes a release, and the
 	// labels and the build time are the same on every architecture of it.
 	return firstImage(list)
+}
+
+// annotationsOf reads a manifest's annotations, nil when it carries none or
+// refuses to hand them over. A nil map answers every lookup with the zero
+// value, so callers need no second branch for it.
+func annotationsOf(m manifest.Manifest) map[string]string {
+	annotator, ok := m.(manifest.Annotator)
+	if !ok {
+		return nil
+	}
+	annotations, err := annotator.GetAnnotations()
+	if err != nil {
+		return nil
+	}
+	return annotations
 }
 
 func firstImage(list []descriptor.Descriptor) (descriptor.Descriptor, error) {

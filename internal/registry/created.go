@@ -41,36 +41,22 @@ func createdFromConfig(conf v1.Image) time.Time {
 	if conf.Created != nil && !conf.Created.IsZero() {
 		return *conf.Created
 	}
-	if t, ok := parseCreated(conf.Config.Labels[annotationCreated]); ok {
-		return t
-	}
-	return time.Time{}
+	return parseCreated(conf.Config.Labels[annotationCreated])
 }
 
 // createdFromAnnotations is the last resort: the annotation on the manifest
 // itself, which is where a build that pushes no config metadata records it.
 func createdFromAnnotations(m manifest.Manifest) time.Time {
-	annotator, ok := m.(manifest.Annotator)
-	if !ok {
-		return time.Time{}
-	}
-	annotations, err := annotator.GetAnnotations()
+	return parseCreated(annotationsOf(m)[annotationCreated])
+}
+
+// parseCreated reads an RFC 3339 build time, zero when there is none or it is
+// unreadable. Callers already read the zero time as "not recorded", so a second
+// return saying the same thing would only be checked twice.
+func parseCreated(value string) time.Time {
+	t, err := time.Parse(time.RFC3339, value)
 	if err != nil {
 		return time.Time{}
 	}
-	if t, ok := parseCreated(annotations[annotationCreated]); ok {
-		return t
-	}
-	return time.Time{}
-}
-
-func parseCreated(value string) (time.Time, bool) {
-	if value == "" {
-		return time.Time{}, false
-	}
-	t, err := time.Parse(time.RFC3339, value)
-	if err != nil || t.IsZero() {
-		return time.Time{}, false
-	}
-	return t, true
+	return t
 }

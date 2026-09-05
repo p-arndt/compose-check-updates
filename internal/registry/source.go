@@ -44,15 +44,7 @@ func (c *Client) SourceURL(image string) (string, error) {
 // annotationSource reads the source out of a manifest's annotations, which an
 // index carries in place of the config blob it does not have.
 func annotationSource(m manifest.Manifest) string {
-	annotator, ok := m.(manifest.Annotator)
-	if !ok {
-		return ""
-	}
-	annotations, err := annotator.GetAnnotations()
-	if err != nil {
-		return ""
-	}
-	return pickSource(annotations)
+	return pickSource(annotationsOf(m))
 }
 
 func pickSource(values map[string]string) string {
@@ -84,7 +76,7 @@ func SourceLinks(source, tag string) (sourceURL, releaseURL string) {
 	}
 
 	path := strings.Trim(parsed.Path, "/")
-	if len(strings.Split(path, "/")) < 2 {
+	if !strings.Contains(path, "/") {
 		// Not a repository but a forge's landing page or a bare group.
 		return sourceURL, ""
 	}

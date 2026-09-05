@@ -47,9 +47,6 @@ func ParseRef(reference string) (name, tag, digest string) {
 }
 
 func splitNaively(reference string) (name, tag string) {
-	parts := strings.Split(reference, ":")
-	if len(parts) < 2 {
-		return parts[0], ""
-	}
-	return parts[0], parts[1]
+	name, tag, _ = strings.Cut(reference, ":")
+	return name, tag
 }
