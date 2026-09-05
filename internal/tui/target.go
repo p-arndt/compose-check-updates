@@ -70,7 +70,7 @@ func (m *Model) cycleRowTarget(delta int) {
 	case i < 0:
 		i = 0
 	default:
-		i = ((i+delta)%len(avail) + len(avail)) % len(avail)
+		i = stepIndex(len(avail), i, delta)
 	}
 
 	key := rowKey(*r)

@@ -25,12 +25,7 @@ const (
 )
 
 // Next cycles to the following filter, wrapping around at the end.
-func (f Filter) Next() Filter {
-	if f == FilterDigest {
-		return FilterAll
-	}
-	return f + 1
-}
+func (f Filter) Next() Filter { return stepFilter(f, 1) }
 
 // Label is the human-readable name used in the legend and footer.
 func (f Filter) Label() string {
@@ -71,15 +66,9 @@ const (
 // default wraps round to the most conservative choice on the first press.
 var targetOrder = []Target{TargetPatch, TargetMinor, TargetMajor}
 
-// nextTarget cycles to the following target, wrapping around at the end.
-func nextTarget(t Target) Target {
-	for i, c := range targetOrder {
-		if c == t {
-			return targetOrder[(i+1)%len(targetOrder)]
-		}
-	}
-	return TargetMajor
-}
+// nextTarget cycles to the following target, wrapping around at the end. An
+// unknown level counts as the first one, so the step lands on minor.
+func nextTarget(t Target) Target { return stepTarget(t, 1) }
 
 // targetLabel is the human-readable name used in the legend and footer.
 func targetLabel(t Target) string {
@@ -152,14 +141,6 @@ const (
 	pinProject pinScope = iota
 	pinGlobal
 )
-
-// Label is the word the prompt and the confirmation use for the scope.
-func (s pinScope) Label() string {
-	if s == pinGlobal {
-		return "global"
-	}
-	return "project"
-}
 
 // entryKind distinguishes the two things a list line, and therefore the cursor,
 // can be.

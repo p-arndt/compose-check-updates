@@ -66,9 +66,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	if key.Matches(msg, m.keys.Quit) {
-		m.cancel()
-		m.phase = phaseDone
-		return m, tea.Quit
+		return m, m.quit()
 	}
 
 	// Applying is short and touches files; ignore everything but quit so the
@@ -204,18 +202,24 @@ func (m Model) scopeRowsUnfiltered(node int) []int {
 		return idxs
 	}
 
-	files := make(map[string]bool, len(m.subtreeFiles(node)))
-	for _, p := range m.subtreeFiles(node) {
-		files[p] = true
-	}
-
+	// A file only has a node when it has a visible row, so the mask names the
+	// same files subtreeFiles would, without building the list first.
+	in := m.subtreeMask(node)
 	idxs := make([]int, 0, len(m.rows))
 	for i, r := range m.rows {
-		if files[r.FilePath()] {
+		if n := m.fileNode(r.FilePath()); n >= 0 && in[n] {
 			idxs = append(idxs, i)
 		}
 	}
 	return idxs
+}
+
+// quit is the one way the program ends on a keypress: the scan is cancelled so
+// its goroutines do not outlive the screen they were drawing into.
+func (m *Model) quit() tea.Cmd {
+	m.cancel()
+	m.phase = phaseDone
+	return tea.Quit
 }
 
 // handleIssuesKey drives the issues pane. It reads only navigation, the two
@@ -226,9 +230,7 @@ func (m Model) handleIssuesKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.showIssues = false
 		m.syncScroll()
 	case key.Matches(msg, m.keys.Quit):
-		m.cancel()
-		m.phase = phaseDone
-		return m, tea.Quit
+		return m, m.quit()
 	case key.Matches(msg, m.keys.Up):
 		m.moveIssueCursor(-1)
 	case key.Matches(msg, m.keys.Down):
@@ -297,11 +299,11 @@ func (m Model) handleSideKey(msg tea.KeyMsg) (bool, tea.Model, tea.Cmd) {
 // stepField moves the sidebar cursor by delta, skipping fields that are not on
 // screen — the scope has nothing to answer until a cap exists.
 func (m Model) stepField(delta int) sideField {
-	f := m.sideField
-	for i := 0; i < int(sideFieldCount); i++ {
-		f = (f + sideField(delta) + sideFieldCount) % sideFieldCount
-		if m.fieldVisible(f) {
-			return f
+	f := int(m.sideField)
+	for range sideFieldCount {
+		f = stepIndex(int(sideFieldCount), f, delta)
+		if m.fieldVisible(sideField(f)) {
+			return sideField(f)
 		}
 	}
 	return fieldTarget

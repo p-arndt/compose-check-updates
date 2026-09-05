@@ -81,10 +81,7 @@ func (m Model) stackedSidebarFields() int {
 
 // stackedSidebar renders the panel that goes below the list.
 func (m Model) stackedSidebar() []string {
-	inner := clampWidth(m.width) - boxChrome
-	if inner < 1 {
-		inner = 1
-	}
+	inner := max(clampWidth(m.width)-boxChrome, 1)
 	fields := m.stackedSidebarFields()
 	return m.theme.Box(m.sidebarLines(inner, fields), inner, fields, m.focus == focusSide)
 }
@@ -96,11 +93,7 @@ func sidebarWidth(total int) int {
 	if total < sidebarMinTotal {
 		return 0
 	}
-	w := total / 3
-	if w > 38 {
-		w = 38
-	}
-	return w
+	return min(total/3, 38)
 }
 
 // sideField is one of the questions the sidebar asks. The order is the order
@@ -353,15 +346,8 @@ func shortPath(p string) string {
 // joinColumns places the two boxes side by side, drawn to the same height so
 // their borders close level with each other.
 func (m Model) joinColumns(left, right []string, leftInner, height int) string {
-	inner := height - 2
-	if inner < 1 {
-		inner = 1
-	}
-
-	rightInner := sidebarWidth(m.width) - boxChrome
-	if rightInner < 1 {
-		rightInner = 1
-	}
+	inner := max(height-2, 1)
+	rightInner := max(sidebarWidth(m.width)-boxChrome, 1)
 
 	lb := m.theme.Box(left, leftInner, inner, m.focus == focusList)
 	rb := m.theme.Box(right, rightInner, inner, m.focus == focusSide)

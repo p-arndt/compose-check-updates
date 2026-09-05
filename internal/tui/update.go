@@ -53,13 +53,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, waitForFloatingEvent(msg.events)
 
 	case floatingEventMsg:
-		switch msg.ev.Kind {
-		case scanner.EventUpdate:
-			m.addRow(Row{Update: msg.ev.Update, Level: msg.ev.Level})
-			m.syncScroll()
-		case scanner.EventError:
-			m.scanErrs = append(m.scanErrs, msg.ev.Err)
-		}
+		// Only the row and error kinds: the file counters belong to the main scan,
+		// whose progress line the second pass must not disturb.
+		m.ingest(msg.ev)
 		return m, waitForFloatingEvent(m.floatingEvents)
 
 	case floatingDoneMsg:
@@ -181,15 +177,24 @@ func (m *Model) handleScanEvent(ev scanner.Event) {
 	switch ev.Kind {
 	case scanner.EventDiscovered:
 		m.total = ev.Total
-	case scanner.EventUpdate:
-		m.addRow(Row{Update: ev.Update, Level: ev.Level})
-		m.syncScroll()
 	case scanner.EventFileDone:
 		m.checked++
 	case scanner.EventError:
 		// A file that errored never reports done, so it is counted here instead
 		// or the progress readout would stall short of the total.
 		m.checked++
+	}
+	m.ingest(ev)
+}
+
+// ingest folds the event kinds both scans produce into the model: a row into the
+// list, an error into the issues.
+func (m *Model) ingest(ev scanner.Event) {
+	switch ev.Kind {
+	case scanner.EventUpdate:
+		m.addRow(Row{Update: ev.Update, Level: ev.Level})
+		m.syncScroll()
+	case scanner.EventError:
 		m.scanErrs = append(m.scanErrs, ev.Err)
 	}
 }

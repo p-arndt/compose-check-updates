@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"slices"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -43,14 +44,8 @@ func (m *Model) cycleSideValue(delta int) tea.Cmd {
 func (m *Model) cycleVersioning(r *Row, delta int) tea.Cmd {
 	image := r.Update.ImageName
 
-	cur := 0
-	for i, c := range versioningChoices {
-		if c == m.versioningFor(image) {
-			cur = i
-			break
-		}
-	}
-	next := versioningChoices[((cur+delta)%len(versioningChoices)+len(versioningChoices))%len(versioningChoices)]
+	cur := max(slices.Index(versioningChoices, m.versioningFor(image)), 0)
+	next := versioningChoices[stepIndex(len(versioningChoices), cur, delta)]
 
 	// A scheme already recorded lives in one scope; a new one goes to the project
 	// file, which is the narrower of the two and the easier to undo.
@@ -101,14 +96,8 @@ func (m *Model) cycleCap(r *Row, delta int) {
 	image := r.Update.ImageName
 
 	choices := m.capChoicesFor(image)
-	cur := 0
-	for i, c := range choices {
-		if c == r.Pin {
-			cur = i
-			break
-		}
-	}
-	next := choices[((cur+delta)%len(choices)+len(choices))%len(choices)]
+	cur := max(slices.Index(choices, r.Pin), 0)
+	next := choices[stepIndex(len(choices), cur, delta)]
 
 	// A cap already recorded lives in one scope; a new one goes to the project
 	// file, which is the narrower of the two and the easier to undo.
@@ -138,14 +127,8 @@ func (m *Model) cycleScope(r *Row, delta int) {
 	image := r.Update.ImageName
 	from := m.pinScopeOf(image)
 
-	cur := 0
-	for i, s := range scopeChoices {
-		if s == from {
-			cur = i
-			break
-		}
-	}
-	to := scopeChoices[((cur+delta)%len(scopeChoices)+len(scopeChoices))%len(scopeChoices)]
+	cur := max(slices.Index(scopeChoices, from), 0)
+	to := scopeChoices[stepIndex(len(scopeChoices), cur, delta)]
 	if to == from {
 		return
 	}

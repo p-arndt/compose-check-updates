@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/key"
@@ -233,20 +234,15 @@ func (m Model) pressBar(delta int) (tea.Model, tea.Cmd) {
 // stepFilter and stepTarget are the cycles ←/→ walk. Filter.Next and
 // Target.Next only go forward; a value has to step back as well.
 func stepFilter(f Filter, delta int) Filter {
-	all := []Filter{FilterAll, FilterMajor, FilterMinor, FilterPatch, FilterDigest}
-	return all[stepIndex(len(all), int(f), delta)]
+	return Filter(stepIndex(int(FilterDigest)+1, int(f), delta))
 }
 
 func stepTarget(t Target, delta int) Target {
-	cur := 0
-	for i, c := range targetOrder {
-		if c == t {
-			cur = i
-		}
-	}
-	return targetOrder[stepIndex(len(targetOrder), cur, delta)]
+	return targetOrder[stepIndex(len(targetOrder), max(slices.Index(targetOrder, t), 0), delta)]
 }
 
+// stepIndex moves cur by delta inside [0, n), wrapping at both ends. It is the
+// one modular step every cycling value in the UI goes through.
 func stepIndex(n, cur, delta int) int { return ((cur+delta)%n + n) % n }
 
 // --- rendering ----------------------------------------------------------
@@ -288,7 +284,7 @@ func (m Model) barStopText(s barStop, focused bool) string {
 	value := lipgloss.NewStyle().Foreground(m.theme.Text).Bold(true)
 
 	if focused {
-		edge = lipgloss.NewStyle().Foreground(m.theme.Accent).Bold(true).Underline(true)
+		edge = m.theme.accent().Underline(true)
 		label = lipgloss.NewStyle().Foreground(m.theme.Accent).Underline(true)
 		value = value.Foreground(m.theme.Accent).Underline(true)
 	}

@@ -6,12 +6,7 @@ func (m *Model) clampCursor() {
 		m.offset = 0
 		return
 	}
-	if m.cursor < 0 {
-		m.cursor = 0
-	}
-	if m.cursor >= len(m.entries) {
-		m.cursor = len(m.entries) - 1
-	}
+	m.cursor = min(max(m.cursor, 0), len(m.entries)-1)
 }
 
 // currentEntry is the list line under the cursor.
@@ -109,13 +104,7 @@ func (m *Model) syncScroll() {
 		return
 	}
 
-	ci := m.cursor
-	if ci < 0 {
-		ci = 0
-	}
-	if ci >= total {
-		ci = total - 1
-	}
+	ci := min(max(m.cursor, 0), total-1)
 
 	// The file header above the cursor row should stay visible together with it,
 	// so a row never appears detached from the file it belongs to.
@@ -130,28 +119,13 @@ func (m *Model) syncScroll() {
 	if ci >= m.offset+h {
 		m.offset = ci - h + 1
 	}
-	if m.offset > total-h {
-		m.offset = total - h
-	}
-	if m.offset < 0 {
-		m.offset = 0
-	}
+	m.offset = max(min(m.offset, total-h), 0)
 }
 
 // moveIssueCursor walks the issues pane by whole issues, not by wrapped lines.
 func (m *Model) moveIssueCursor(delta int) {
-	if len(m.scanErrs) == 0 {
-		m.issueCursor, m.issueOffset = 0, 0
-		return
-	}
 	m.issueCursor += delta
-	if m.issueCursor < 0 {
-		m.issueCursor = 0
-	}
-	if m.issueCursor >= len(m.scanErrs) {
-		m.issueCursor = len(m.scanErrs) - 1
-	}
-	m.syncIssueScroll()
+	m.syncIssueScroll() // clamps the cursor as well
 }
 
 // syncIssueScroll keeps the highlighted issue on screen, pinning its first line
@@ -161,12 +135,7 @@ func (m *Model) syncIssueScroll() {
 		m.issueCursor, m.issueOffset = 0, 0
 		return
 	}
-	if m.issueCursor < 0 {
-		m.issueCursor = 0
-	}
-	if m.issueCursor >= len(m.scanErrs) {
-		m.issueCursor = len(m.scanErrs) - 1
-	}
+	m.issueCursor = min(max(m.issueCursor, 0), len(m.scanErrs)-1)
 
 	lines, starts := m.issueLines()
 	h := m.listHeight()
@@ -187,13 +156,5 @@ func (m *Model) syncIssueScroll() {
 	if bottom > m.issueOffset+h {
 		m.issueOffset = bottom - h
 	}
-	if m.issueOffset > top {
-		m.issueOffset = top
-	}
-	if m.issueOffset > len(lines)-h {
-		m.issueOffset = len(lines) - h
-	}
-	if m.issueOffset < 0 {
-		m.issueOffset = 0
-	}
+	m.issueOffset = max(min(m.issueOffset, top, len(lines)-h), 0)
 }
