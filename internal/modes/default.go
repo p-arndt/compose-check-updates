@@ -18,6 +18,11 @@ type Outcome struct {
 	// fail — nobody knows whether they have an update at all.
 	Unreadable int
 	Failed     bool // at least one non-fatal error was reported
+	// Images counts the images the run actually looked at, after the -image
+	// selection. Zero with a selection in force means none of the patterns named
+	// anything, which is worth saying out loud: no rows is otherwise how a fully
+	// up-to-date scan looks too.
+	Images int
 }
 
 // Default checks every compose file below opts.Root and reports — or applies —
@@ -34,6 +39,9 @@ func Default(ctx context.Context, opts scanner.Options, ccuFlags cli.Flags, out 
 
 	for event := range events {
 		switch event.Kind {
+		case scanner.EventFileDone:
+			outcome.Images += event.Images
+
 		case scanner.EventError:
 			outcome.Failed = true
 			out.Error(event.Path, event.Err)

@@ -22,6 +22,18 @@ type Checker struct {
 	// `docker compose up` knows the service, not the Dockerfile behind it.
 	composePath string
 	service     string
+
+	// images narrows the run to the references it matches, for `-image`. nil
+	// selects everything.
+	images *compose.ImageMatcher
+}
+
+// Only restricts the checker to the images m matches. The filter bites while
+// the file is being read, not on the way out: the point of naming an image is
+// that the registries are never asked about the others.
+func (c *Checker) Only(m *compose.ImageMatcher) *Checker {
+	c.images = m
+	return c
 }
 
 // New returns a checker for a compose file.
@@ -289,6 +301,9 @@ func (c *Checker) updates() ([]Update, error) {
 
 	for _, occ := range occurrences {
 		name, tag, digest := registry.ParseRef(occ.Reference)
+		if !c.images.Match(name) {
+			continue
+		}
 		key := name + ":" + tag + "@" + digest
 
 		// Two spellings of one image are the same update — `nginx:1.2` and

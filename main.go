@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/p-arndt/selfupdate"
@@ -151,6 +152,14 @@ func runReport(flags cli.Flags, updater *selfupdate.Updater, opts scanner.Option
 	// piping ccu's report somewhere keeps it machine-readable.
 	updater.NotifyIfAvailable(os.Stderr, buildinfo.Version)
 
+	// A selection that named nothing is not a failure — there was simply nothing
+	// to check — but an empty report would otherwise read like a clean scan.
+	// Stderr, so a JSON stream stays a JSON stream.
+	if len(flags.Images) > 0 && outcome.Images == 0 {
+		fmt.Fprintf(os.Stderr, "no image matches -image %s\n", strings.Join(flags.Images, ","))
+		return exitUpToDate, nil
+	}
+
 	return exitCode(outcome), nil
 }
 
@@ -201,6 +210,7 @@ func scanOptions(flags cli.Flags, effective config.Config) scanner.Options {
 	opts := scanner.Options{
 		Root:        flags.Directory,
 		Exclude:     effective.Exclude,
+		Images:      flags.Images,
 		Major:       flags.Major,
 		Minor:       flags.Minor,
 		Patch:       flags.Patch,
