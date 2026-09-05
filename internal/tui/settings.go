@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"maps"
+
 	"github.com/p-arndt/compose-check-updates/internal/config"
 	"github.com/p-arndt/compose-check-updates/internal/policy"
 )
@@ -82,9 +84,11 @@ func (m *Model) recordVersioning(scope pinScope, image string, versioning policy
 
 	// Copied rather than written through: the map came from the loaded config and
 	// is shared with whoever else was handed it.
-	images := make(map[string]policy.Image, len(m.opts.Policies.Images)+1)
-	for k, v := range m.opts.Policies.Images {
-		images[k] = v
+	images := maps.Clone(m.opts.Policies.Images)
+	if images == nil {
+		// maps.Clone hands back nil for a nil map, and the entry below is written
+		// straight into it — a config that recorded no image at all would panic.
+		images = make(map[string]policy.Image, 1)
 	}
 	entry := images[image]
 	entry.Versioning = versioning

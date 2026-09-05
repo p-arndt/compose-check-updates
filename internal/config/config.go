@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -240,7 +241,9 @@ func Parse(r io.Reader) (Config, error) {
 	for i, e := range cfg.Exclude {
 		cfg.Exclude[i] = strings.TrimSpace(e)
 	}
-	cfg.Exclude = nonEmpty(cfg.Exclude)
+	// Filtered in place: cfg was decoded a few lines up, so the slice is this
+	// function's own and no caller can see it shrink.
+	cfg.Exclude = slices.DeleteFunc(cfg.Exclude, func(e string) bool { return e == "" })
 
 	cfg.FloatingTags = Union(cfg.FloatingTags)
 	for _, tag := range cfg.FloatingTags {
@@ -321,16 +324,6 @@ func dedupe(list []string) []string {
 		}
 		seen[e] = struct{}{}
 		out = append(out, e)
-	}
-	return out
-}
-
-func nonEmpty(list []string) []string {
-	var out []string
-	for _, e := range list {
-		if e != "" {
-			out = append(out, e)
-		}
 	}
 	return out
 }

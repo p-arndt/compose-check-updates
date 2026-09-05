@@ -26,9 +26,7 @@ func TagForDigest(f Fetcher, image string, candidates []string, digest string) s
 	}
 
 	for range min(probeWorkers, len(candidates)) {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for tag := range queue {
 				if found() {
 					continue
@@ -49,7 +47,7 @@ func TagForDigest(f Fetcher, image string, candidates []string, digest string) s
 				}
 				mu.Unlock()
 			}
-		}()
+		})
 	}
 
 	for _, tag := range candidates {

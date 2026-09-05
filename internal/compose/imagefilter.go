@@ -1,6 +1,9 @@
 package compose
 
-import "strings"
+import (
+	"slices"
+	"strings"
+)
 
 // ImageMatcher decides whether an image is part of the run at all, for the
 // `-image` selection. How a pattern is written picks what it is compared with:
@@ -83,7 +86,7 @@ func (m *ImageMatcher) Patterns() []string {
 	if m == nil {
 		return nil
 	}
-	return append(append([]string(nil), m.full...), m.names...)
+	return slices.Concat(m.full, m.names)
 }
 
 // globMatch reports whether pattern matches s, with `*` standing for any run of

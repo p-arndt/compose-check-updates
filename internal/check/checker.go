@@ -468,10 +468,8 @@ func AppendService(services []string, name string) []string {
 	if name == "" {
 		return services
 	}
-	for _, s := range services {
-		if s == name {
-			return services
-		}
+	if slices.Contains(services, name) {
+		return services
 	}
 	return append(services, name)
 }

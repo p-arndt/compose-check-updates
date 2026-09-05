@@ -155,12 +155,10 @@ func walk(ctx context.Context, opts Options, progress bool, check func(context.C
 			case sem <- struct{}{}:
 			}
 
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
+			wg.Go(func() {
 				defer func() { <-sem }()
 				check(ctx, events, opts, path)
-			}()
+			})
 		}
 
 		wg.Wait()

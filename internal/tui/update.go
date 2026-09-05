@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"slices"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
@@ -155,7 +156,9 @@ func (m *Model) dropRow(key string) {
 			// handed to its file header rather than to whatever slides up into it.
 			keep = headerKeyPrefix + m.rows[i].FilePath()
 		}
-		m.rows = append(m.rows[:i], m.rows[i+1:]...)
+		// slices.Delete zeroes the vacated tail, so the dropped row is not kept
+		// alive by the backing array the way the append form left it.
+		m.rows = slices.Delete(m.rows, i, i+1)
 		m.rebuild(keep)
 		m.syncScroll()
 		return

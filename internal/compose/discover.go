@@ -3,6 +3,7 @@
 package compose
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
 )
@@ -25,11 +26,14 @@ func Files(root string, exclude []string) ([]string, error) {
 	}
 
 	var paths []string
-	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+	// WalkDir rather than Walk: only IsDir and the name are read here, and
+	// WalkDir hands those over from the directory listing instead of paying an
+	// lstat per entry.
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			// Scanning system directories is expected to hit these.
 			if os.IsPermission(err) {
-				if info != nil && info.IsDir() {
+				if d != nil && d.IsDir() {
 					return filepath.SkipDir
 				}
 				return nil
@@ -48,12 +52,12 @@ func Files(root string, exclude []string) ([]string, error) {
 		}
 
 		if matcher.Match(relPath, absPath) {
-			if info.IsDir() {
+			if d.IsDir() {
 				return filepath.SkipDir
 			}
 			return nil
 		}
-		if info.IsDir() {
+		if d.IsDir() {
 			return nil
 		}
 
