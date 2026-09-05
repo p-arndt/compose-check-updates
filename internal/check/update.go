@@ -3,6 +3,7 @@
 package check
 
 import (
+	"cmp"
 	"time"
 
 	"github.com/p-arndt/compose-check-updates/internal/policy"
@@ -143,14 +144,19 @@ func (u *Update) MarkUnreadable(reason, message string) {
 // "" when the image records no source or its forge has no release page ccu can
 // name. Derived on demand so it always describes the currently selected target.
 func (u *Update) ReleaseURL() string {
-	tag := u.LatestTag
-	if tag == "" {
-		// A drifted pin moves no tag; its notes, if any, are the ones for the tag
-		// the file already names.
-		tag = u.CurrentTag
-	}
-	_, release := registry.SourceLinks(u.SourceURL, tag)
+	_, release := registry.SourceLinks(u.SourceURL, u.targetTag())
 	return release
+}
+
+// targetTag is the tag this update points at: the one it moves to, or — for a
+// drifted pin, which moves no tag — the one the file already names.
+func (u *Update) targetTag() string { return cmp.Or(u.LatestTag, u.CurrentTag) }
+
+// hasLevelTag reports whether any upgrade level resolved to a tag. Without one
+// there is nothing to move to under any flags, which is what parts an image on
+// its newest release from one merely capped below what is available.
+func (u *Update) hasLevelTag() bool {
+	return u.PatchTag != "" || u.MinorTag != "" || u.MajorTag != ""
 }
 
 func (u *Update) IsUnreadable() bool { return u.UnreadableReason != "" }
@@ -183,7 +189,7 @@ func (u *Update) scheme() versioning.Scheme {
 // still gets an answer.
 func (u *Update) TagForTarget(target policy.Level) string {
 	// An image moved by digest alone has no levels to choose between.
-	if u.PatchTag == "" && u.MinorTag == "" && u.MajorTag == "" && u.IsDigestUpdate() {
+	if !u.hasLevelTag() && u.IsDigestUpdate() {
 		return u.LatestTag
 	}
 

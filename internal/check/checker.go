@@ -63,8 +63,7 @@ func (c *Checker) Check(major, minor, patch bool) ([]Update, error) {
 	}
 
 	for i := range updates {
-		c.resolve(&updates[i], major, minor, patch)
-		c.resolveSource(&updates[i])
+		c.resolveAll(&updates[i], major, minor, patch)
 	}
 	return updates, nil
 }
@@ -82,8 +81,7 @@ func (c *Checker) CheckImage(reference string, major, minor, patch bool) (Update
 		if updates[i].FullImageName != reference {
 			continue
 		}
-		c.resolve(&updates[i], major, minor, patch)
-		c.resolveSource(&updates[i])
+		c.resolveAll(&updates[i], major, minor, patch)
 		return updates[i], true, nil
 	}
 	return Update{}, false, nil
@@ -118,6 +116,14 @@ func (c *Checker) CheckPins() ([]Update, error) {
 
 func (c *Checker) policyFor(u *Update) policy.Image {
 	return c.policies.For(u.ImageName)
+}
+
+// resolveAll is everything a checked image gets: what it can move to, and where
+// it is built from. Both callers go through it so a full scan and a single
+// re-check can never resolve an update to different fields.
+func (c *Checker) resolveAll(u *Update, major, minor, patch bool) {
+	c.resolve(u, major, minor, patch)
+	c.resolveSource(u)
 }
 
 // resolve fills in one update, shared by the full scan and the single re-check
@@ -176,7 +182,7 @@ func (c *Checker) resolve(u *Update, major, minor, patch bool) {
 		// there being no candidate at all rather than on the requested levels: with
 		// one available, that update is the stronger news and an interactive caller
 		// can still switch target to it.
-		if u.PatchTag == "" && u.MinorTag == "" && u.MajorTag == "" && c.checkPinDrift(u) {
+		if !u.hasLevelTag() && c.checkPinDrift(u) {
 			return
 		}
 
@@ -308,10 +314,7 @@ func (c *Checker) resolveSource(u *Update) {
 
 	// The tag being moved to is the one whose labels describe the new release; a
 	// drifted pin has none, and falls back to the tag the file names.
-	tag := u.LatestTag
-	if tag == "" {
-		tag = u.CurrentTag
-	}
+	tag := u.targetTag()
 	if tag == "" {
 		return
 	}
@@ -394,13 +397,20 @@ func soleRelease(p policy.Image, currentTag string, tags []string) bool {
 	}
 
 	for _, tag := range tags {
-		if tag == currentTag || tag == p.ReferenceTag || p.Floats(tag) {
-			continue
+		if standsInFor(p, tag, currentTag) {
+			return false
 		}
-		return false
 	}
 
 	return true
+}
+
+// standsInFor reports whether tag could be a different, fixed release of an
+// image the file names as currentTag. The tag itself is no alternative to
+// itself, and a floating or reference tag is no fixed release at all: moving on
+// to one would trade a pinned reference for a moving one.
+func standsInFor(p policy.Image, tag, currentTag string) bool {
+	return tag != currentTag && tag != p.ReferenceTag && !p.Floats(tag)
 }
 
 // hint appends the way out of an unreadable image, worth naming only when the
@@ -482,10 +492,7 @@ func (c *Checker) occurrences() ([]compose.Occurrence, error) {
 // AppendService adds name unless it is empty or already there. An image declared
 // outside any service contributes no name rather than an empty one.
 func AppendService(services []string, name string) []string {
-	if name == "" {
-		return services
-	}
-	if slices.Contains(services, name) {
+	if name == "" || slices.Contains(services, name) {
 		return services
 	}
 	return append(services, name)
@@ -494,13 +501,8 @@ func AppendService(services []string, name string) []string {
 // appendLine adds line unless it is already covered by the update's own RawLine
 // or by a line collected before it — Apply rewrites every matching line anyway.
 func appendLine(extra []string, raw, line string) []string {
-	if sameImageLine(line, raw) {
+	if coversLine(line, raw, extra) {
 		return extra
-	}
-	for _, e := range extra {
-		if sameImageLine(line, e) {
-			return extra
-		}
 	}
 	return append(extra, line)
 }

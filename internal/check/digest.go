@@ -122,7 +122,7 @@ func digestCandidates(tags []string, currentTag string, p policy.Image) (candida
 	family := tagFamily(currentTag)
 
 	for _, tag := range tags {
-		if tag == currentTag || tag == p.ReferenceTag || p.Floats(tag) {
+		if !standsInFor(p, tag, currentTag) {
 			continue
 		}
 		if tagFamily(tag) != family {

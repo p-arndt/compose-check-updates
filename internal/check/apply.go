@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 )
@@ -75,17 +76,17 @@ func sameImageLine(line, raw string) bool {
 	return strings.TrimRight(line, blanks) == strings.TrimRight(raw, blanks)
 }
 
+// coversLine reports whether line is one of the lines a reference was scanned
+// from: the one it was first seen on, or any of the further ones collected
+// beside it.
+func coversLine(line, raw string, extra []string) bool {
+	return sameImageLine(line, raw) ||
+		slices.ContainsFunc(extra, func(e string) bool { return sameImageLine(line, e) })
+}
+
 // rewrites reports whether line is one this update has to change.
 func (u *Update) rewrites(line string) bool {
-	if sameImageLine(line, u.RawLine) {
-		return true
-	}
-	for _, extra := range u.ExtraLines {
-		if sameImageLine(line, extra) {
-			return true
-		}
-	}
-	return false
+	return coversLine(line, u.RawLine, u.ExtraLines)
 }
 
 func (u *Update) Backup() error { return backupFile(u.FilePath) }
@@ -233,7 +234,7 @@ func (u *Update) Restart() error {
 		return err
 	}
 
-	args := append(append([]string{}, compose[1:]...), "-f", u.RestartPath(), "up", "-d")
+	args := slices.Concat(compose[1:], []string{"-f", u.RestartPath(), "up", "-d"})
 	// A new base image only reaches the running container once the image is built
 	// again.
 	if u.IsDockerfile() {
