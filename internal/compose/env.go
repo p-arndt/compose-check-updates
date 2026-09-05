@@ -82,9 +82,6 @@ func valueRange(line string, from int) (start, end int) {
 		}
 	}
 
-	rest := line[i:]
-	if j := strings.Index(rest, " #"); j >= 0 {
-		rest = rest[:j]
-	}
+	rest, _, _ := strings.Cut(line[i:], " #")
 	return i, i + len(strings.TrimRight(rest, " \t\r"))
 }

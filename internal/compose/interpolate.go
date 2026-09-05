@@ -1,6 +1,7 @@
 package compose
 
 import (
+	"cmp"
 	"os"
 	"regexp"
 	"strings"
@@ -74,10 +75,9 @@ func Expand(text string, env map[string]EnvEntry) (string, []Expansion) {
 			continue
 		}
 
-		name := group(text, m, 1)
-		if name == "" {
-			name = group(text, m, 4)
-		}
+		// `${NAME}` and bare `$NAME` are separate groups, and exactly one of them
+		// took part in the match.
+		name := cmp.Or(group(text, m, 1), group(text, m, 4))
 		value, source, entry := substitute(name, group(text, m, 2), group(text, m, 3), env)
 
 		expansions = append(expansions, Expansion{

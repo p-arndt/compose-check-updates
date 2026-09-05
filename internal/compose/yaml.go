@@ -78,8 +78,7 @@ func scalarValue(line string) string {
 	if strings.HasPrefix(value, "#") {
 		return ""
 	}
-	if i := strings.Index(value, " #"); i >= 0 {
-		value = strings.TrimSpace(value[:i])
-	}
+	value, _, _ = strings.Cut(value, " #")
+	value = strings.TrimSpace(value)
 	return strings.Trim(value, `"'`)
 }

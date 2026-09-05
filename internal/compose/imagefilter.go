@@ -67,10 +67,9 @@ func (m *ImageMatcher) Match(image string) bool {
 		}
 	}
 
-	last := image
-	if i := strings.LastIndex(image, "/"); i >= 0 {
-		last = image[i+1:]
-	}
+	// LastIndex reports -1 for a name without a separator, which is the whole
+	// name — exactly what a bare pattern is compared with.
+	last := image[strings.LastIndex(image, "/")+1:]
 	for _, pattern := range m.names {
 		if globMatch(pattern, last) {
 			return true
