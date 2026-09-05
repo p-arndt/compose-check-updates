@@ -98,7 +98,7 @@ func TestScanDiscoversComposeFiles(t *testing.T) {
 	events := collect(t, ch)
 	require.NotEmpty(t, events)
 	require.Equal(t, EventDiscovered, events[0].Kind, "EventDiscovered must be first")
-	assert.Equal(t, 8, events[0].Total)
+	assert.Equal(t, 9, events[0].Total)
 
 	expected := []string{
 		"docker-compose.yml",
@@ -106,6 +106,7 @@ func TestScanDiscoversComposeFiles(t *testing.T) {
 		"folder1/compose.yml",
 		"folder2/docker-compose.yaml",
 		"folder2/docker-compose.yml",
+		"interpolated/docker-compose.yml",
 		"keycloak/compose.yaml",
 		"sample1/docker-compose.yml",
 		"sample2/compose.yml",
@@ -130,7 +131,7 @@ func TestScanHonoursExclude(t *testing.T) {
 
 	events := collect(t, ch)
 	require.NotEmpty(t, events)
-	assert.Equal(t, 4, events[0].Total)
+	assert.Equal(t, 5, events[0].Total)
 
 	for _, path := range kindPaths(events, EventFileStart) {
 		assert.NotContains(t, path, "/folder1/")

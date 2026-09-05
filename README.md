@@ -168,6 +168,50 @@ limit, which starts to matter past a few dozen images.
 </details>
 
 <details>
+<summary><strong>Tags kept in a variable (<code>${IMMICH_VERSION}</code>)</strong></summary>
+
+Plenty of stacks keep the release in the `.env` next to the Compose file rather
+than in the file itself:
+
+```yaml
+# docker-compose.yml
+services:
+  server:
+    image: ghcr.io/immich-app/immich-server:${IMMICH_VERSION}
+```
+
+```bash
+# .env
+IMMICH_VERSION=v1.119.0
+```
+
+`ccu` interpolates the reference the way `docker compose` does — your shell
+environment first, then the `.env`, then a default written into the reference
+itself (`${IMMICH_VERSION:-release}`) — so it checks the tag your stack actually
+runs on. `${VAR}`, `$VAR`, `${VAR:-default}`, `${VAR-default}` and the `$$`
+escape are all understood.
+
+Updates are written back **where the version lives**. For the stack above that
+is the `.env` line, with the Compose file left untouched:
+
+```diff
+-IMMICH_VERSION=v1.119.0
++IMMICH_VERSION=v1.120.1
+```
+
+Quoting, spacing and trailing comments on that line survive, and the `.env` gets
+its own `.ccu` backup. Only the variable's share of the tag moves: on
+`postgres:${PG_VERSION}-alpine` the `-alpine` stays in the Compose file and just
+`PG_VERSION` is raised.
+
+Two cases are reported but not written, because there is no file to write them
+to: a variable set in the environment `ccu` itself runs with, and a tag assembled
+from more than one variable. A variable nothing defines is reported as
+`unresolved-variable`, naming the variable and the `.env` it belongs in.
+
+</details>
+
+<details>
 <summary><strong>"no tag matches the newest digest" — tags that aren't semver</strong></summary>
 
 Plenty of images publish something that is a version but not a *semantic* one:

@@ -115,6 +115,16 @@ func (c *Checker) resolve(u *Update, major, minor, patch bool) {
 	u.Versioning = p.Versioning
 	u.VersioningPattern = p.VersioningPattern
 
+	// A variable nothing defines leaves the reference with no tag at all. Saying
+	// so by name beats the generic "no tag" message: the file does spell a tag,
+	// it is the .env next to it that is missing the line.
+	if u.TagVar != nil && u.TagVar.Unset && u.CurrentDigest == "" {
+		u.MarkUnreadable(ReasonUnresolvedVariable,
+			fmt.Sprintf("this image's tag comes from %s, which nothing defines — set %s in %s", u.TagVar.Raw, u.TagVar.Name, compose.EnvFile(u.FilePath)))
+		slog.Warn("Skipping (unresolved variable)", "image", u.ImageName, "variable", u.TagVar.Name, "path", u.FilePath)
+		return
+	}
+
 	scheme, ok := versioning.ByName(u.Versioning, u.VersioningPattern)
 	if !ok {
 		// The config layer rejects an unknown name and an unusable pattern alike
@@ -281,6 +291,15 @@ func (c *Checker) updates() ([]Update, error) {
 		name, tag, digest := registry.ParseRef(occ.Reference)
 		key := name + ":" + tag + "@" + digest
 
+		// Two spellings of one image are the same update — `nginx:1.2` and
+		// `docker.io/library/nginx:1.2` move together. Two interpolated ones are
+		// not: they resolve alike today but are written back to different
+		// variables, so the spelling has to keep them apart.
+		tagVar := tagVarFor(occ)
+		if tagVar != nil {
+			key = occ.Raw + "\x00" + key
+		}
+
 		service := occ.Service
 		if c.composePath != "" {
 			// A Dockerfile is only ever reached through the service that builds it.
@@ -295,14 +314,17 @@ func (c *Checker) updates() ([]Update, error) {
 
 		byImage[key] = len(updates)
 		updates = append(updates, Update{
-			FilePath:      c.path,
-			ComposePath:   c.composePath,
-			RawLine:       occ.Line,
-			Services:      AppendService(nil, service),
-			FullImageName: occ.Reference,
+			FilePath:    c.path,
+			ComposePath: c.composePath,
+			RawLine:     occ.Line,
+			Services:    AppendService(nil, service),
+			// The raw spelling, because this is what the user reads in the report
+			// and what has to be found again in the line to rewrite it.
+			FullImageName: occ.Raw,
 			ImageName:     name,
 			CurrentTag:    tag,
 			CurrentDigest: digest,
+			TagVar:        tagVar,
 		})
 	}
 

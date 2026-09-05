@@ -38,13 +38,31 @@ func (u *Update) replacements() []replacement {
 	}
 
 	var reps []replacement
-	if u.CurrentTag != "" && u.LatestTag != "" && u.LatestTag != u.CurrentTag {
-		reps = append(reps, replacement{u.CurrentTag, u.LatestTag})
+	if u.movesTag() {
+		switch {
+		case u.TagVar == nil:
+			reps = append(reps, replacement{u.CurrentTag, u.LatestTag})
+		case u.TagVar.FromDefault:
+			// The value lives in the reference's own default, so the image line is
+			// still where it is written — just the default rather than the tag.
+			if value, ok := u.TagVar.valueFor(u.LatestTag); ok {
+				if raw, ok := u.TagVar.rawWithValue(value); ok {
+					reps = append(reps, replacement{u.TagVar.Raw, raw})
+				}
+			}
+		}
+		// A variable assigned in a .env is rewritten there, by applyEnv.
 	}
 	if u.CurrentDigest != "" && u.IsDigestUpdate() {
 		reps = append(reps, replacement{u.CurrentDigest, u.LatestDigest})
 	}
 	return reps
+}
+
+// movesTag reports whether this update changes the tag, as opposed to moving a
+// digest under an unchanged one.
+func (u *Update) movesTag() bool {
+	return u.CurrentTag != "" && u.LatestTag != "" && u.LatestTag != u.CurrentTag
 }
 
 // sameImageLine reports whether line is the one raw was scanned from. Trailing
@@ -67,13 +85,7 @@ func (u *Update) rewrites(line string) bool {
 	return false
 }
 
-func (u *Update) Backup() error {
-	input, err := os.ReadFile(u.FilePath)
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(u.FilePath+backupSuffix, input, 0644)
-}
+func (u *Update) Backup() error { return backupFile(u.FilePath) }
 
 // Apply rewrites every line of the file carrying this reference, after backing
 // the file up once.
@@ -85,33 +97,85 @@ func (u *Update) Apply() error {
 	writeMu.Lock()
 	defer writeMu.Unlock()
 
-	if _, err := os.Stat(u.FilePath + backupSuffix); os.IsNotExist(err) {
-		if err := u.Backup(); err != nil {
-			return err
-		}
-	}
-
-	input, err := os.ReadFile(u.FilePath)
-	if err != nil {
+	// The .env goes first: leaving the compose file rewritten but the variable
+	// behind on a failure would point the stack at a release that is only half
+	// recorded, while the reverse order leaves both files simply unchanged.
+	if err := u.applyEnv(); err != nil {
 		return err
 	}
 
 	reps := u.replacements()
-	lines := strings.Split(string(input), "\n")
-	for i, line := range lines {
-		// The whole line has to match, not merely start with the reference: with
-		// `nginx:stable` and `nginx:stable-alpine` in the same file, a substring
-		// match rewrote the second into "nginx:stable@sha256:…-alpine".
-		if !u.rewrites(line) {
-			continue
-		}
-		for _, r := range reps {
-			line = strings.Replace(line, r.old, r.new, 1)
-		}
-		lines[i] = line
+	if len(reps) == 0 {
+		return nil
 	}
 
-	return os.WriteFile(u.FilePath, []byte(strings.Join(lines, "\n")), 0644)
+	return rewriteFile(u.FilePath, func(lines []string) {
+		for i, line := range lines {
+			// The whole line has to match, not merely start with the reference: with
+			// `nginx:stable` and `nginx:stable-alpine` in the same file, a substring
+			// match rewrote the second into "nginx:stable@sha256:…-alpine".
+			if !u.rewrites(line) {
+				continue
+			}
+			for _, r := range reps {
+				line = strings.Replace(line, r.old, r.new, 1)
+			}
+			lines[i] = line
+		}
+	})
+}
+
+// applyEnv writes the new version into the .env assignment the tag is
+// interpolated from, which for such an image is the only place the release is
+// recorded at all.
+func (u *Update) applyEnv() error {
+	if u.TagVar == nil || u.TagVar.EnvPath == "" || !u.movesTag() {
+		return nil
+	}
+
+	value, ok := u.TagVar.valueFor(u.LatestTag)
+	if !ok {
+		return fmt.Errorf("refusing to update %s: %q does not fit around %s", u.FullImageName, u.LatestTag, u.TagVar.Raw)
+	}
+
+	return rewriteFile(u.TagVar.EnvPath, func(lines []string) {
+		// Sought by position, not by text: a .env may assign the same variable
+		// twice, and compose reads the last one.
+		i := u.TagVar.Env.LineNo - 1
+		if i < 0 || i >= len(lines) || lines[i] != u.TagVar.Env.Line {
+			return
+		}
+		lines[i] = u.TagVar.envLineWithValue(value)
+	})
+}
+
+// rewriteFile backs a file up once and applies edit to its lines. The backup is
+// what makes an update reversible, and one per file per run: a second image of
+// the same file must not overwrite the copy taken before the first was written.
+func rewriteFile(path string, edit func(lines []string)) error {
+	if _, err := os.Stat(path + backupSuffix); os.IsNotExist(err) {
+		if err := backupFile(path); err != nil {
+			return err
+		}
+	}
+
+	input, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+
+	lines := strings.Split(string(input), "\n")
+	edit(lines)
+
+	return os.WriteFile(path, []byte(strings.Join(lines, "\n")), 0644)
+}
+
+func backupFile(path string) error {
+	input, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path+backupSuffix, input, 0644)
 }
 
 // writable refuses the updates that would write something wrong, rather than
@@ -119,6 +183,17 @@ func (u *Update) Apply() error {
 func (u *Update) writable() error {
 	if u.IsUnreadable() {
 		return fmt.Errorf("refusing to update %s: %s", u.FullImageName, u.UnreadableMessage)
+	}
+	// An interpolated tag is only ever written back through its variable. Writing
+	// the new tag into the image line instead would drop the variable and with it
+	// everything else reading it.
+	if u.TagVar != nil && u.movesTag() {
+		if u.TagVar.Unwritable != "" {
+			return fmt.Errorf("refusing to update %s: %s", u.FullImageName, u.TagVar.Unwritable)
+		}
+		if _, ok := u.TagVar.valueFor(u.LatestTag); !ok {
+			return fmt.Errorf("refusing to update %s: %q does not fit around %s", u.FullImageName, u.LatestTag, u.TagVar.Raw)
+		}
 	}
 	if u.CurrentDigest == "" {
 		return nil

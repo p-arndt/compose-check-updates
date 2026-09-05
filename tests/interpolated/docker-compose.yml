@@ -1,0 +1,14 @@
+# A stack that keeps its release in the .env next to it, the way immich and
+# friends do: the compose file names the variable, the .env names the version.
+services:
+  server:
+    image: ghcr.io/example/app:${APP_VERSION}
+    restart: unless-stopped
+
+  database:
+    image: postgres:${POSTGRES_VERSION}-alpine
+    restart: unless-stopped
+
+  cache:
+    # No .env entry, so the default in the reference is what this resolves to.
+    image: redis:${REDIS_VERSION:-7.2.4}

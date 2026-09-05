@@ -35,7 +35,7 @@ func DockerfileImages(path string) ([]Occurrence, error) {
 			return
 		}
 
-		found = append(found, Occurrence{Line: line, Reference: image})
+		found = append(found, Occurrence{Line: line, Raw: image, Reference: image})
 	})
 
 	return found, err

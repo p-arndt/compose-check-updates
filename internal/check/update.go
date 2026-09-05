@@ -29,6 +29,9 @@ const (
 	ReasonNoTagOrDigest = "no-tag-or-digest"
 	// ReasonNoFloatingDigest: the floating tag to pin resolves to no manifest.
 	ReasonNoFloatingDigest = "floating-digest-unresolved"
+	// ReasonUnresolvedVariable: the tag is interpolated from a variable nothing
+	// defines, so not even the tag the stack runs on is known.
+	ReasonUnresolvedVariable = "unresolved-variable"
 )
 
 // Update is one image reference and what it could move to.
@@ -67,6 +70,11 @@ type Update struct {
 	// gone, and a level derived under the wrong scheme is worse than none.
 	Versioning        policy.Versioning
 	VersioningPattern string
+
+	// TagVar is set when CurrentTag was interpolated from a variable rather than
+	// written in the image line, and says where a new tag has to be written
+	// instead. Nil for the ordinary reference that spells its own tag.
+	TagVar *TagVar
 
 	// PinsFloating marks the one update that adds a digest instead of changing
 	// one: a bare floating tag gaining the digest it resolves to right now.

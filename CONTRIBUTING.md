@@ -44,7 +44,7 @@ The `ccu` entry point is `main.go` at the repo root. Everything else is
 | -------------- | --------------------------------------------------------------------------- |
 | `policy`       | the vocabulary of what a user recorded about an image: level caps, versioning scheme, reference and floating tags |
 | `versioning`   | reading a tag as a version and ordering them — the `semver`, `loose` and `regex` schemes |
-| `compose`      | finding compose files below a directory, the images they declare, and the Dockerfiles their services build |
+| `compose`      | finding compose files below a directory, the images they declare, the `.env` variables those references interpolate, and the Dockerfiles their services build |
 | `registry`     | talking to OCI registries: listing tags, resolving a reference to a digest  |
 | `check`        | resolving one file's images against a registry, and writing the new tags back |
 | `scanner`      | walking a directory and checking every file found, streaming events as they resolve |
