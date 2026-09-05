@@ -39,7 +39,7 @@ func explain(t *testing.T, global, project, image, flagVersioning string) string
 	}
 
 	var buf bytes.Buffer
-	Explain(&buf, loaded, effective, image, policy.Versioning(flagVersioning))
+	Explain(&buf, loaded, effective, image, policy.Versioning(flagVersioning), "")
 	return buf.String()
 }
 
@@ -295,7 +295,7 @@ func TestExplainExplicitFile(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	Explain(&buf, loaded, loaded.Config, "redis", "")
+	Explain(&buf, loaded, loaded.Config, "redis", "", "")
 
 	if !strings.Contains(buf.String(), "images.redis.max in "+path) {
 		t.Errorf("expected the named file to be credited, got:\n%s", buf.String())
@@ -308,7 +308,7 @@ func TestExplainWithoutFiles(t *testing.T) {
 	effective := Config{Images: map[string]policy.Image{"redis": {Max: policy.LevelMinor}}}
 
 	var buf bytes.Buffer
-	Explain(&buf, Loaded{}, effective, "redis", "")
+	Explain(&buf, Loaded{}, effective, "redis", "", "")
 
 	out := buf.String()
 	if !strings.Contains(out, "Config files: none found") {

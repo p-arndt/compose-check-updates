@@ -55,6 +55,10 @@ type Flags struct {
 	// at, and a selection written down in a file would silently hide images from
 	// every later run.
 	Images []string
+	// MinAge is how long a tag has to have been published before it is offered,
+	// as a duration ("7d", "36h"). Empty leaves the config to decide; per-image
+	// entries still win, for the same reason they do over -versioning.
+	MinAge string
 	// Versioning overrides the default scheme image tags are read under for this
 	// run. Empty leaves the config, and failing that `semver`, to decide.
 	// Per-image entries still win: naming an image is the more specific statement.
@@ -176,6 +180,7 @@ func registerFlags(args *Flags, versioningName *string) {
 	flag.StringVar(&args.Config, "config", "", "Read this config file instead of searching for one")
 	flag.StringVar(&args.Format, "format", "auto", "Report output format: auto, pretty or json")
 	flag.Var((*imageList)(&args.Images), "image", "Only check images matching this name or pattern (repeatable, comma-separated); with the config command: explain how one image's settings were resolved")
+	flag.StringVar(&args.MinAge, "min-age", "", "Only offer tags published at least this long ago, e.g. 7d or 36h (per-image config still wins)")
 	flag.StringVar(versioningName, "versioning", "", "Default scheme for reading image tags as versions: semver or loose (per-image config still wins)")
 }
 
@@ -275,7 +280,7 @@ func usage(w io.Writer) {
 	fmt.Fprintln(tw, "  config -image <name>\tExplain how one image's settings were resolved, and from which file")
 	fmt.Fprintln(tw, "  help\tShow this help message")
 	fmt.Fprintln(tw, "  version\tShow version information")
-	fmt.Fprintf(tw, "\nFlags (-d, -exclude, -image, -config, -pin-floating and -versioning apply to both modes, the rest only to `%s check`):\n", name)
+	fmt.Fprintf(tw, "\nFlags (-d, -exclude, -image, -config, -pin-floating, -versioning and -min-age apply to both modes, the rest only to `%s check`):\n", name)
 	flag.VisitAll(func(f *flag.Flag) {
 		// An empty usage string marks a flag kept only for backwards
 		// compatibility; see the registrations in Parse.

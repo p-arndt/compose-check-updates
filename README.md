@@ -85,6 +85,7 @@ ccu check -image traefik  # check one image and nothing else
 | `-f` | Full mode — consider every newer version, not just patches | `false` |
 | `-major` / `-minor` / `-patch` | Only suggest that level | `-patch` |
 | `-versioning` | Default tag-reading scheme: `semver` or `loose` | `semver` |
+| `-min-age` | Only offer tags published at least this long ago, e.g. `7d` or `36h` | none |
 | `-format` | Output format: `auto`, `pretty` or `json` | `auto` |
 | `-pin-floating` | Pin floating tags (`latest`, `main`, …) to the digest they resolve to | `false` |
 | `-dockerfiles` | Also check the base images of Dockerfiles built by a compose service | `true` |
@@ -113,11 +114,13 @@ exclude: [node_modules, services/legacy]
 pin_floating: true
 dockerfiles: false
 versioning: semver
+min_age: 7d
 floating_tags: [release, canary]
 
 images:
   library/traefik:
     max: minor
+    min_age: 3d
   nousresearch/hermes-agent:
     versioning: loose
   acme/dated:
@@ -136,6 +139,7 @@ images:
 | `pin_floating` | bool | `false` | Offer floating tags the digest they resolve to |
 | `dockerfiles` | bool | `true` | Also check `FROM` lines of Dockerfiles built by a service |
 | `versioning` | `semver`, `loose` | `semver` | How tags are read as versions, run-wide |
+| `min_age` | duration (`7d`, `36h`) | none | Only offer tags published at least this long ago |
 | `floating_tags` | list of tags | see below | Extra tags treated as moving. **Added** to the built-in set. |
 | `images` | map | — | Per-image settings, keyed by image name **without tag or digest** |
 
@@ -151,6 +155,21 @@ images:
 | `versioning_pattern` | Go regex | Required by, and only valid with, `versioning: regex` |
 | `reference_tag` | tag name | The moving tag digest mode compares against, instead of `latest` |
 | `floating_tags` | list of tags | Extra moving tags for this repository only |
+| `min_age` | duration (`7d`, `36h`) | Settling time for this image. Outranks the run-wide key and the flag. |
+
+### Why `min_age`
+
+A tag that went out an hour ago is the one most likely to be pulled, rebuilt or
+followed by a `.1` before the day is out. `min_age` says how long a release has
+to have been on the registry before ccu offers it: with `min_age: 7d`, a `1.4.2`
+published yesterday is skipped and you are offered `1.4.1` instead — the newest
+tag *at that level* that is old enough. Nothing is hidden permanently; the same
+tag is offered as soon as it has settled.
+
+The age comes from the `created` field of the image's config blob (falling back
+to the `org.opencontainers.image.created` annotation). Registries that record
+neither leave ccu with no age, and a tag whose age is unknown is offered as
+usual — `min_age` skips tags known to be young, not ones it cannot date.
 
 > [!TIP]
 > A setting not arriving is almost always the key: lookup is **exact**, on the
@@ -441,7 +460,8 @@ itself; `CCU_NO_UPDATE_CHECK=1` turns the check off.
 
 Updates grouped per Compose file, streaming in as registries answer.
 **Arrows move; `space`/`enter` act on whatever has the focus.** `tab` reaches the
-detail column on an image and the settings bar anywhere else. `A` applies, `?`
+detail column on an image and the settings bar anywhere else. The detail column
+also shows how long the target release has been out (`3d ago`). `A` applies, `?`
 shows every key.
 
 ```
@@ -539,6 +559,7 @@ parseable.
 | `file` | both | the Compose file, or the Dockerfile when the update sits on a `FROM` line |
 | `compose_file` | Dockerfile updates | the Compose file that builds it, i.e. the one to hand `docker compose -f` |
 | `current` / `latest` | update | the tag now, and the one this run picked |
+| `published` | update | when the image behind `latest` was built, RFC 3339 — absent when the registry does not say |
 | `level` | update | `major`, `minor`, `patch`, `digest` or `pin` |
 | `current_digest` / `latest_digest` | digest-pinned images | only present when the digest actually moved |
 | `targets` | update | the tag available at each level, so you can pick a different one |

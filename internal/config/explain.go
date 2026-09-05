@@ -12,10 +12,10 @@ import (
 // Explain writes how one image's settings were resolved: the value in effect and
 // the layer that produced it — which is what Show's merged result cannot say.
 //
-// flagVersioning is -versioning as passed, and arrives separately because main
-// has already folded it into effective, where it is indistinguishable from a
-// config file.
-func Explain(w io.Writer, loaded Loaded, effective Config, image string, flagVersioning policy.Versioning) {
+// flagVersioning and flagMinAge are -versioning and -min-age as passed, and
+// arrive separately because main has already folded them into effective, where
+// they are indistinguishable from a config file.
+func Explain(w io.Writer, loaded Loaded, effective Config, image string, flagVersioning policy.Versioning, flagMinAge string) {
 	fmt.Fprintf(w, "Image: %s\n\n", image)
 
 	if len(loaded.Sources) == 0 {
@@ -40,7 +40,35 @@ func Explain(w io.Writer, loaded Loaded, effective Config, image string, flagVer
 		fmt.Fprintf(w, "  max: %s (%s)\n", cap, from)
 	}
 
+	minAge, from := explainMinAge(loaded, effective, image, flagMinAge)
+	if minAge == "" {
+		fmt.Fprintf(w, "  min_age: none (%s)\n", from)
+	} else {
+		fmt.Fprintf(w, "  min_age: %s (%s)\n", minAge, from)
+	}
+
 	explainMatch(w, loaded, effective, image)
+}
+
+// explainMinAge resolves the settling time and names the layer it came from.
+// Four layers can set it — the image entry, the flag, and the run-wide key in
+// either file — which is exactly why it needs explaining.
+func explainMinAge(loaded Loaded, effective Config, image, flagMinAge string) (minAge, from string) {
+	minAge = effective.Policies().For(image).MinAge
+
+	if effective.Images[image].MinAge != "" {
+		return minAge, entryOrigin(loaded, image, ".min_age")
+	}
+	if flagMinAge != "" {
+		return minAge, "-min-age on the command line"
+	}
+	if loaded.Project.MinAge != "" {
+		return minAge, keyOrigin("min_age", loaded.ProjectPath)
+	}
+	if loaded.Global.MinAge != "" {
+		return minAge, keyOrigin("min_age", loaded.GlobalPath)
+	}
+	return minAge, "not set anywhere"
 }
 
 // explainVersioning resolves the scheme and names the layer it came from. The

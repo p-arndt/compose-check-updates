@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 // Digests are stable stand-ins for manifest digests, distinct enough that a
@@ -28,13 +29,16 @@ const (
 	mediaTypeConfig   = "application/vnd.oci.image.config.v1+json"
 )
 
-// Image is what a tag serves beyond its digest: the labels of its config blob,
-// annotations on its manifest, and whether it is published as a multi-platform
-// index rather than a single manifest.
+// Image is what a tag serves beyond its digest: the labels and build date of
+// its config blob, annotations on its manifest, and whether it is published as
+// a multi-platform index rather than a single manifest.
 type Image struct {
 	Labels      map[string]string
 	Annotations map[string]string
 	Index       bool
+	// Created is written into the config blob's `created` field; zero leaves the
+	// field out, which is how an image built without a date looks.
+	Created time.Time
 }
 
 // Options is the registry a test wants served.
@@ -53,6 +57,19 @@ type Options struct {
 func Server(t *testing.T, repo string, tags []string, tagDigests map[string]string) *httptest.Server {
 	t.Helper()
 	return ServerWith(t, Options{Repo: repo, Tags: tags, TagDigests: tagDigests})
+}
+
+// ServerWithCreated is Server plus a build date per tag, served the way a real
+// registry does it: the manifest points at a config blob, and only that blob
+// says when the image was built. Tags left out of created keep the bare
+// placeholder manifest, which is how a repository with no config blob behaves.
+func ServerWithCreated(t *testing.T, repo string, tags []string, tagDigests map[string]string, created map[string]time.Time) *httptest.Server {
+	t.Helper()
+	images := make(map[string]Image, len(created))
+	for tag, at := range created {
+		images[tag] = Image{Created: at}
+	}
+	return ServerWith(t, Options{Repo: repo, Tags: tags, TagDigests: tagDigests, Images: images})
 }
 
 // ServerWith serves a registry that also answers for manifest bodies and config
@@ -138,12 +155,16 @@ func buildImages(images map[string]Image) (blobs map[string][]byte, byDigest map
 	byTag = map[string]blob{}
 
 	for tag, image := range images {
-		config := mustJSON(map[string]any{
+		configBody := map[string]any{
 			"architecture": "amd64",
 			"os":           "linux",
 			"config":       map[string]any{"Labels": image.Labels},
 			"rootfs":       map[string]any{"type": "layers", "diff_ids": []string{}},
-		})
+		}
+		if !image.Created.IsZero() {
+			configBody["created"] = image.Created.UTC().Format(time.RFC3339)
+		}
+		config := mustJSON(configBody)
 		configDigest := digestOf(config)
 		blobs[configDigest] = config
 

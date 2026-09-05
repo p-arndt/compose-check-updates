@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"time"
 
 	"github.com/regclient/regclient"
 	"github.com/regclient/regclient/config"
@@ -18,6 +19,10 @@ import (
 type Fetcher interface {
 	Tags(image string) ([]string, error)
 	Digest(image string) (string, error)
+	// Created is when the image behind a reference was built. It is the one
+	// question that needs the config blob rather than a manifest header, so a
+	// caller that only wants a tag list never pays for it.
+	Created(image string) (time.Time, error)
 }
 
 // Client is the live Fetcher: a regclient talking to real registries over the
@@ -25,6 +30,7 @@ type Fetcher interface {
 type Client struct {
 	rc *regclient.RegClient
 	sourceCache
+	created createdCache
 }
 
 // New returns a client for the public registries. A non-empty registryURL points

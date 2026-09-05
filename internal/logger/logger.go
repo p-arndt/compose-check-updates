@@ -30,10 +30,13 @@ func (h *CustomHandler) Enabled(_ context.Context, level slog.Level) bool {
 
 // Column widths for fixed-layout output.
 const (
-	levelWidth   = 7  // [ERROR] is widest
-	msgWidth     = 33 // "Skipping (failed fetching tags)" = 31
-	imageWidth   = 29 // "127.0.0.1:5000/myrepo/myapp"  = 27
-	versionWidth = 22 // "v2.9.3 -> 3.6.10" = ~17
+	levelWidth = 7  // [ERROR] is widest
+	msgWidth   = 33 // "Skipping (failed fetching tags)" = 31
+	imageWidth = 29 // "127.0.0.1:5000/myrepo/myapp"  = 27
+	// versionWidth has room for the relative age as well: "v2.9.3 -> 3.6.10" is
+	// ~17 and " (2mo ago)" another 10, so the age rides inside the column instead
+	// of pushing the path out of line on the rows that have one.
+	versionWidth = 32
 )
 
 // Handle formats and writes the Record to the output.
@@ -70,6 +73,9 @@ func (h *CustomHandler) Handle(_ context.Context, r slog.Record) error {
 	}
 	if current != "" && latest != "" {
 		versionStr := current + " -> " + colorizeChangedSegments(current, latest, updateLevel)
+		if age := attrs["age"]; age != "" {
+			versionStr += " (" + age + ")"
+		}
 		sb.WriteString(padRight(versionStr, versionWidth) + "  ")
 	}
 	if path != "" {
@@ -79,7 +85,7 @@ func (h *CustomHandler) Handle(_ context.Context, r slog.Record) error {
 	var extra []string
 	for k, v := range attrs {
 		switch k {
-		case "image", "path", "file", "current", "latest", "update_level":
+		case "image", "path", "file", "current", "latest", "update_level", "age":
 		default:
 			extra = append(extra, k+"="+v)
 		}
