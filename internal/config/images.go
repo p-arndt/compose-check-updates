@@ -75,8 +75,10 @@ func validateImages(images map[string]policy.Image) error {
 }
 
 func validateImage(p policy.Image) error {
-	if p.Max != "" && !p.Max.Valid() {
-		return fmt.Errorf("max: %q is not one of %s, %s, %s", p.Max, policy.LevelPatch, policy.LevelMinor, policy.LevelMajor)
+	if p.Max != "" {
+		if err := validateLevel(p.Max); err != nil {
+			return err
+		}
 	}
 	if err := versioning.Validate(p.Versioning); err != nil {
 		return err
@@ -97,31 +99,42 @@ func validateImage(p policy.Image) error {
 	return versioning.ValidatePattern(p.Versioning, p.VersioningPattern)
 }
 
+// validateLevel rejects a cap that names no level. Shared with the config
+// writer, so a value ccu itself writes is refused in the same words the parser
+// would refuse it in.
+func validateLevel(level policy.Level) error {
+	if !level.Valid() {
+		return fmt.Errorf("max: %q is not one of %s, %s, %s", level, policy.LevelPatch, policy.LevelMinor, policy.LevelMajor)
+	}
+	return nil
+}
+
+// validateDuration rejects a duration ccu cannot read, or one that is negative
+// — which no key here has a meaning for. The message names the key, so the two
+// wrappers below differ only in what they are called and in what a negative
+// value would have meant.
+func validateDuration(key, value, negativeHint string) error {
+	d, err := policy.ParseDuration(value)
+	if err != nil {
+		return fmt.Errorf("%s: %w", key, err)
+	}
+	if d < 0 {
+		return fmt.Errorf("%s: %q is negative; %s", key, value, negativeHint)
+	}
+	return nil
+}
+
 // ValidateMinAge rejects a settling time ccu cannot read or would never let an
 // image move again under. Exported because the same value arrives from the
 // command line, where it has to be refused just as loudly as in a file.
 func ValidateMinAge(value string) error {
-	d, err := policy.ParseDuration(value)
-	if err != nil {
-		return fmt.Errorf("min_age: %w", err)
-	}
-	if d < 0 {
-		return fmt.Errorf("min_age: %q is negative; a tag cannot be published in the future", value)
-	}
-	return nil
+	return validateDuration("min_age", value, "a tag cannot be published in the future")
 }
 
 // ValidateCacheTTL rejects a cache lifetime ccu cannot read. Exported for the
 // same reason ValidateMinAge is: the value also arrives from outside a file.
 func ValidateCacheTTL(value string) error {
-	d, err := policy.ParseDuration(value)
-	if err != nil {
-		return fmt.Errorf("cache_ttl: %w", err)
-	}
-	if d < 0 {
-		return fmt.Errorf("cache_ttl: %q is negative; use 0 to read nothing back from the cache", value)
-	}
-	return nil
+	return validateDuration("cache_ttl", value, "use 0 to read nothing back from the cache")
 }
 
 // tagPattern is the tag grammar registries accept. Checking it here turns a typo

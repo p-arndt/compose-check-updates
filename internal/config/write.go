@@ -28,8 +28,8 @@ const configFileMode fs.FileMode = 0o644
 func SetImageMax(path, image string, max policy.Level) error {
 	// Refuse before touching the file rather than writing a value the next Parse
 	// would reject: a config ccu itself wrote should never fail to load.
-	if !max.Valid() {
-		return fmt.Errorf("config: max: %q is not one of %s, %s, %s", max, policy.LevelPatch, policy.LevelMinor, policy.LevelMajor)
+	if err := validateLevel(max); err != nil {
+		return fmt.Errorf("config: %w", err)
 	}
 
 	return setImageKey(path, image, "max", string(max))
