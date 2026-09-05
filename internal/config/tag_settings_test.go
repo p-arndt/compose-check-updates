@@ -187,7 +187,7 @@ func TestShowListsTagSettingsPerImage(t *testing.T) {
 		"internal/thing": {Max: policy.LevelMinor, ReferenceTag: "stable"},
 		"internal/other": {FloatingTags: []string{"release", "canary"}},
 		"library/redis":  {Versioning: policy.VersioningLoose},
-	}})
+	}}, "")
 
 	want := []string{
 		"    internal/thing: max minor, reference_tag stable\n",

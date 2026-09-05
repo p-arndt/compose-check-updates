@@ -50,6 +50,11 @@ type Options struct {
 	// missing here is served the placeholder manifest, which is all a digest
 	// lookup ever reads.
 	Images map[string]Image
+
+	// Intercept, when set, sees every request before it is served. Returning true
+	// means it answered the request itself — how a test counts what a cache saved
+	// it, or serves the 429 a rate-limited registry would.
+	Intercept func(w http.ResponseWriter, r *http.Request) bool
 }
 
 // Server serves a tag list for repo and a manifest per entry of tagDigests. It
@@ -81,6 +86,10 @@ func ServerWith(t *testing.T, opts Options) *httptest.Server {
 	blobs, manifests, tagManifests := buildImages(opts.Images)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if opts.Intercept != nil && opts.Intercept(w, r) {
+			return
+		}
+
 		if strings.HasSuffix(r.URL.Path, "/tags/list") {
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(map[string]any{"name": opts.Repo, "tags": opts.Tags})

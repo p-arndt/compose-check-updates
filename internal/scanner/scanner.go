@@ -43,6 +43,10 @@ type Options struct {
 	// tag of its own.
 	Dockerfiles bool
 
+	// Cache is the run's on-disk registry cache, shared by every client the scan
+	// builds. nil asks the registries for everything, every time.
+	Cache *registry.Cache
+
 	Concurrency int // compose files checked at once; <=0 means defaultConcurrency
 }
 
@@ -105,7 +109,7 @@ func CheckImage(opts Options, target check.Update) (Event, error) {
 }
 
 func checkerFor(opts Options, target check.Update) *check.Checker {
-	reg := registry.New("")
+	reg := registry.NewWithCache("", opts.Cache)
 	if target.ComposePath == "" {
 		return check.New(target.FilePath, reg, opts.Policies)
 	}
@@ -220,7 +224,10 @@ func checkFilePins(ctx context.Context, events chan<- Event, opts Options, path 
 // services build. Their updates belong to the same stack, and the file counters
 // count compose files, which is what the user pointed ccu at.
 func checkAll(opts Options, path string, run func(*check.Checker) ([]check.Update, error)) ([]check.Update, error) {
-	reg := registry.New("")
+	// One client per file, as before, but they all consult the same cache: an
+	// image two stacks share is then one lookup, whichever worker gets there
+	// first.
+	reg := registry.NewWithCache("", opts.Cache)
 
 	// Built here rather than shared across the worker pool: it is read-only, and
 	// per-file it costs nothing next to the requests one file makes.

@@ -29,13 +29,22 @@ type Fetcher interface {
 // network. Tests use a stand-in rather than this.
 type Client struct {
 	rc *regclient.RegClient
-	sourceCache
-	created createdCache
+	// cache is the on-disk store shared with every other client of the run, nil
+	// when the run asked for none. Shared rather than per-client because the
+	// scanner builds one client per compose file, and an image that appears in
+	// two stacks should be one lookup, not two.
+	cache *Cache
+	info  infoCache
 }
 
-// New returns a client for the public registries. A non-empty registryURL points
-// every lookup at that host over plain HTTP, which is what a test server needs.
-func New(registryURL string) *Client {
+// New returns a client for the public registries, asking them every time. A
+// non-empty registryURL points every lookup at that host over plain HTTP, which
+// is what a test server needs.
+func New(registryURL string) *Client { return NewWithCache(registryURL, nil) }
+
+// NewWithCache is New with the run's on-disk cache wired in. A nil cache is a
+// client that caches nothing beyond the run's own memory.
+func NewWithCache(registryURL string, cache *Cache) *Client {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	opts := []regclient.Opt{regclient.WithSlog(logger)}
 
@@ -67,9 +76,12 @@ func New(registryURL string) *Client {
 		)
 	}
 
-	return &Client{rc: regclient.New(opts...)}
+	return &Client{rc: regclient.New(opts...), cache: cache}
 }
 
+// Tags lists a repository's tags. It is cached only briefly: this is the answer
+// that must not go stale, since a release published a minute ago is exactly
+// what the user opened ccu for.
 func (c *Client) Tags(image string) ([]string, error) {
 	// regclient expands official images, e.g. "nginx" -> "docker.io/library/nginx".
 	rRef, err := ref.New(image)
@@ -77,6 +89,13 @@ func (c *Client) Tags(image string) ([]string, error) {
 		return nil, fmt.Errorf("failed to parse image reference %q: %w", image, err)
 	}
 
+	repo := repoKey(rRef)
+	return cached(c.cache, kindTags, repo, repo, c.cache.TTL(), func() ([]string, error) {
+		return c.fetchTags(rRef, image)
+	})
+}
+
+func (c *Client) fetchTags(rRef ref.Ref, image string) ([]string, error) {
 	list, err := c.rc.TagList(context.Background(), rRef)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list tags for %q: %w", image, err)
@@ -92,16 +111,45 @@ func (c *Client) Tags(image string) ([]string, error) {
 
 // Digest resolves the manifest digest a reference points at. Only the manifest
 // headers are requested, so probing several tags of one image stays cheap.
+//
+// Cached under the short TTL, never by content: a tag is a moving pointer, and
+// keeping this step fresh is what makes the digest-addressed cache behind it
+// safe to keep for a month.
 func (c *Client) Digest(image string) (string, error) {
 	rRef, err := ref.New(image)
 	if err != nil {
 		return "", fmt.Errorf("failed to parse image reference %q: %w", image, err)
 	}
 
+	return cached(c.cache, kindDigest, refKey(rRef), image, c.cache.TTL(), func() (string, error) {
+		return c.fetchDigest(rRef, image)
+	})
+}
+
+func (c *Client) fetchDigest(rRef ref.Ref, image string) (string, error) {
 	m, err := c.rc.ManifestHead(context.Background(), rRef)
 	if err != nil {
 		return "", fmt.Errorf("failed to fetch manifest for %q: %w", image, err)
 	}
 
 	return m.GetDescriptor().Digest.String(), nil
+}
+
+// repoKey is the cache key of a repository: the registry it lives on plus the
+// path on it, so "nginx" and "docker.io/library/nginx" share one entry while
+// two registries serving the same path do not.
+func repoKey(r ref.Ref) string {
+	return r.Registry + "/" + r.Repository
+}
+
+// refKey is repoKey plus what the reference asked for.
+func refKey(r ref.Ref) string {
+	key := repoKey(r)
+	if r.Tag != "" {
+		key += ":" + r.Tag
+	}
+	if r.Digest != "" {
+		key += "@" + r.Digest
+	}
+	return key
 }

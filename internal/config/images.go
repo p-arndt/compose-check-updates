@@ -110,6 +110,19 @@ func ValidateMinAge(value string) error {
 	return nil
 }
 
+// ValidateCacheTTL rejects a cache lifetime ccu cannot read. Exported for the
+// same reason ValidateMinAge is: the value also arrives from outside a file.
+func ValidateCacheTTL(value string) error {
+	d, err := policy.ParseDuration(value)
+	if err != nil {
+		return fmt.Errorf("cache_ttl: %w", err)
+	}
+	if d < 0 {
+		return fmt.Errorf("cache_ttl: %q is negative; use 0 to read nothing back from the cache", value)
+	}
+	return nil
+}
+
 // tagPattern is the tag grammar registries accept. Checking it here turns a typo
 // into an error naming the file it came from, instead of a lookup that quietly
 // finds nothing.

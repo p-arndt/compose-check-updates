@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 
@@ -48,9 +49,37 @@ type Config struct {
 	// "" is already the "not set here" the merge needs, so no pointer.
 	MinAge string `yaml:"min_age"`
 
+	// CacheTTL is how long a registry answer that can change — a tag list, a
+	// tag's digest — may be reused from the on-disk cache, written as a duration
+	// ("10m", "1h"). Empty means DefaultCacheTTL, "0" reads nothing back. Kept
+	// deliberately short: a cache that hid a release published a minute ago would
+	// be worse than no cache at all.
+	CacheTTL string `yaml:"cache_ttl"`
+
 	// Dockerfiles turns off checking the base images of Dockerfiles built by a
 	// compose service. Absent means on: it is the only way `build:` is covered.
 	Dockerfiles *bool `yaml:"dockerfiles"`
+}
+
+// DefaultCacheTTL is how long a mutable registry answer is reused when no
+// cache_ttl is written down: long enough that reopening the TUI or running a
+// check straight after one is free, short enough that a release published while
+// the user was reading is still found by the next run.
+const DefaultCacheTTL = 10 * time.Minute
+
+// CacheTTLDuration is the settled cache lifetime for this configuration. A
+// value ccu cannot read falls back to the default rather than to zero: Parse
+// already refused the file it came from, so anything left here is a value from
+// a caller that skipped validation.
+func (c Config) CacheTTLDuration() time.Duration {
+	if c.CacheTTL == "" {
+		return DefaultCacheTTL
+	}
+	d, err := policy.ParseDuration(c.CacheTTL)
+	if err != nil || d < 0 {
+		return DefaultCacheTTL
+	}
+	return d
 }
 
 // PinFloatingEnabled reports whether floating tags are to be pinned. Absent
@@ -257,6 +286,10 @@ func Parse(r io.Reader) (Config, error) {
 		return Config{}, err
 	}
 
+	if err := ValidateCacheTTL(cfg.CacheTTL); err != nil {
+		return Config{}, err
+	}
+
 	if err := validateImages(cfg.Images); err != nil {
 		return Config{}, err
 	}
@@ -284,6 +317,9 @@ func merge(base, over Config) Config {
 	}
 	if over.MinAge != "" {
 		base.MinAge = over.MinAge
+	}
+	if over.CacheTTL != "" {
+		base.CacheTTL = over.CacheTTL
 	}
 	return base
 }

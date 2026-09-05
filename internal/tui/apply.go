@@ -14,7 +14,7 @@ type applyResultMsg struct {
 	err error
 }
 
-func applyCmd(r Row) tea.Cmd {
+func applyCmd(r Row, cache *registry.Cache) tea.Cmd {
 	key := rowKey(r)
 	info := r.Update
 	return func() tea.Msg {
@@ -22,7 +22,7 @@ func applyCmd(r Row) tea.Cmd {
 		// tag/digest pair that no longer belongs together. Inside the command, so
 		// the network call stays off the UI thread.
 		if info.CurrentDigest != "" {
-			if err := info.ResolveDigest(registry.New("")); err != nil {
+			if err := info.ResolveDigest(registry.NewWithCache("", cache)); err != nil {
 				return applyResultMsg{key: key, err: err}
 			}
 		}
@@ -59,7 +59,7 @@ func (m *Model) pumpApply() tea.Cmd {
 			continue
 		}
 		m.applyActive++
-		cmds = append(cmds, applyCmd(*row))
+		cmds = append(cmds, applyCmd(*row, m.opts.Cache))
 	}
 	if len(cmds) == 0 {
 		return nil
