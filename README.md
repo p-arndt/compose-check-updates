@@ -71,12 +71,14 @@ ccu check              # report only (patch updates by default)
 ccu check -f           # consider every newer version, not just patches
 ccu check -u -r        # write the new tags, then restart the services
 ccu check -d ./stacks  # scan a different directory
+ccu check -image traefik  # check one image and nothing else
 ```
 
 | Flag | Description | Default |
 | ---- | ----------- | ------- |
 | `-d` | Directory to scan | `.` |
 | `-exclude` | Directories to exclude, comma-separated | none |
+| `-image` | Only check images matching this name or pattern, repeatable and comma-separated | all |
 | `-config` | Read this config file instead of searching for one | none |
 | `-u` | Update the Compose files with the new image tags | `false` |
 | `-r` | Restart the services after updating | `false` |
@@ -87,8 +89,9 @@ ccu check -d ./stacks  # scan a different directory
 | `-pin-floating` | Pin floating tags (`latest`, `main`, …) to the digest they resolve to | `false` |
 | `-dockerfiles` | Also check the base images of Dockerfiles built by a compose service | `true` |
 
-Only `-d`, `-exclude`, `-config`, `-pin-floating` and `-dockerfiles` also apply
-to the TUI — it picks levels in the UI instead and always resolves every level.
+Only `-d`, `-exclude`, `-image`, `-config`, `-pin-floating` and `-dockerfiles`
+also apply to the TUI — it picks levels in the UI instead and always resolves
+every level.
 
 **Exit codes:** `0` nothing to do · `1` updates available, not applied ·
 `2` something failed. So a CI gate needs no parsing:
@@ -156,6 +159,31 @@ images:
 > that decided each value, and offers a near-miss as a hint.
 
 ## Recipes
+
+<details>
+<summary><strong>Check a single image</strong></summary>
+
+`-image` narrows a run to the images it names, and nothing else is looked up —
+no registry sees a request for the rest:
+
+```bash
+ccu check -f -image traefik              # one image, every level
+ccu check -u -image 'ghcr.io/immich-app/*'   # a whole namespace, applied
+```
+
+A pattern **without** a `/` is matched against the last part of the name, so
+`traefik` finds `library/traefik` and `immich-server` finds
+`ghcr.io/immich-app/immich-server`. One **with** a `/` is matched against the
+full name as ccu reports it. Both take `*`, and unlike a shell glob it spans
+`/`: `ghcr.io/*` reaches every repository under that host. Matching is
+case-sensitive.
+
+Repeat the flag or separate the patterns with commas — `-image traefik,nginx`
+is `-image traefik -image nginx`. If nothing matches, ccu says so on stderr and
+exits `0`. The flag applies to the TUI as well (`ccu -image traefik`), and there
+is no config key for it: it selects what *this* run looks at.
+
+</details>
 
 <details>
 <summary><strong>Private registries and rate limits</strong></summary>

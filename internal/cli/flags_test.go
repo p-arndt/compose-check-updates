@@ -429,3 +429,34 @@ func TestParseConfigAndEmptyExclude(t *testing.T) {
 	assert.Equal(t, "/etc/ccu.yaml", result.Config)
 	assert.Empty(t, result.Exclude)
 }
+
+// -image is a selection, so it collects: repeating it and separating names with
+// commas have to mean the same thing, and neither may state a mode — the flag
+// applies to the TUI as much as to the report.
+func TestParseImageCollects(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		want []string
+	}{
+		{name: "none", args: []string{}},
+		{name: "single", args: []string{"-image", "traefik"}, want: []string{"traefik"}},
+		{name: "comma-separated", args: []string{"-image", "traefik, ghcr.io/immich-app/*"}, want: []string{"traefik", "ghcr.io/immich-app/*"}},
+		{name: "repeated", args: []string{"-image", "traefik", "-image", "nginx"}, want: []string{"traefik", "nginx"}},
+		{name: "blank entries dropped", args: []string{"-image", "traefik,,"}, want: []string{"traefik"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			origArgs := os.Args
+			defer func() { os.Args = origArgs }()
+			os.Args = append([]string{"ccu"}, tt.args...)
+
+			flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ContinueOnError)
+
+			result := Parse("test")
+			assert.Equal(t, tt.want, result.Images)
+			assert.False(t, result.Check)
+		})
+	}
+}

@@ -50,10 +50,38 @@ type Flags struct {
 	// result it then explains how that image's settings were resolved and which
 	// layer produced each of them. Empty means the whole configuration.
 	Image string
+	// Images narrows a scan to the images these patterns match. Deliberately
+	// flag-only, with no config key behind it: it selects what this one run looks
+	// at, and a selection written down in a file would silently hide images from
+	// every later run.
+	Images []string
 	// Versioning overrides the default scheme image tags are read under for this
 	// run. Empty leaves the config, and failing that `semver`, to decide.
 	// Per-image entries still win: naming an image is the more specific statement.
 	Versioning policy.Versioning
+}
+
+// imageList collects -image, which may be repeated and may carry a
+// comma-separated list, so `-image a,b` and `-image a -image b` are the same
+// selection. flag's own StringVar would keep only the last one.
+type imageList []string
+
+// String is called by the flag package on a zero Value to decide whether a
+// default is worth printing, so it has to survive a nil receiver.
+func (l *imageList) String() string {
+	if l == nil {
+		return ""
+	}
+	return strings.Join(*l, ",")
+}
+
+func (l *imageList) Set(value string) error {
+	for _, part := range strings.Split(value, ",") {
+		if part = strings.TrimSpace(part); part != "" {
+			*l = append(*l, part)
+		}
+	}
+	return nil
 }
 
 // plainOnlyFlags are the flags that only the non-interactive report reads: the
@@ -147,7 +175,7 @@ func registerFlags(args *Flags, versioningName *string) {
 	flag.StringVar(&args.ExcludeStr, "exclude", "", "Comma-separated list of directories to exclude from search")
 	flag.StringVar(&args.Config, "config", "", "Read this config file instead of searching for one")
 	flag.StringVar(&args.Format, "format", "auto", "Report output format: auto, pretty or json")
-	flag.StringVar(&args.Image, "image", "", "With the config command: explain how one image's settings were resolved")
+	flag.Var((*imageList)(&args.Images), "image", "Only check images matching this name or pattern (repeatable, comma-separated); with the config command: explain how one image's settings were resolved")
 	flag.StringVar(versioningName, "versioning", "", "Default scheme for reading image tags as versions: semver or loose (per-image config still wins)")
 }
 
@@ -213,6 +241,12 @@ func expandFlags(args *Flags, versioningName string) {
 
 	args.Versioning = policy.Versioning(versioningName)
 
+	// `config -image` explains one image and has no use for a list, so it reads
+	// the first name given rather than growing a second spelling of the flag.
+	if len(args.Images) > 0 {
+		args.Image = args.Images[0]
+	}
+
 	if args.ExcludeStr != "" {
 		args.Exclude = strings.Split(args.ExcludeStr, ",")
 		for i := range args.Exclude {
@@ -241,7 +275,7 @@ func usage(w io.Writer) {
 	fmt.Fprintln(tw, "  config -image <name>\tExplain how one image's settings were resolved, and from which file")
 	fmt.Fprintln(tw, "  help\tShow this help message")
 	fmt.Fprintln(tw, "  version\tShow version information")
-	fmt.Fprintf(tw, "\nFlags (-d, -exclude, -config, -pin-floating and -versioning apply to both modes, the rest only to `%s check`):\n", name)
+	fmt.Fprintf(tw, "\nFlags (-d, -exclude, -image, -config, -pin-floating and -versioning apply to both modes, the rest only to `%s check`):\n", name)
 	flag.VisitAll(func(f *flag.Flag) {
 		// An empty usage string marks a flag kept only for backwards
 		// compatibility; see the registrations in Parse.

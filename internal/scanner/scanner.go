@@ -26,6 +26,10 @@ type Options struct {
 	Root    string   // root directory to walk
 	Exclude []string // directories to exclude
 
+	// Images narrows the run to the images these patterns match — see
+	// compose.ImageMatcher for how one is read. Empty checks every image.
+	Images []string
+
 	// Major, Minor and Patch are the update levels the run asks for.
 	Major bool
 	Minor bool
@@ -62,6 +66,7 @@ type Event struct {
 	Kind   EventKind
 	Path   string       // compose file involved (empty for EventDiscovered)
 	Total  int          // compose files found; only on EventDiscovered
+	Images int          // images the file contributed, after Options.Images; only on EventFileDone
 	Update check.Update // only on EventUpdate
 	Level  policy.Level // level of Update; only on EventUpdate
 	Err    error        // only on EventError
@@ -189,7 +194,10 @@ func checkFile(ctx context.Context, events chan<- Event, opts Options, path stri
 		}
 	}
 
-	send(ctx, events, Event{Kind: EventFileDone, Path: path})
+	// The image count travels with the file's last event so a caller can tell an
+	// -image selection that matched nothing from one whose images are simply up
+	// to date — no row is emitted in either case.
+	send(ctx, events, Event{Kind: EventFileDone, Path: path, Images: len(updates)})
 }
 
 // checkFilePins is ScanPins' per-file work: the floating tags of one compose
@@ -214,7 +222,11 @@ func checkFilePins(ctx context.Context, events chan<- Event, opts Options, path 
 func checkAll(opts Options, path string, run func(*check.Checker) ([]check.Update, error)) ([]check.Update, error) {
 	reg := registry.New("")
 
-	updates, err := run(check.New(path, reg, opts.Policies))
+	// Built here rather than shared across the worker pool: it is read-only, and
+	// per-file it costs nothing next to the requests one file makes.
+	only := compose.NewImageMatcher(opts.Images)
+
+	updates, err := run(check.New(path, reg, opts.Policies).Only(only))
 	if err != nil {
 		return nil, err
 	}
@@ -224,7 +236,7 @@ func checkAll(opts Options, path string, run func(*check.Checker) ([]check.Updat
 	}
 
 	for _, target := range compose.BuildTargets(path) {
-		more, err := run(check.NewDockerfile(target.Dockerfile, path, target.Service, reg, opts.Policies))
+		more, err := run(check.NewDockerfile(target.Dockerfile, path, target.Service, reg, opts.Policies).Only(only))
 		if err != nil {
 			// Not an EventError: a consumer counts those against the compose files
 			// it is waiting for, and this failure is one file below.
