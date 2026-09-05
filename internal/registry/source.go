@@ -250,6 +250,10 @@ func normalizeSource(source string) string {
 	}
 
 	parsed.User = nil
+	// Docker's official images write the label as a git URL with the commit and
+	// the Dockerfile's directory behind "#" — pointing into the repository, not
+	// at a page anyone can open.
+	parsed.Fragment, parsed.RawQuery = "", ""
 	parsed.Path = strings.TrimSuffix(strings.TrimSuffix(parsed.Path, "/"), ".git")
 
 	return parsed.String()

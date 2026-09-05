@@ -126,6 +126,13 @@ func TestSourceLinks(t *testing.T) {
 		wantRel string
 	}{
 		{
+			name:    "official image with commit fragment",
+			source:  "https://github.com/traefik/traefik-library-image.git#06814bb:v3.7/alpine",
+			tag:     "3.7.13",
+			wantURL: "https://github.com/traefik/traefik-library-image",
+			wantRel: "https://github.com/traefik/traefik-library-image/releases/tag/3.7.13",
+		},
+		{
 			name:    "github",
 			source:  "https://github.com/owner/repo",
 			tag:     "v1.2.3",
