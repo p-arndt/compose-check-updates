@@ -1,0 +1,18 @@
+# .stamp.yml: how stamp releases this repository.
+# Everything here has a default; it is written out so you can see and change it.
+# Delete any line you are happy with.
+
+project: compose-check-updates
+
+# Where the version lives. The first file is the source of truth;
+# every other one is written to match it, in the same commit.
+version:
+  - VERSION
+
+release:
+  branch: main                    # releases are cut from here only
+  remote: origin
+  tag: "v{{version}}"
+  commit: "release: {{tag}}"
+  push: true                      # false stops after the local tag
+  prerelease: beta                # the series `stamp prerelease` opens
