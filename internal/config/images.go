@@ -44,12 +44,16 @@ func (c Config) Policies() policy.Set {
 // mergeImages layers over onto base. Unlike Exclude, which unions, a per-image
 // policy *replaces*: the project file has to be able to raise a cap the global
 // file set, not only tighten it.
+//
+// The result is never one of the inputs, even when only one side has entries:
+// the merged config is handed to the TUI alongside the two layers it was built
+// from, and those edit their maps in place. Returning a layer's map would make a
+// cap written for one scope show up as the other's. Two empty inputs give nil
+// rather than an empty map, which is the shape a config naming no image already
+// has, so a merged Config still compares equal to one parsed from the file.
 func mergeImages(base, over map[string]policy.Image) map[string]policy.Image {
-	if len(base) == 0 {
-		return over
-	}
-	if len(over) == 0 {
-		return base
+	if len(base) == 0 && len(over) == 0 {
+		return nil
 	}
 
 	merged := make(map[string]policy.Image, len(base)+len(over))

@@ -1,10 +1,15 @@
 package config
 
 import (
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+
+	"github.com/p-arndt/compose-check-updates/internal/policy"
 )
 
 func TestParse(t *testing.T) {
@@ -251,4 +256,50 @@ func TestPinFloatingAbsentIsUnset(t *testing.T) {
 	if cfg.PinFloating == nil || *cfg.PinFloating {
 		t.Errorf("PinFloating = %v, expected an explicit false", cfg.PinFloating)
 	}
+}
+
+// The merged map has to be the caller's own: the TUI is handed the merged config
+// and the two layers it came from, and it edits a layer's map in place. A result
+// aliasing a layer would turn an edit meant for one scope into an edit of both.
+func TestMergeImagesReturnsAMapTheCallerOwns(t *testing.T) {
+	tests := []struct {
+		name string
+		base map[string]policy.Image
+		over map[string]policy.Image
+	}{
+		{
+			name: "base empty",
+			over: map[string]policy.Image{"library/traefik": {Max: policy.LevelMinor}},
+		},
+		{
+			name: "over empty",
+			base: map[string]policy.Image{"library/traefik": {Max: policy.LevelMinor}},
+		},
+		{
+			name: "both filled",
+			base: map[string]policy.Image{"library/traefik": {Max: policy.LevelMinor}},
+			over: map[string]policy.Image{"library/redis": {Max: policy.LevelPatch}},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			baseBefore := maps.Clone(tt.base)
+			overBefore := maps.Clone(tt.over)
+
+			merged := mergeImages(tt.base, tt.over)
+			merged["library/nginx"] = policy.Image{Max: policy.LevelMajor}
+			delete(merged, "library/traefik")
+
+			assert.Equal(t, baseBefore, tt.base, "base was written through")
+			assert.Equal(t, overBefore, tt.over, "over was written through")
+		})
+	}
+}
+
+// Two empty layers give nil rather than an empty map, so a merged config still
+// compares equal to one parsed straight out of a file that named no image.
+func TestMergeImagesEmptyLayersStayNil(t *testing.T) {
+	assert.Nil(t, mergeImages(nil, nil))
+	assert.Nil(t, mergeImages(map[string]policy.Image{}, nil))
 }
