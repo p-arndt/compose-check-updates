@@ -1,1 +1,0 @@
-Every update shows when its tag was published (`published` in the JSON output, `3d ago` in the report and the TUI), and `min_age` — run-wide, per image or `-min-age 7d` — holds back tags younger than that in favour of the newest one old enough

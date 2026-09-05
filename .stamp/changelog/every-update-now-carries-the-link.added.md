@@ -1,1 +1,0 @@
-Every update now carries the link to its release notes: `release_url` and `source_url` in the JSON output, read from the image's `org.opencontainers.image.source` label, and shown in the TUI detail column
