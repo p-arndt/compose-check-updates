@@ -543,7 +543,7 @@ report goes to stdout; warnings and notices go to **stderr**, so a pipe stays
 parseable.
 
 ```json
-{"kind":"update","image":"library/traefik","reference":"traefik:v2.9.3","services":["proxy"],"file":"proxy/compose.yaml","current":"v2.9.3","latest":"v3.2.0","level":"major","targets":{"minor":"v2.11.4","major":"v3.2.0"}}
+{"kind":"update","image":"library/traefik","reference":"traefik:v2.9.3","services":["proxy"],"file":"proxy/compose.yaml","current":"v2.9.3","latest":"v3.2.0","level":"major","published":"2024-11-12T14:03:27Z","targets":{"minor":"v2.11.4","major":"v3.2.0"},"release_url":"https://github.com/traefik/traefik/releases/tag/v3.2.0","source_url":"https://github.com/traefik/traefik"}
 {"kind":"unreadable","image":"ghcr.io/vert-sh/vert","reference":"ghcr.io/vert-sh/vert:sha-e1c83ba","file":"vert/compose.yaml","current":"sha-e1c83ba","level":"unreadable","reason":"no-tag-for-digest","message":"none of this image's tags matches its newest digest…"}
 {"kind":"error","file":"data/docker-compose.yml","error":"fetching tags: 429"}
 ```
