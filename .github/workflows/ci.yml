@@ -1,74 +1,26 @@
 name: CI
-permissions:
-  contents: read
 
 on:
   push:
     branches: [main]
   pull_request:
 
-concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
+permissions:
+  contents: read
 
 jobs:
-  test:
-    # Windows is in the matrix on purpose: ccu walks the filesystem for compose
-    # files and renders a TUI, both of which have path- and terminal-handling
-    # behaviour a Linux-only CI would never exercise. macOS is there because it
-    # is the primary development platform and ships a binary in every release.
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 15
-
-    # Third-party actions are pinned to full commit SHAs rather than tags: tags
-    # are mutable, so a repointed tag would silently change what runs here.
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Setup Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          # Reads the Go version straight from go.mod so it never drifts.
-          go-version-file: go.mod
-          cache: true
-
-      - name: Vet
-        run: go vet ./...
-
-      - name: Test
-        # ./... covers the fixture-driven suite under tests/ as well. -race is
-        # worth the slower run: the scanner's worker pool and the registry probe
-        # queue both share state across goroutines, where a data race would
-        # otherwise only show up as a rare, unreproducible failure.
-        run: go test -race ./...
-
-      - name: Build
-        run: go build ./...
-
-  # A separate job, and ubuntu only: golangci-lint reads the same source on
-  # every platform, so running it three times would only cost minutes.
-  lint:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Setup Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
-          cache: true
-
-      - name: Lint
-        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
-        with:
-          # Pinned so a new release cannot turn a green PR red on its own; bump
-          # it together with the local version in the `lint` just recipe.
-          version: v2.13.2
+  # Windows is in the matrix on purpose: ccu walks the filesystem for compose
+  # files and renders a TUI, both of which have path- and terminal-handling
+  # behaviour a Linux-only CI would never exercise. macOS is the primary
+  # development platform and ships a binary in every release. -race stays on:
+  # the scanner's worker pool and the registry probe queue share state across
+  # goroutines, where a data race would otherwise only show up as a rare,
+  # unreproducible failure.
+  ci:
+    uses: p-arndt/.github/.github/workflows/go-ci.yml@v1
+    with:
+      os: '["ubuntu-latest", "windows-latest", "macos-latest"]'
+      race: true
+      lint: 'true'
+      # Bump together with the version the `lint` just recipe installs.
+      golangci-lint-version: v2.13.2
