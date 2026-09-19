@@ -3,6 +3,10 @@
 # Install `just`:  winget install Casey.Just   (or  go install github.com/casey/just@latest)
 # List recipes:    just            (or  just --list)
 #
+# Shared recipes (build, test, fmt, ci, release, …) live in .just/, copied from
+# ~/coding/just-common. Edit them there and run `just sync-common`; this file
+# only holds what is specific to ccu.
+#
 # Layout:
 #   .                  — the `ccu` CLI entry point lives at the repo root  (-> ccu / ccu.exe)
 #   internal/policy    — what the user recorded about an image; imports nothing
@@ -19,72 +23,14 @@
 #   tests/             — fixture-driven tests (covered by `go test ./...`)
 #   VERSION            — single source of truth for the version (stamped into the binary)
 
-# Run recipes through PowerShell on Windows so multi-line bodies and env work.
-# Everything else runs under the default `sh`, so the recipes that need shell
-# syntax exist twice: once `[unix]`, once `[windows]`.
-set windows-shell := ["pwsh.exe", "-NoLogo", "-NoProfile", "-Command"]
+set allow-duplicate-recipes
 
-# Default: show the recipe list.
-default:
-    @just --list
+import '.just/common.just'
+import '.just/go.just'
+import '.just/release.just'
 
-# ---------------------------------------------------------------------------
-# Dev
-# ---------------------------------------------------------------------------
-
-# Run the CLI from source, passing through any args:  just run check -d .
-run *ARGS:
-    go run . {{ARGS}}
-
-# Build a plain dev binary -> ccu (version reports as "dev").
-[unix]
-build:
-    go build -o ccu .
-
-# Build a plain dev binary -> ccu.exe (version reports as "dev").
-[windows]
-build:
-    go build -o ccu.exe .
-
-# ldflags used by the release builds: stamp version metadata + strip symbols.
-
-# Build a stripped, statically-linked release binary for the host platform,
-# stamped with the current VERSION -> ccu.
-[unix]
-build-release:
-    CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X github.com/p-arndt/compose-check-updates/internal/buildinfo.Version=$(tr -d '[:space:]' < VERSION) -X github.com/p-arndt/compose-check-updates/internal/buildinfo.Commit=$(git rev-parse --short HEAD) -X github.com/p-arndt/compose-check-updates/internal/buildinfo.Date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" -o ccu .
-
-# Build a stripped, statically-linked release binary for the host platform,
-# stamped with the current VERSION -> ccu.exe.
-[windows]
-build-release:
-    $env:CGO_ENABLED = "0"; go build -trimpath -ldflags "-s -w -X github.com/p-arndt/compose-check-updates/internal/buildinfo.Version=$((Get-Content VERSION -Raw).Trim()) -X github.com/p-arndt/compose-check-updates/internal/buildinfo.Commit=$(git rev-parse --short HEAD) -X github.com/p-arndt/compose-check-updates/internal/buildinfo.Date=$(Get-Date -AsUTC -Format o)" -o ccu.exe .
-
-# ---------------------------------------------------------------------------
-# Quality
-# ---------------------------------------------------------------------------
-
-# Run the test suite (includes the tests/ fixtures).
-test:
-    go test ./...
-
-# Vet for suspicious constructs.
-vet:
-    go vet ./...
-
-# Format all Go code.
-fmt:
-    gofmt -w .
-
-# Verify formatting without writing changes (fails if anything is unformatted).
-[unix]
-fmt-check:
-    @unformatted=$(gofmt -l .); if [ -n "$unformatted" ]; then echo "$unformatted"; echo "unformatted files (run: just fmt)" >&2; exit 1; fi
-
-# Verify formatting without writing changes (fails if anything is unformatted).
-[windows]
-fmt-check:
-    @if (gofmt -l .) { Write-Error "unformatted files (run: just fmt)"; exit 1 }
+BIN_NAME := "ccu"
+BUILDINFO_PKG := "github.com/p-arndt/compose-check-updates/internal/buildinfo"
 
 # Run golangci-lint. Installs the pinned version into GOPATH/bin on first use,
 # so this works without a separate install step; keep the version in step with
@@ -118,65 +64,6 @@ cover:
 
 # Run every check the way CI should.
 ci: fmt-check vet lint test
-
-# ---------------------------------------------------------------------------
-# Release
-# ---------------------------------------------------------------------------
-
-# Print the current version (read from the VERSION file).
-[unix]
-version:
-    @printf '%s\n' "$(tr -d '[:space:]' < VERSION)"
-
-# Print the current version (read from the VERSION file).
-[windows]
-version:
-    @(Get-Content VERSION -Raw).Trim()
-
-# Write a version into VERSION without committing, for looking at the diff
-# first. Accepts a bump keyword or an explicit version:
-#   just set-version patch        just set-version 0.5.0
-set-version BUMP="patch":
-    stamp set {{BUMP}}
-
-# Record one user-facing change for the changelog. KIND is one of added,
-# changed, deprecated, removed, fixed, security. Commit the fragment it writes
-# under .stamp/changelog/ together with the change it describes:
-#   just note added "Tags kept in a variable are resolved from the .env"
-note KIND +TEXT:
-    stamp note {{KIND}} "{{TEXT}}"
-
-# Print the changelog entries noted since the last release.
-changelog:
-    stamp changelog
-
-# Cut a release: bump VERSION, render the noted changes into CHANGELOG.md and
-# into the annotated tag, commit, tag and push. The tag push triggers the
-# release workflow, which builds the binaries and takes its release notes from
-# that tag. Examples:
-#   just release            just release minor            just release 1.0.0
-release BUMP="patch":
-    stamp release {{BUMP}}
-
-# ---------------------------------------------------------------------------
-# Housekeeping
-# ---------------------------------------------------------------------------
-
-# Remove build artifacts.
-[unix]
-clean:
-    rm -f ccu
-    rm -rf dist build stage
-
-# Remove build artifacts.
-[windows]
-clean:
-    -Remove-Item -Force ccu.exe -ErrorAction SilentlyContinue
-    -Remove-Item -Recurse -Force dist, build, stage -ErrorAction SilentlyContinue
-
-# ---------------------------------------------------------------------------
-# Demo
-# ---------------------------------------------------------------------------
 
 # The recording runs against invented stacks and a fake registry — never the
 # real Docker Hub, never your own compose files. Pass --keep to inspect the
