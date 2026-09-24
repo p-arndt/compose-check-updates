@@ -1,0 +1,1 @@
+An image on its first stable release (e.g. `rustfs/rustfs:1.0.0`) whose repository otherwise holds only prereleases or suffixed variants is reported as up to date instead of unreadable (`no-comparable-tag`).

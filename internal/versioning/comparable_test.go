@@ -52,6 +52,27 @@ func TestHasComparableTag(t *testing.T) {
 			expected: true,
 		},
 		{
+			name:     "a first stable release beside its own prereleases and variants",
+			scheme:   semver,
+			current:  "1.0.0",
+			tags:     []string{"1.0.0", "1.0.0-rc.6", "1.0.0-glibc", "latest"},
+			expected: true,
+		},
+		{
+			name:     "prereleases of another release do not vouch for a plain one",
+			scheme:   semver,
+			current:  "1.0.0",
+			tags:     []string{"1.0.0", "2.0.0-rc.1"},
+			expected: false,
+		},
+		{
+			name:     "a suffixed current is not a release its siblings lead up to",
+			scheme:   loose,
+			current:  "2024-01-01",
+			tags:     []string{"2024-01-01", "2024"},
+			expected: false,
+		},
+		{
 			name:     "a tag the scheme cannot read at all",
 			scheme:   semver,
 			current:  "sha-e1c83ba",

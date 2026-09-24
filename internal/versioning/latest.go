@@ -132,10 +132,23 @@ func HasComparableTag(scheme Scheme, currentTag string, tags []string) bool {
 		if !ok {
 			continue
 		}
-		if SameFamily(v.Segments(), current.Segments()) && v.Suffix == current.Suffix {
+		if !SameFamily(v.Segments(), current.Segments()) {
+			continue
+		}
+		if v.Suffix == current.Suffix || leadsUpTo(v, current) {
 			return true
 		}
 	}
 
 	return false
+}
+
+// leadsUpTo reports whether v is a prerelease or variant of the plain release
+// current names ("1.0.0-rc.6" or "1.0.0-glibc" beside "1.0.0"). The scheme then
+// reads this repository just fine and current is merely its first stable
+// release, which the next one will be compared with. A suffixed current is left
+// out on purpose: a date under loose reads as "2024" plus "-01-01", and every
+// sibling date would pass as a variant of the same release.
+func leadsUpTo(v, current Version) bool {
+	return current.Suffix == "" && v.Compare(Version{Release: current.Release, Suffix: v.Suffix}) == 0
 }

@@ -298,3 +298,24 @@ func TestTagMissingFromTheRepositoryIsStillUnreadable(t *testing.T) {
 
 	assert.Equal(t, ReasonNoComparableTag, infos[0].UnreadableReason)
 }
+
+// rustfs/rustfs published nothing but prereleases and "-glibc" variants before
+// 1.0.0. An image on that first stable release is up to date: the scheme reads
+// every sibling, and none of them happens to share the empty suffix yet.
+func TestFirstStableReleaseBesidePrereleasesIsNotUnreadable(t *testing.T) {
+	t.Parallel()
+
+	tags := []string{"1.0.0-rc.6", "1.0.0-rc.6-glibc", "1.0.0", "1.0.0-glibc", "latest"}
+	server := registrytest.Server(t, "rustfs/rustfs", tags,
+		map[string]string{"1.0.0": registrytest.DigestNew, "latest": registrytest.DigestNew})
+
+	serverURL, _ := url.Parse(server.URL)
+	file := writeComposeFile(t, "image: "+serverURL.Host+"/rustfs/rustfs:1.0.0")
+
+	infos, err := New(file, registry.New(serverURL.Host), policy.Set{}).Check(true, true, true)
+	assert.NoError(t, err)
+	assert.Len(t, infos, 1)
+
+	assert.False(t, infos[0].IsUnreadable())
+	assert.False(t, infos[0].HasNewVersion())
+}
