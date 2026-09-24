@@ -4,6 +4,12 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.13.1 - 2026-09-24
+
+### Fixed
+
+- An image on its first stable release (e.g. `rustfs/rustfs:1.0.0`) whose repository otherwise holds only prereleases or suffixed variants is reported as up to date instead of unreadable (`no-comparable-tag`).
+
 ## 0.13.0 - 2026-09-05
 
 ### Added
