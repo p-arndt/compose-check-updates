@@ -32,21 +32,28 @@ import '.just/release.just'
 BIN_NAME := "ccu"
 BUILDINFO_PKG := "github.com/p-arndt/compose-check-updates/internal/buildinfo"
 
-# Run golangci-lint. Installs the pinned version into GOPATH/bin on first use,
-# so this works without a separate install step; keep the version in step with
-# the one the CI lint job pins.
+# The golangci-lint the lint recipe runs. Bump together with the version the CI
+# lint job pins.
+GOLANGCI_LINT_VERSION := "2.14.0"
+
+# Run golangci-lint. Installs the pinned version into GOPATH/bin whenever the
+# binary there is missing or a different version, so bumping the pin reaches
+# every checkout. It runs that binary rather than whatever is first on PATH: an
+# older one, or one built by an older Go, fails to load packages written for the
+# toolchain in use.
 [unix]
 lint:
-    @command -v golangci-lint >/dev/null 2>&1 || go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.2
-    "$(command -v golangci-lint || echo "$(go env GOPATH)/bin/golangci-lint")" run
+    @"$(go env GOPATH)/bin/golangci-lint" version 2>/dev/null | grep -q "version {{GOLANGCI_LINT_VERSION}} " || go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v{{GOLANGCI_LINT_VERSION}}
+    "$(go env GOPATH)/bin/golangci-lint" run
 
-# Run golangci-lint. Installs the pinned version into GOPATH/bin on first use,
-# so this works without a separate install step; keep the version in step with
-# the one the CI lint job pins.
+# Run golangci-lint. Installs the pinned version into GOPATH/bin whenever the
+# binary there is missing or a different version, so bumping the pin reaches
+# every checkout. It runs that binary rather than whatever is first on PATH: an
+# older one, or one built by an older Go, fails to load packages written for the
+# toolchain in use.
 [windows]
 lint:
-    @if (-not (Get-Command golangci-lint -ErrorAction SilentlyContinue)) { go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.2 }
-    $exe = (Get-Command golangci-lint -ErrorAction SilentlyContinue).Source; if (-not $exe) { $exe = Join-Path (go env GOPATH) "bin\golangci-lint.exe" }; & $exe run
+    $exe = Join-Path (go env GOPATH) "bin\golangci-lint.exe"; if (-not ((Test-Path $exe) -and ((& $exe version 2>$null) -match "version {{GOLANGCI_LINT_VERSION}} "))) { go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v{{GOLANGCI_LINT_VERSION}} }; & $exe run
 
 # Print the test coverage per package and in total. Nothing enforces a number;
 # this is here to look at when you want to know, not to gate on.

@@ -22,5 +22,5 @@ jobs:
       os: '["ubuntu-latest", "windows-latest", "macos-latest"]'
       race: true
       lint: 'true'
-      # Bump together with the version the `lint` just recipe installs.
-      golangci-lint-version: v2.13.2
+      # Bump together with GOLANGCI_LINT_VERSION in the justfile.
+      golangci-lint-version: v2.14.0
