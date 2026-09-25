@@ -123,6 +123,21 @@ type Model struct {
 	issueCursor int
 	issueOffset int
 
+	// fetchNotes lists a repository's releases; nil means notes are not offered
+	// in this session. notes caches every answer by source URL for the session,
+	// so two rows of one repository cost one request.
+	fetchNotes notesFetcher
+	notes      map[string]notesEntry
+	// The notes pane scrolls by rendered line; notesRendered keeps the last
+	// render so View need not run glamour on every keypress.
+	showNotes     bool
+	notesOffset   int
+	notesRendered *notesRenderCache
+	// notesDark picks glamour's style. Decided once before the program starts:
+	// asking the terminal for its background from inside the alt screen races
+	// Bubble Tea for the reply on stdin.
+	notesDark bool
+
 	width  int
 	height int
 
@@ -170,6 +185,10 @@ func NewModel(opts scanner.Options) Model {
 		showFloating:     opts.Policies.PinFloating,
 		floatingResolved: opts.Policies.PinFloating,
 		collapsed:        make(map[string]bool),
+		fetchNotes:       newNotesFetcher(opts),
+		notes:            make(map[string]notesEntry),
+		notesRendered:    &notesRenderCache{},
+		notesDark:        true,
 		// The highest available version is what a fresh session offers.
 		target: TargetMajor,
 		width:  80,

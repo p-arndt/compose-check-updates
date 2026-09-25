@@ -33,6 +33,14 @@ type KeyMap struct {
 	// IssuesClose is esc, which everywhere means "back", never "quit".
 	Issues      key.Binding
 	IssuesClose key.Binding
+	// Notes opens the release notes of the row under the cursor. `n` would have
+	// been the obvious letter, but it deselects; `r` reads as "releases".
+	// NotesClose leaves the pane the way a pager is left; NotesTop/NotesBottom
+	// are the pager's g and G, which the list has no use for.
+	Notes       key.Binding
+	NotesClose  key.Binding
+	NotesTop    key.Binding
+	NotesBottom key.Binding
 	Filter      key.Binding
 	Target      key.Binding
 	// Floating lists or hides the floating-tag rows, resolving their digests the
@@ -92,6 +100,11 @@ func DefaultKeyMap() KeyMap {
 		Issues:      key.NewBinding(key.WithKeys("i"), key.WithHelp("i", "issues")),
 		IssuesClose: key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "back to list")),
 
+		Notes:       key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "release notes")),
+		NotesClose:  key.NewBinding(key.WithKeys("esc", "q", "r"), key.WithHelp("esc/q", "back to list")),
+		NotesTop:    key.NewBinding(key.WithKeys("g", "home"), key.WithHelp("g", "top")),
+		NotesBottom: key.NewBinding(key.WithKeys("G", "end"), key.WithHelp("G", "bottom")),
+
 		Filter:   key.NewBinding(key.WithKeys("f"), key.WithHelp("f", "filter")),
 		Target:   key.NewBinding(key.WithKeys("t"), key.WithHelp("t", "target level")),
 		Floating: key.NewBinding(key.WithKeys("p"), key.WithHelp("p", "list/hide floating tags")),
@@ -140,19 +153,19 @@ func (k KeyMap) Bindings() []key.Binding {
 		k.Up, k.Down, k.PageUp, k.PageDown, k.Home, k.End,
 		k.Toggle, k.SelectAll, k.SelectNone, k.SelectAllGlobal, k.SelectNoneGlobal,
 		k.ToggleGroup, k.Collapse, k.Expand, k.CollapseAll, k.ExpandAll,
-		k.Filter, k.Target, k.Floating, k.Focus, k.Bar, k.BarNext, k.BarPrev, k.ValueNext, k.ValuePrev, k.Issues, k.Apply, k.ApplyRow, k.Help, k.Quit,
+		k.Filter, k.Target, k.Floating, k.Focus, k.Bar, k.BarNext, k.BarPrev, k.ValueNext, k.ValuePrev, k.Issues, k.Notes, k.Apply, k.ApplyRow, k.Help, k.Quit,
 	}
 }
 
 func (k KeyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.Up, k.Down, k.Toggle, k.Collapse, k.Expand, k.Focus, k.Filter, k.Target, k.Issues, k.Apply, k.ApplyRow, k.Help, k.Quit}
+	return []key.Binding{k.Up, k.Down, k.Toggle, k.Collapse, k.Expand, k.Focus, k.Filter, k.Target, k.Issues, k.Notes, k.Apply, k.ApplyRow, k.Help, k.Quit}
 }
 
 func (k KeyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.Up, k.Down, k.PageUp, k.PageDown, k.Home, k.End},
 		{k.Toggle, k.SelectAll, k.SelectNone, k.SelectAllGlobal, k.SelectNoneGlobal},
-		{k.Filter, k.Issues},
+		{k.Filter, k.Issues, k.Notes},
 		{k.ToggleGroup, k.Collapse, k.Expand, k.CollapseAll, k.ExpandAll},
 		{k.Focus, k.Bar, k.ValuePrev, k.ValueNext, k.Target},
 		{k.Apply, k.ApplyRow, k.Help, k.Quit},
@@ -177,12 +190,21 @@ func (k KeyMap) IssueHints() []key.Binding {
 // BrowseHints are the full working set, once the scan has settled. The footer
 // budgets the last hint first and fills from the left, so the order puts the two
 // apply keys early enough to survive a narrow terminal and the tree keys — the
-// ones a user tries unprompted anyway — last.
+// ones a user tries unprompted anyway — last. Notes comes after help: the
+// sidebar already names its key beside the release count, so it is the hint
+// the footer can best afford to lose.
 func (k KeyMap) BrowseHints() []key.Binding {
 	return []key.Binding{
 		k.Up, k.Down, k.Toggle, k.Apply, k.ApplyRow, k.Focus, k.Bar,
-		k.Collapse, k.Expand, k.Filter, k.Target, k.Issues, k.Help, k.Quit,
+		k.Collapse, k.Expand, k.Filter, k.Target, k.Issues, k.Help, k.Notes, k.Quit,
 	}
+}
+
+// NotesHints are the keys the release notes pane reads, leading with the way
+// out. Quit is spelled as ctrl+c here, because q only closes the pane.
+func (k KeyMap) NotesHints() []key.Binding {
+	quit := key.NewBinding(key.WithKeys("ctrl+c"), key.WithHelp("ctrl+c", "quit"))
+	return []key.Binding{k.NotesClose, k.Up, k.Down, k.PageUp, k.PageDown, k.NotesTop, k.NotesBottom, quit}
 }
 
 // ApplyHints: the apply phase ignores every key but quit.
@@ -287,6 +309,12 @@ func (k KeyMap) HelpSections() []HelpSection {
 		{Title: "ISSUES", Entries: []HelpEntry{
 			helpEntry(k.Issues),
 			helpEntry(k.IssuesClose),
+		}},
+		{Title: "RELEASE NOTES", Entries: []HelpEntry{
+			helpEntry(k.Notes),
+			helpPair("scroll", k.Up, k.Down, k.PageUp, k.PageDown),
+			helpPair("top / bottom", k.NotesTop, k.NotesBottom),
+			helpEntry(k.NotesClose),
 		}},
 	}
 }

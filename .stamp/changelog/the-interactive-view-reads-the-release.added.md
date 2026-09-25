@@ -1,0 +1,1 @@
+The interactive view reads the release notes between your tag and the target: press r on an image to see every GitHub or GitLab release in that range, rendered in the terminal. The detail column counts them and links the real release page. Set GITHUB_TOKEN or GH_TOKEN to lift GitHub's anonymous rate limit.

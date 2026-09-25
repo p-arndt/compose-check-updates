@@ -1,0 +1,1 @@
+The release link no longer points at a tag the forge does not have when the image tag is shorter than the release tag (0.28 against 0.28.0), and a too-narrow detail column falls back to the releases list rather than the bare repository.

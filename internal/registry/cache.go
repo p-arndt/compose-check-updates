@@ -150,6 +150,10 @@ func (c *Cache) TTL() time.Duration {
 	return c.ttl
 }
 
+// Refresh reports whether this run ignores what is on disk, so a cache kept
+// beside this one can honour the same --refresh.
+func (c *Cache) Refresh() bool { return c != nil && c.refresh }
+
 // Stats reports what the run got out of the cache.
 func (c *Cache) Stats() CacheStats {
 	if c == nil {

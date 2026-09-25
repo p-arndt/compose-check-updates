@@ -92,6 +92,9 @@ func (m Model) paneView() string {
 	if m.showIssues {
 		return m.issuesView()
 	}
+	if m.showNotes {
+		return m.notesView()
+	}
 
 	// Below the two-column width the sidebar stacks under the list rather than
 	// disappearing: it is the only way to reach a per-image target or a cap.
@@ -134,6 +137,11 @@ func (m Model) hintBindings() []key.Binding {
 	if m.showHelp {
 		return m.keys.HelpHints()
 	}
+	// Ahead of the focus: the pane can be opened from the detail column, which
+	// keeps the focus it had for when the pane closes again.
+	if m.showNotes {
+		return m.keys.NotesHints()
+	}
 	if m.focus == focusBar {
 		return m.keys.BarHints()
 	}
@@ -143,6 +151,7 @@ func (m Model) hintBindings() []key.Binding {
 	if m.showIssues {
 		return m.keys.IssueHints()
 	}
+
 	switch m.phase {
 	case phaseScanning:
 		return m.keys.ScanHints()
@@ -159,13 +168,7 @@ func (m Model) hintBindings() []key.Binding {
 // out in columns, in a box centred over the pane. A dialog rather than a taller
 // footer, which would shove the list off the top of the screen.
 func (m Model) helpDialog() string {
-	h := m.listHeight()
-	if sidebarWidth(m.width) > 0 {
-		h += 2 // the boxed pane's own frame rows, which the dialog occupies too
-	}
-	// The dialog replaces the whole pane, the stacked panel included, so those
-	// rows are its to use.
-	h += m.stackedSidebarHeight()
+	h := m.fullPaneHeight()
 
 	// Sized to its contents: a fixed width silently truncates whichever group
 	// grows past it.
@@ -208,6 +211,17 @@ func (m Model) helpDialog() string {
 		out = append(out, "")
 	}
 	return strings.Join(out[:h], "\n")
+}
+
+// fullPaneHeight is every row between the top chrome and the footer, for the
+// views that replace the whole pane rather than drawing inside its boxes.
+func (m Model) fullPaneHeight() int {
+	h := m.listHeight()
+	if sidebarWidth(m.width) > 0 {
+		h += 2 // the boxed pane's own frame rows, which a full-pane view occupies too
+	}
+	// Such a view replaces the stacked panel as well, so its rows are free too.
+	return h + m.stackedSidebarHeight()
 }
 
 // status renders one status line, truncated with an ellipsis before styling so a

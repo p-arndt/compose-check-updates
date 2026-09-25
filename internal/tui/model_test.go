@@ -23,6 +23,8 @@ import (
 func newTestModel() Model {
 	m := NewModel(scanner.Options{})
 	m.phase = phaseBrowsing
+	// No test may reach a real forge; the notes tests hand in a stub instead.
+	m.fetchNotes = nil
 	return m
 }
 

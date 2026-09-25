@@ -46,9 +46,21 @@ func TestFitLink(t *testing.T) {
 			expected: "github.com/owner/repo/releases/tag/v1",
 		},
 		{
-			name:     "the repository where there is not",
+			name:     "the releases list where the release does not fit",
 			link:     "https://github.com/owner/repo/releases/tag/v1",
 			width:    30,
+			expected: "github.com/owner/repo/releases",
+		},
+		{
+			name:     "GitLab's releases list keeps its own path",
+			link:     "https://gitlab.com/group/proj/-/releases/v1.2.3",
+			width:    34,
+			expected: "gitlab.com/group/proj/-/releases",
+		},
+		{
+			name:     "the repository where not even the list fits",
+			link:     "https://github.com/owner/repo/releases/tag/v1",
+			width:    25,
 			expected: "github.com/owner/repo",
 		},
 	}

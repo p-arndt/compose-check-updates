@@ -10,6 +10,7 @@ import (
 	"sync"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/mattn/go-isatty"
 
 	"github.com/p-arndt/compose-check-updates/internal/check"
@@ -114,7 +115,9 @@ func Run(opts scanner.Options, project, global config.Config) error {
 	// even if the user never looked at the status line.
 	defer dumpLogs(logs)
 
-	p := tea.NewProgram(NewModel(opts).WithPins(project, global).WithLogCapture(logs), tea.WithAltScreen(), tea.WithMouseCellMotion())
+	m := NewModel(opts)
+	m.notesDark = lipgloss.HasDarkBackground()
+	p := tea.NewProgram(m.WithPins(project, global).WithLogCapture(logs), tea.WithAltScreen(), tea.WithMouseCellMotion())
 	final, err := p.Run()
 	if err != nil {
 		return err

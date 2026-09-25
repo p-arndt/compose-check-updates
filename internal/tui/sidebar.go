@@ -184,11 +184,19 @@ func (m Model) sidebarLines(width, height int) []string {
 	}
 	out = append(out, rest...)
 
-	// Last of the extras, and only when there is a line to spare: it is the one
-	// thing here that changes nothing about the run, it only says where to read
-	// what this release changed.
-	if link := notesLink(u); link != "" && height >= len(out)+2 {
-		out = append(out, "", m.theme.dim().Render(fitLink(link, width)))
+	// Last of the extras, and only when there is a line to spare: they change
+	// nothing about the run, they only say what this release changed and where
+	// to read it. The summary goes first — it names the key that shows the notes
+	// in place, which beats a link to copy out.
+	summary, link := m.notesSummary(r), m.sidebarLink(r)
+	if (summary != "" || link != "") && height >= len(out)+2 {
+		out = append(out, "")
+		if summary != "" {
+			out = append(out, m.theme.dim().Render(fit(summary, width)))
+		}
+		if link != "" && height >= len(out)+1 {
+			out = append(out, m.theme.dim().Render(fitLink(link, width)))
+		}
 	}
 
 	// Only while the list still holds the keyboard; once the sidebar has it, the
@@ -212,15 +220,20 @@ func notesLink(u check.Update) string {
 
 // fitLink renders a link into the width the panel has. The scheme goes first —
 // it is the same on every link ccu reports and costs eight of under forty
-// columns. What will still not fit falls back to the repository itself: a cut
-// URL is no URL at all, while the repository is one, and its releases are a
-// click away from there.
+// columns. What will still not fit falls back to the releases list, then to the
+// repository itself: a cut URL is no URL at all, while either of those is one,
+// and the release is a click away from both.
 func fitLink(link string, width int) string {
-	short := strings.TrimPrefix(strings.TrimPrefix(link, "https://"), "http://")
+	short := stripScheme(link)
 	if lipgloss.Width(short) <= width {
 		return short
 	}
 
+	if i := strings.Index(short, "/releases/"); i > 0 {
+		if list := short[:i+len("/releases")]; lipgloss.Width(list) <= width {
+			return list
+		}
+	}
 	if repo := repoOnly(short); lipgloss.Width(repo) < lipgloss.Width(short) && lipgloss.Width(repo) <= width {
 		return repo
 	}

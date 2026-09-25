@@ -18,11 +18,28 @@ func (m Model) Init() tea.Cmd {
 	return tea.Batch(cmds...)
 }
 
+// Update is update plus the one thing that follows any message: the cursor may
+// have landed on a repository whose notes the sidebar should announce. Checking
+// after every message, rather than in each place the cursor moves, is what
+// keeps a new way of moving it from forgetting the prefetch.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	next, cmd := m.update(msg)
+	nm, ok := next.(Model)
+	if !ok {
+		return next, cmd
+	}
+	if pf := nm.prefetchNotes(); pf != nil {
+		return nm, tea.Batch(cmd, pf)
+	}
+	return nm, cmd
+}
+
+func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 		m.syncScroll()
+		m.clampNotesOffset()
 		return m, nil
 
 	case spinner.TickMsg:
@@ -81,6 +98,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.phase = phaseBrowsing
 			m.setStatus(StatusInfo, fmt.Sprintf("%d update(s) found in %d file(s)", len(m.rows), m.checked))
 		}
+		return m, nil
+
+	case notesMsg:
+		m.handleNotes(msg)
 		return m, nil
 
 	case recheckDoneMsg:

@@ -542,6 +542,7 @@ Afterwards `ccu` offers to `docker compose up -d` the affected files.
 | `shift+tab` | Step back along the bar |
 | `m` | The top bar, from anywhere; again for the next stop |
 | `i` | Show the issues logged during the scan |
+| `r` | Read the release notes between the current and the target tag (`esc`/`q`/`r` closes) |
 | `A` | Apply the **selected** updates |
 | `u` | Apply **only the highlighted row** |
 | `y` / `n` | Answer the restart prompt |
@@ -552,10 +553,14 @@ On a terminal too narrow for two columns the detail column moves *below* the
 list rather than disappearing — the per-image target and cap have no keys of
 their own.
 
-Where the image says where it is built from, the detail column also names where
-to read what changed: the release page of the tag you are about to write, cut
-back to the repository when the column is too narrow for the whole link. Nothing
-is opened for you — the link is there to be read or copied.
+Where the image says where it is built from and that repository lives on GitHub
+or GitLab, `r` shows the release notes of every release between the tag you run
+and the one you are about to write, rendered in the terminal. The detail column
+counts them (`2 releases · r to read`) and links the release page, cut back to
+the releases list when the column is too narrow. Unauthenticated GitHub allows
+60 requests an hour; set `GITHUB_TOKEN` or `GH_TOKEN` (`GITLAB_TOKEN` for
+GitLab) to lift that. Notes are cached with the registry answers for at least
+an hour, and `--refresh` fetches them again.
 
 </details>
 

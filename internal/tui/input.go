@@ -22,7 +22,10 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	// The wheel scrolls whichever pane is on screen.
-	if m.showIssues {
+	if m.showNotes {
+		m.notesOffset += delta
+		m.clampNotesOffset()
+	} else if m.showIssues {
 		m.moveIssueCursor(delta)
 	} else {
 		m.moveCursor(delta)
@@ -48,6 +51,12 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// lets esc mean "back to the list" there and "quit" everywhere else.
 	if m.showIssues {
 		return m.handleIssuesKey(msg)
+	}
+
+	// The notes pane likewise, and for the same reason: its j/k scroll text,
+	// not the list hidden behind it.
+	if m.showNotes {
+		return m.handleNotesKey(msg)
 	}
 
 	// The bar and the detail column claim only the keys they need and hand the
@@ -141,6 +150,9 @@ func (m Model) handleListKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.retreatFocus()
 	case key.Matches(msg, m.keys.Issues):
 		m.openIssues()
+	case key.Matches(msg, m.keys.Notes):
+		cmd := m.openNotes()
+		return m, cmd
 	case key.Matches(msg, m.keys.Help):
 		m.toggleHelp()
 	case key.Matches(msg, m.keys.Apply):
