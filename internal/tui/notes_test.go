@@ -339,8 +339,7 @@ func TestNoPrefetchWithoutASidebarBeside(t *testing.T) {
 
 	for _, width := range []int{sidebarMinStacked - 1, sidebarMinTotal - 1} {
 		f := &fakeForge{releases: sampleReleases()}
-		m := notesModel(t, f)
-		m = step(t, m, tea.WindowSizeMsg{Width: width, Height: 40})
+		step(t, notesModel(t, f), tea.WindowSizeMsg{Width: width, Height: 40})
 		assert.Zero(t, f.count(notesSource), "width %d", width)
 	}
 }
