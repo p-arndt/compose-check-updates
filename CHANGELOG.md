@@ -4,6 +4,16 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.14.0 - 2026-09-25
+
+### Added
+
+- The interactive view reads the release notes between your tag and the target: press r on an image to see every GitHub or GitLab release in that range, rendered in the terminal. The detail column counts them and links the real release page. Set GITHUB_TOKEN or GH_TOKEN to lift GitHub's anonymous rate limit.
+
+### Fixed
+
+- The release link no longer points at a tag the forge does not have when the image tag is shorter than the release tag (0.28 against 0.28.0), and a too-narrow detail column falls back to the releases list rather than the bare repository.
+
 ## 0.13.1 - 2026-09-24
 
 ### Fixed
