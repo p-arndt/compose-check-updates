@@ -11,8 +11,8 @@ import (
 	"github.com/p-arndt/compose-check-updates/internal/scanner"
 )
 
-// phase is the stage of the session. It only ever walks forward, which keeps
-// the per-phase key handling small.
+// phase is the stage of the session. It walks forward, with one exception:
+// declining the restart prompt returns to browsing so more updates can follow.
 type phase int
 
 const (

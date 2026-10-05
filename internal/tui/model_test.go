@@ -1179,6 +1179,7 @@ func TestRestartPromptAnswers(t *testing.T) {
 	base = feed(t, base, updateEvent("a/compose.yml", "caddy", "2.7", "2.8", "minor"))
 	base.rows[0].State = RowApplied
 	base.phase = phaseRestartPrompt
+	base.width, base.height = 120, 30
 
 	yes := feed(t, base, keyMsg("y"))
 	assert.Equal(t, phaseRestarting, yes.phase)
@@ -1186,8 +1187,35 @@ func TestRestartPromptAnswers(t *testing.T) {
 	assert.Equal(t, "a/compose.yml", yes.restartTargets[0].FilePath)
 
 	no := feed(t, base, keyMsg("n"))
-	assert.Equal(t, phaseDone, no.phase)
+	assert.Equal(t, phaseBrowsing, no.phase, "n returns to the list instead of quitting")
 	assert.Empty(t, no.restartTargets)
+	assert.Contains(t, plainText(no.View()), "caddy", "the images are still shown")
+
+	quit := feed(t, base, keyMsg("q"))
+	assert.Equal(t, phaseDone, quit.phase)
+	assert.Empty(t, quit.restartTargets)
+}
+
+// Declining the restart and applying more must restart every stack written in
+// the session, not only the last batch.
+func TestRestartAfterDeclineCoversEarlierApplies(t *testing.T) {
+	t.Parallel()
+
+	m := newTestModel()
+	m = feed(t, m,
+		updateEvent("a/compose.yml", "caddy", "2.7", "2.8", "minor"),
+		updateEvent("b/compose.yml", "redis", "7.0", "7.2", "minor"),
+	)
+	m.rows[0].State = RowApplied
+	m.phase = phaseRestartPrompt
+
+	m = feed(t, m, keyMsg("n"))
+	require.Equal(t, phaseBrowsing, m.phase)
+
+	m.rows[1].State = RowApplied
+	m.phase = phaseRestartPrompt
+	m = feed(t, m, keyMsg("y"))
+	require.Len(t, m.restartTargets, 2)
 }
 
 // capWrite is one call the pin keys would have made. Tests record these rather

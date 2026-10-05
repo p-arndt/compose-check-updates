@@ -270,7 +270,14 @@ func (m Model) handleRestartKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Quitting here hands control back to Run, which runs docker after the
 		// alt screen is torn down.
 		return m, tea.Quit
-	case key.Matches(msg, m.keys.No), key.Matches(msg, m.keys.Quit):
+	case key.Matches(msg, m.keys.No):
+		// Back to the list rather than out: a declined restart is often "not yet",
+		// with more updates still to pick. The written rows stay RowApplied, so a
+		// later y restarts their stacks along with the new ones.
+		m.phase = phaseBrowsing
+		m.setStatus(StatusInfo, "updates written, nothing restarted")
+		return m, nil
+	case key.Matches(msg, m.keys.Quit):
 		m.phase = phaseDone
 		return m, tea.Quit
 	}
