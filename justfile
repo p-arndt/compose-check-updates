@@ -80,3 +80,11 @@ ci: fmt-check vet lint test
 # Record assets/demo.gif from demo/ccu.tape (needs `vhs` and `node`).
 demo *ARGS:
     node scripts/demo.mjs {{ARGS}}
+
+# Two tapes because vhs fixes the terminal height per tape, and the report is
+# much shorter than the TUI.
+#
+# Record the README stills in assets/ from demo/screenshots-*.tape (needs `vhs` and `node`).
+screenshots:
+    node scripts/demo.mjs --tape demo/screenshots-tui.tape
+    node scripts/demo.mjs --tape demo/screenshots-check.tape
